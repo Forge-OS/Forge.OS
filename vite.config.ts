@@ -8,7 +8,7 @@ export default defineConfig({
   base,
   plugins: [react()],
   build: {
-    manifest: true,
+    manifest: "manifest.json",
     sourcemap: false,
     rollupOptions: {
       output: {

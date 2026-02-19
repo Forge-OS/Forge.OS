@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 const requiredFiles = [
   "dist/index.html",
-  "dist/.vite/manifest.json",
+  "dist/manifest.json",
 ];
 
 for(const file of requiredFiles) {
@@ -12,12 +12,12 @@ for(const file of requiredFiles) {
   }
 }
 
-const manifestRaw = readFileSync("dist/.vite/manifest.json", "utf8");
+const manifestRaw = readFileSync("dist/manifest.json", "utf8");
 const manifest = JSON.parse(manifestRaw);
 const entry = manifest?.["index.html"]?.file || Object.values(manifest || {}).find((v) => v && v.isEntry)?.file;
 
 if(!entry) {
-  console.error("[smoke] Could not resolve JS entry from dist/.vite/manifest.json");
+  console.error("[smoke] Could not resolve JS entry from dist/manifest.json");
   process.exit(1);
 }
 

@@ -18,7 +18,7 @@
         }
 
         // Branch-mode GitHub Pages fallback: resolve the current built entry from Vite manifest.
-        const manifestRes = await fetch(`${repoBase}/dist/.vite/manifest.json`, { cache: "no-store" });
+        const manifestRes = await fetch(`${repoBase}/dist/manifest.json`, { cache: "no-store" });
         if(!manifestRes.ok) throw new Error(`Manifest fetch failed: ${manifestRes.status}`);
 
         const manifest = await manifestRes.json();
