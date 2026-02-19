@@ -1,6 +1,10 @@
 {
+  "_charts-vendor-BGq5t5mK.js": {
+    "file": "assets/charts-vendor-BGq5t5mK.js",
+    "name": "charts-vendor"
+  },
   "index.html": {
-    "file": "assets/index-CswxEYD8.js",
+    "file": "assets/index-wbQ19Mga.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -9,9 +13,12 @@
     ]
   },
   "src/main.tsx": {
-    "file": "assets/main-Dkt4XQ_A.js",
+    "file": "assets/main-D0KvTml8.js",
     "name": "main",
     "src": "src/main.tsx",
-    "isDynamicEntry": true
+    "isDynamicEntry": true,
+    "imports": [
+      "_charts-vendor-BGq5t5mK.js"
+    ]
   }
 }

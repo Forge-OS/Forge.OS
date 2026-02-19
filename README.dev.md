@@ -143,6 +143,14 @@ Recommendation for production:
 
 On failure, dashboard falls back to simulated DAG data so UI remains usable.
 
+## CI Validation
+Workflow: `.github/workflows/ci.yml`
+
+Runs on push/PR and enforces:
+- `npm run typecheck`
+- `npm run build`
+- `npm run smoke`
+
 ## GitHub Pages Deployment
 Workflow: `.github/workflows/deploy-pages.yml`
 
@@ -201,3 +209,11 @@ Then create GitHub release and attach:
 - Private keys are not handled by this app directly.
 - Signing is delegated to wallet provider UI.
 - For production, move external AI API calls server-side and store secrets in backend env vars.
+
+
+## Kaspa Ecosystem References
+- `https://github.com/K-Kluster/kaspa-js/`
+- `https://github.com/kaspanet/silverscript`
+- `https://kaspa.stream/`
+- `https://kaspa.org/kaspium-v1-0-1-release/`
+- `https://kasware.xyz`

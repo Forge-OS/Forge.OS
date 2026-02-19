@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { DEFAULT_NETWORK, NETWORK_LABEL } from "../constants";
 import { C, mono } from "../tokens";
+import { isKaspaAddress } from "../helpers";
 import { WalletAdapter } from "../wallet/WalletAdapter";
 import { Badge, Btn, Card, Divider, Inp } from "./ui";
 
@@ -61,8 +62,8 @@ export function WalletGate({onConnect}: any) {
         </div>
 
         <div style={{marginTop:12}}>
-          <Inp label="Kaspium Address" value={kaspiumAddress} onChange={setKaspiumAddress} placeholder="kaspa:qq..." hint="Required for Kaspium mobile connect flow" />
-          <Btn onClick={()=>connect("kaspium")} disabled={busy || !kaspiumAddress.startsWith("kaspa:")} variant="ghost" style={{width:"100%", padding:"10px 0"}}>
+          <Inp label="Kaspium Address" value={kaspiumAddress} onChange={setKaspiumAddress} placeholder="kaspa:... or kaspatest:..." hint="Required for Kaspium mobile connect flow" />
+          <Btn onClick={()=>connect("kaspium")} disabled={busy || !isKaspaAddress(kaspiumAddress)} variant="ghost" style={{width:"100%", padding:"10px 0"}}>
             CONNECT KASPIUM
           </Btn>
         </div>

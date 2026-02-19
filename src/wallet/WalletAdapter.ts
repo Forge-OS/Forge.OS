@@ -1,11 +1,5 @@
 import { DEFAULT_NETWORK, KASPIUM_DEEP_LINK_SCHEME } from "../constants";
-import { fmt } from "../helpers";
-
-function ensureKaspaAddress(address: string) {
-  const v = String(address || "").trim();
-  if(!v.startsWith("kaspa:")) throw new Error("Invalid Kaspa address. Must start with 'kaspa:'");
-  return v;
-}
+import { fmt, normalizeKaspaAddress } from "../helpers";
 
 export const WalletAdapter = {
   detect() {
@@ -26,7 +20,7 @@ export const WalletAdapter = {
   },
 
   connectKaspium(address: string) {
-    const normalized = ensureKaspaAddress(address);
+    const normalized = normalizeKaspaAddress(address);
     return { address: normalized, network: DEFAULT_NETWORK, provider: "kaspium" };
   },
 
@@ -47,7 +41,7 @@ export const WalletAdapter = {
 
   // Kaspium currently uses a manual deep-link + txid confirmation flow.
   async sendKaspium(toAddress: string, amountKas: number, note?: string) {
-    ensureKaspaAddress(toAddress);
+    normalizeKaspaAddress(toAddress);
     if(typeof window === "undefined") throw new Error("Kaspium deep-link is only available in browser environments");
 
     const scheme = KASPIUM_DEEP_LINK_SCHEME.endsWith("://") ? KASPIUM_DEEP_LINK_SCHEME : `${KASPIUM_DEEP_LINK_SCHEME}://`;

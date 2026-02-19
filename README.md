@@ -53,6 +53,13 @@ AI settings:
 - `VITE_AI_MODEL`
 - `VITE_ANTHROPIC_API_KEY` (only if calling Anthropic directly from browser)
 
+Kaspa ecosystem references:
+- `https://github.com/K-Kluster/kaspa-js/`
+- `https://github.com/kaspanet/silverscript`
+- `https://kaspa.stream/`
+- `https://kaspa.org/kaspium-v1-0-1-release/`
+- `https://kasware.xyz`
+
 ## How It Works
 1. Connect wallet (Kasware, Kaspium, or demo mode).
 2. Configure and deploy an agent in the wizard.

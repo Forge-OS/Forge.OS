@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { DEFAULT_NETWORK, EXPLORER, KAS_API, NET_FEE, NETWORK_LABEL, RESERVE } from "../../constants";
-import { fmt } from "../../helpers";
+import { fmt, isKaspaAddress } from "../../helpers";
 import { kasBalance, kasUtxos } from "../../api/kaspaApi";
 import { C, mono } from "../../tokens";
 import { WalletAdapter } from "../../wallet/WalletAdapter";
@@ -38,7 +38,7 @@ export function WalletPanel({agent, wallet}: any) {
   const maxSend = Math.max(0, bal-RESERVE-NET_FEE).toFixed(4);
 
   const initiateWithdraw = () => {
-    if(!withdrawTo.startsWith("kaspa:") || parseFloat(withdrawAmt)<=0) return;
+    if(!isKaspaAddress(withdrawTo) || parseFloat(withdrawAmt)<=0) return;
     setSigningTx({type:"WITHDRAW", from:wallet?.address, to:withdrawTo, amount_kas:parseFloat(withdrawAmt), purpose:note || "Withdrawal"});
   };
   const handleSigned = () => {setSigningTx(null); setWithdrawTo(""); setWithdrawAmt(""); setNote("");};
@@ -77,13 +77,13 @@ export function WalletPanel({agent, wallet}: any) {
           <span style={{fontSize:11, color:C.dim, ...mono}}>Available (after {RESERVE} KAS reserve)</span>
           <span style={{fontSize:14, color:C.accent, fontWeight:700, ...mono}}>{maxSend} KAS</span>
         </div>
-        <Inp label="Recipient Address" value={withdrawTo} onChange={setWithdrawTo} placeholder="kaspa:qq..."/>
+        <Inp label="Recipient Address" value={withdrawTo} onChange={setWithdrawTo} placeholder="kaspa:... or kaspatest:..."/>
         <div style={{display:"grid", gridTemplateColumns:"1fr auto", gap:8, alignItems:"flex-end", marginBottom:12}}>
           <Inp label={`Amount (max ${maxSend} KAS)`} value={withdrawAmt} onChange={setWithdrawAmt} type="number" suffix="KAS" placeholder="0.0000"/>
           <Btn onClick={()=>setWithdrawAmt(maxSend)} variant="ghost" size="sm" style={{marginBottom:1}}>MAX</Btn>
         </div>
         <Inp label="Note (optional)" value={note} onChange={setNote} placeholder="e.g. Profit extraction"/>
-        <Btn onClick={initiateWithdraw} disabled={!withdrawTo.startsWith("kaspa:") || parseFloat(withdrawAmt)<=0} style={{width:"100%", padding:"10px 0"}}>
+        <Btn onClick={initiateWithdraw} disabled={!isKaspaAddress(withdrawTo) || parseFloat(withdrawAmt)<=0} style={{width:"100%", padding:"10px 0"}}>
           INITIATE WITHDRAWAL — SIGN WITH {wallet?.provider?.toUpperCase()||"WALLET"}
         </Btn>
       </Card>
