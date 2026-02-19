@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DEFAULT_NETWORK, NETWORK_LABEL } from "./constants";
 import { shortAddr } from "./helpers";
 import { C, mono } from "./tokens";
 import { WalletGate } from "./components/WalletGate";
@@ -13,6 +14,20 @@ export default function ForgeOS() {
 
   const handleConnect = (session: any) => { setWallet(session); };
   const handleDeploy = (a: any) => { setAgent(a); setView("dashboard"); };
+  const isMainnet = DEFAULT_NETWORK === "mainnet";
+
+  const toggleNetwork = () => {
+    const target = isMainnet ? "testnet-10" : "mainnet";
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("forgeos.network", target);
+      const next = new URL(window.location.href);
+      next.searchParams.set("network", target === "mainnet" ? "mainnet" : "testnet");
+      window.location.assign(next.toString());
+    } catch {
+      // Ignore storage/nav edge cases in embedded browsers.
+    }
+  };
 
   if(!wallet) return <WalletGate onConnect={handleConnect}/>;
 
@@ -26,6 +41,23 @@ export default function ForgeOS() {
           <div style={{fontSize:10, color:C.dim, letterSpacing:"0.08em", ...mono}}>AI-NATIVE FINANCIAL OS · KASPA</div>
         </div>
         <div style={{display:"flex", gap:6, alignItems:"center"}}>
+          <button
+            onClick={toggleNetwork}
+            style={{
+              background: "none",
+              border: `1px solid ${isMainnet ? C.warn : C.ok}`,
+              color: isMainnet ? C.warn : C.ok,
+              padding: "5px 10px",
+              borderRadius: 4,
+              fontSize: 10,
+              cursor: "pointer",
+              letterSpacing: "0.06em",
+              ...mono,
+            }}
+            title="Toggle active Kaspa network profile"
+          >
+            {NETWORK_LABEL.toUpperCase()}
+          </button>
           {!agent && <button onClick={()=>setView("create")} style={{background:view==="create"?C.s2:"none", border:`1px solid ${view==="create"?C.border:"transparent"}`, color:view==="create"?C.text:C.dim, padding:"5px 14px", borderRadius:4, fontSize:11, cursor:"pointer", ...mono}}>NEW AGENT</button>}
           {agent && <button onClick={()=>setView("dashboard")} style={{background:view==="dashboard"?C.s2:"none", border:`1px solid ${view==="dashboard"?C.accent:"transparent"}`, color:view==="dashboard"?C.accent:C.dim, padding:"5px 14px", borderRadius:4, fontSize:11, cursor:"pointer", ...mono}}>{agent.name}</button>}
           <div style={{display:"flex", alignItems:"center", gap:6, padding:"5px 12px", border:`1px solid ${C.border}`, borderRadius:4}}>

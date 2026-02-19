@@ -28,6 +28,60 @@ function safeJsonParse(text: string) {
   }
 }
 
+function toFinite(value: any, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function sanitizeDecision(raw: any, agent: any) {
+  const actionRaw = String(raw?.action || "HOLD").toUpperCase();
+  const action = ["ACCUMULATE", "REDUCE", "HOLD", "REBALANCE"].includes(actionRaw) ? actionRaw : "HOLD";
+
+  const capitalLimit = Math.max(0, toFinite(agent?.capitalLimit, 0));
+  const allocation = clamp(toFinite(raw?.capital_allocation_kas, 0), 0, capitalLimit);
+  const allocationPct =
+    capitalLimit > 0 ? clamp((allocation / capitalLimit) * 100, 0, 100) : clamp(toFinite(raw?.capital_allocation_pct, 0), 0, 100);
+
+  const confidence = clamp(toFinite(raw?.confidence_score, 0), 0, 1);
+  const risk = clamp(toFinite(raw?.risk_score, 1), 0, 1);
+
+  const volatilityRaw = String(raw?.volatility_estimate || "MEDIUM").toUpperCase();
+  const volatility = ["LOW", "MEDIUM", "HIGH"].includes(volatilityRaw) ? volatilityRaw : "MEDIUM";
+
+  const liquidityRaw = String(raw?.liquidity_impact || "MODERATE").toUpperCase();
+  const liquidity = ["MINIMAL", "MODERATE", "SIGNIFICANT"].includes(liquidityRaw) ? liquidityRaw : "MODERATE";
+
+  const phaseRaw = String(raw?.strategy_phase || "HOLDING").toUpperCase();
+  const phase = ["ENTRY", "SCALING", "HOLDING", "EXIT"].includes(phaseRaw) ? phaseRaw : "HOLDING";
+
+  const riskFactors = Array.isArray(raw?.risk_factors)
+    ? raw.risk_factors.map((v: any) => String(v)).filter(Boolean).slice(0, 5)
+    : [];
+
+  return {
+    action,
+    confidence_score: confidence,
+    risk_score: risk,
+    kelly_fraction: clamp(toFinite(raw?.kelly_fraction, 0), 0, 1),
+    capital_allocation_kas: Number(allocation.toFixed(6)),
+    capital_allocation_pct: Number(allocationPct.toFixed(2)),
+    expected_value_pct: Number(toFinite(raw?.expected_value_pct, 0).toFixed(2)),
+    stop_loss_pct: Number(Math.max(0, toFinite(raw?.stop_loss_pct, 0)).toFixed(2)),
+    take_profit_pct: Number(Math.max(0, toFinite(raw?.take_profit_pct, 0)).toFixed(2)),
+    monte_carlo_win_pct: Number(clamp(toFinite(raw?.monte_carlo_win_pct, 0), 0, 100).toFixed(2)),
+    volatility_estimate: volatility,
+    liquidity_impact: liquidity,
+    strategy_phase: phase,
+    rationale: String(raw?.rationale || "No rationale returned by AI engine."),
+    risk_factors: riskFactors,
+    next_review_trigger: String(raw?.next_review_trigger || "On next cycle or major DAA/price movement."),
+  };
+}
+
 export async function runQuantEngine(agent: any, kasData: any) {
   const prompt = `You are a quant-grade AI financial agent operating on the Kaspa blockchain. You use adversarial financial reasoning. Respond ONLY with a valid JSON object — no markdown, no prose, no code fences.
 
@@ -100,10 +154,10 @@ OUTPUT (strict JSON, all fields required):
   // Anthropic shape
   if(Array.isArray(data?.content)) {
     const text = data.content.map((b: any) => b.text || "").join("");
-    return safeJsonParse(text.replace(/```json|```/g, "").trim());
+    return sanitizeDecision(safeJsonParse(text.replace(/```json|```/g, "").trim()), agent);
   }
 
   // Backend-proxy shape: { decision: {...} } or direct JSON decision object.
-  if(data?.decision) return data.decision;
-  return data;
+  if(data?.decision) return sanitizeDecision(data.decision, agent);
+  return sanitizeDecision(data, agent);
 }

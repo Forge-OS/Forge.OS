@@ -44,6 +44,13 @@ jobs:
           VITE_KAS_NETWORK_LABEL: ${{ vars.VITE_KAS_NETWORK_LABEL || 'Kaspa Testnet 10' }}
           VITE_KAS_WS_URL: ${{ vars.VITE_KAS_WS_URL || '' }}
           VITE_KAS_ENFORCE_WALLET_NETWORK: ${{ vars.VITE_KAS_ENFORCE_WALLET_NETWORK || 'true' }}
+          VITE_ACCUMULATE_ONLY: ${{ vars.VITE_ACCUMULATE_ONLY || 'true' }}
+          VITE_TREASURY_ADDRESS_MAINNET: ${{ vars.VITE_TREASURY_ADDRESS_MAINNET || 'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85' }}
+          VITE_TREASURY_ADDRESS_TESTNET: ${{ vars.VITE_TREASURY_ADDRESS_TESTNET || 'kaspatest:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85' }}
+          VITE_ACCUMULATION_ADDRESS_MAINNET: ${{ vars.VITE_ACCUMULATION_ADDRESS_MAINNET || vars.VITE_TREASURY_ADDRESS_MAINNET || 'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85' }}
+          VITE_ACCUMULATION_ADDRESS_TESTNET: ${{ vars.VITE_ACCUMULATION_ADDRESS_TESTNET || vars.VITE_TREASURY_ADDRESS_TESTNET || 'kaspatest:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85' }}
+          VITE_FEE_RATE: ${{ vars.VITE_FEE_RATE || '0.20' }}
+          VITE_TREASURY_SPLIT: ${{ vars.VITE_TREASURY_SPLIT || '0.30' }}
         run: npm run build
 
       - name: Write CNAME (optional)

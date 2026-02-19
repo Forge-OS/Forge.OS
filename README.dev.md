@@ -74,11 +74,22 @@ Kaspa network:
 - `VITE_KAS_WS_URL`
 - `VITE_KASPIUM_DEEP_LINK_SCHEME`
 - `VITE_KAS_ENFORCE_WALLET_NETWORK`
+- `VITE_ACCUMULATE_ONLY`
+- `VITE_TREASURY_ADDRESS_MAINNET`
+- `VITE_TREASURY_ADDRESS_TESTNET`
+- `VITE_ACCUMULATION_ADDRESS_MAINNET`
+- `VITE_ACCUMULATION_ADDRESS_TESTNET`
+- `VITE_FEE_RATE`
+- `VITE_TREASURY_SPLIT`
 
 AI engine:
 - `VITE_AI_API_URL` (default: Anthropic Messages API)
 - `VITE_AI_MODEL`
 - `VITE_ANTHROPIC_API_KEY` (required when calling Anthropic directly)
+
+Runtime override:
+- Append `?network=mainnet` or `?network=testnet` to force a network profile without rebuilding.
+- The app persists active selection in local storage key `forgeos.network`.
 
 ## How To Use
 1. Launch app with `npm run dev`.
@@ -114,6 +125,7 @@ AI engine:
 - Kaspium send path:
 - deep-link generated from `KASPIUM_DEEP_LINK_SCHEME` with `kaspa:` URI fallback
 - app prompts user to paste broadcast `txid`
+- `txid` format is validated before acceptance
 - Demo mode:
 - simulates transaction signatures/txids locally
 
@@ -121,12 +133,14 @@ AI engine:
 - `manual`: every action requires signature
 - `autonomous`: auto-signs actions below threshold; above threshold queues for manual sign
 - `notify`: decisions generated, no execution broadcast
+- `accumulate-only`: when `VITE_ACCUMULATE_ONLY=true`, non-accumulate actions are forced to hold
 
 ## Fee Routing
 Defined in `src/constants.ts`:
-- `FEE_RATE = 0.20`
-- `TREASURY_SPLIT = 0.30`
-- `AGENT_SPLIT = 0.70`
+- `FEE_RATE` (env: `VITE_FEE_RATE`, default `0.20`)
+- `TREASURY_SPLIT` (env: `VITE_TREASURY_SPLIT`, default `0.30`)
+- `AGENT_SPLIT = 1 - TREASURY_SPLIT`
+- Treasury and accumulation addresses are network-specific via env vars.
 
 Dashboard logs and treasury panel display split accounting each cycle.
 
@@ -142,6 +156,7 @@ Dashboard logs and treasury panel display split accounting each cycle.
 Recommendation for production:
 - Keep AI keys server-side.
 - Route AI requests through backend proxy.
+- Keep decision sanitization enabled (default) and enforce wallet-side signing.
 
 ## Kaspa Data Sources
 `src/api/kaspaApi.ts` uses:

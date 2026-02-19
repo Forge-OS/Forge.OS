@@ -23,6 +23,10 @@ function parseKaswareTxid(payload: any) {
   return payload?.txid || payload?.hash || payload?.transactionId || "";
 }
 
+function isLikelyTxid(value: string) {
+  return /^[a-fA-F0-9]{64}$/.test(String(value || "").trim());
+}
+
 export const WalletAdapter = {
   detect() {
     const kasware = typeof window !== "undefined" ? (window as any).kasware : undefined;
@@ -92,7 +96,7 @@ export const WalletAdapter = {
     }
 
     const txid = parseKaswareTxid(payload);
-    if (!txid) {
+    if (!txid || !isLikelyTxid(txid)) {
       throw new Error("Kasware did not return a transaction id");
     }
     return txid;
@@ -122,6 +126,7 @@ export const WalletAdapter = {
       `Complete transfer in Kaspium and paste txid.\nDeep link:\n${deepLink}\n\nFallback URI:\n${kaspaUri}`
     );
     if(!txid) throw new Error("Transaction not confirmed. No txid provided.");
+    if(!isLikelyTxid(txid)) throw new Error("Invalid txid format. Expected a 64-char hex transaction id.");
 
     return txid.trim();
   },

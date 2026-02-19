@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
-import { AGENT_SPLIT, CONF_THRESHOLD, FEE_RATE, KAS_WS_URL, TREASURY, TREASURY_SPLIT } from "../../constants";
+import {
+  ACCUMULATE_ONLY,
+  ACCUMULATION_VAULT,
+  AGENT_SPLIT,
+  CONF_THRESHOLD,
+  FEE_RATE,
+  KAS_WS_URL,
+  NET_FEE,
+  RESERVE,
+  TREASURY_SPLIT,
+} from "../../constants";
 import { kasBalance, kasNetworkInfo } from "../../api/kaspaApi";
 import { fmtT, shortAddr, uid } from "../../helpers";
 import { runQuantEngine } from "../../quant/runQuantEngine";
 import { LOG_COL, seedLog } from "../../log/seedLog";
 import { C, mono } from "../../tokens";
+import { WalletAdapter } from "../../wallet/WalletAdapter";
 import { SigningModal } from "../SigningModal";
 import { Badge, Btn, Card, Label } from "../ui";
 import { EXEC_OPTS } from "../wizard/constants";
@@ -94,10 +105,17 @@ export function Dashboard({agent, wallet}: any) {
     addLog({type:"DATA", msg:`Kaspa DAG snapshot: DAA ${kasData?.dag?.daaScore||"—"} · Wallet ${kasData?.walletKas||"—"} KAS`, fee:null});
     try{
       const dec = await runQuantEngine(agent, kasData||{});
+      if (ACCUMULATE_ONLY && !["ACCUMULATE", "HOLD"].includes(dec.action)) {
+        dec.action = "HOLD";
+        dec.rationale = `${String(dec.rationale || "")} Execution constrained by accumulate-only mode.`.trim();
+      }
+
       addLog({type:"AI", msg:`${dec.action} · Conf ${dec.confidence_score} · Kelly ${(dec.kelly_fraction*100).toFixed(1)}% · Monte Carlo ${dec.monte_carlo_win_pct}% win`, fee:0.12});
 
       const confOk = dec.confidence_score>=CONF_THRESHOLD;
       const riskOk = dec.risk_score<=riskThresh;
+      const liveKas = Number(kasData?.walletKas || 0);
+      const availableToSpend = Math.max(0, liveKas - RESERVE - NET_FEE);
 
       if(!riskOk){
         addLog({type:"VALID", msg:`Risk gate FAILED — score ${dec.risk_score} > ${riskThresh} ceiling`, fee:null});
@@ -105,20 +123,56 @@ export function Dashboard({agent, wallet}: any) {
       } else if(!confOk){
         addLog({type:"VALID", msg:`Confidence ${dec.confidence_score} < ${CONF_THRESHOLD} threshold`, fee:null});
         addLog({type:"EXEC", msg:"HOLD — confidence gate enforced", fee:0.08});
+      } else if (dec.action === "ACCUMULATE" && availableToSpend <= 0) {
+        addLog({type:"VALID", msg:`Insufficient spendable balance after reserve (${RESERVE} KAS + ${NET_FEE} KAS network fee).`, fee:null});
+        addLog({type:"EXEC", msg:"HOLD — waiting for available balance", fee:0.03});
       } else {
         addLog({type:"VALID", msg:`Risk OK (${dec.risk_score}) · Conf OK (${dec.confidence_score}) · Kelly ${(dec.kelly_fraction*100).toFixed(1)}%`, fee:null});
         setDecisions((p: any)=>[{ts:Date.now(), dec, kasData}, ...p]);
 
         if(dec.action!=="HOLD"){
-          const txItem = {id:uid(), type:dec.action, from:wallet?.address, to:TREASURY, amount_kas:dec.capital_allocation_kas, purpose:dec.rationale.slice(0,60), status:"pending", ts:Date.now(), dec};
+          const requested = Number(dec.capital_allocation_kas || 0);
+          const amountKas = dec.action === "ACCUMULATE" ? Math.min(requested, availableToSpend) : requested;
+          if (requested > amountKas) {
+            addLog({type:"SYSTEM", msg:`Clamped execution amount from ${requested} to ${amountKas.toFixed(4)} KAS (available balance guardrail).`, fee:null});
+          }
+          if (!(amountKas > 0)) {
+            addLog({type:"EXEC", msg:"HOLD — computed execution amount is zero", fee:0.03});
+            setLoading(false);
+            return;
+          }
+          const txItem = {
+            id:uid(),
+            type:dec.action,
+            from:wallet?.address,
+            to:ACCUMULATION_VAULT,
+            amount_kas:Number(amountKas.toFixed(6)),
+            purpose:dec.rationale.slice(0,60),
+            status:"pending",
+            ts:Date.now(),
+            dec
+          };
           const isAutoApprove = execMode==="autonomous" && dec.capital_allocation_kas<=autoThresh;
           if(isAutoApprove){
-            // Auto-sign simulation
-            await new Promise(r=>setTimeout(r,400));
-            const txid = Array.from({length:64},()=>"0123456789abcdef"[Math.floor(Math.random()*16)]).join("");
-            addLog({type:"EXEC", msg:`AUTO-APPROVED: ${dec.action} · ${dec.capital_allocation_kas} KAS · txid: ${txid.slice(0,16)}...`, fee:0.08});
-            addLog({type:"TREASURY", msg:`Fee split → Pool: ${(FEE_RATE*AGENT_SPLIT).toFixed(4)} KAS / Treasury: ${(FEE_RATE*TREASURY_SPLIT).toFixed(4)} KAS`, fee:FEE_RATE});
-            setQueue((p: any)=>[{...txItem, status:"signed", txid}, ...p]);
+            try {
+              let txid = "";
+              if(wallet?.provider === "kasware") {
+                txid = await WalletAdapter.sendKasware(txItem.to, txItem.amount_kas);
+              } else if(wallet?.provider === "kaspium") {
+                txid = await WalletAdapter.sendKaspium(txItem.to, txItem.amount_kas, txItem.purpose);
+              } else {
+                // Demo mode fallback only.
+                await new Promise(r=>setTimeout(r,400));
+                txid = Array.from({length:64},()=>"0123456789abcdef"[Math.floor(Math.random()*16)]).join("");
+              }
+
+              addLog({type:"EXEC", msg:`AUTO-APPROVED: ${dec.action} · ${dec.capital_allocation_kas} KAS · txid: ${txid.slice(0,16)}...`, fee:0.08});
+              addLog({type:"TREASURY", msg:`Fee split → Pool: ${(FEE_RATE*AGENT_SPLIT).toFixed(4)} KAS / Treasury: ${(FEE_RATE*TREASURY_SPLIT).toFixed(4)} KAS`, fee:FEE_RATE});
+              setQueue((p: any)=>[{...txItem, status:"signed", txid}, ...p]);
+            } catch (e: any) {
+              setQueue((p: any)=>[txItem, ...p]);
+              addLog({type:"SIGN", msg:`Auto-approve fallback to manual queue: ${e?.message || "wallet broadcast failed"}`, fee:null});
+            }
           } else {
             addLog({type:"SIGN", msg:`Action queued for wallet signature: ${dec.action} · ${dec.capital_allocation_kas} KAS`, fee:null});
             setQueue((p: any)=>[txItem, ...p]);
