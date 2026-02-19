@@ -1,8 +1,5 @@
 # Forge.OS
 
-<img width="606" height="784" alt="Screenshot 2026-02-18 at 7 16 58 PM" src="https://github.com/user-attachments/assets/6c58e3da-748a-4773-9988-dbc7e8d4a1e5" />
-
-
 ForgeOS is a Kaspa-focused, wallet-native AI trading dashboard prototype.
 
 It provides:
@@ -62,6 +59,8 @@ npm run preview
 npm run build
 zip -r forgeos-vX.Y.Z-dist.zip dist
 ```
+<img width="606" height="784" alt="Screenshot 2026-02-18 at 7 16 58 PM" src="https://github.com/user-attachments/assets/022b24ed-a079-4dc1-a51c-eaca2ea5ea68" />
+
 
 Use `GITHUB_RELEASE_TEMPLATE.md` when publishing a GitHub release.
 
