@@ -5,6 +5,7 @@ export const EXPLORER = env.VITE_KAS_EXPLORER || "https://explorer.kaspa.org";
 export const DEFAULT_NETWORK = env.VITE_KAS_NETWORK || "kaspa_testnet_10";
 export const NETWORK_LABEL = env.VITE_KAS_NETWORK_LABEL || "Kaspa Testnet 10";
 export const KAS_WS_URL = env.VITE_KAS_WS_URL || "";
+export const KASPIUM_DEEP_LINK_SCHEME = env.VITE_KASPIUM_DEEP_LINK_SCHEME || "kaspium://";
 
 export const TREASURY = "kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85";
 export const FEE_RATE = 0.20;           // KAS per execution cycle

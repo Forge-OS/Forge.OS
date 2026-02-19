@@ -15,6 +15,8 @@ export function SigningModal({tx, wallet, onSign, onReject}: any) {
       let txid;
       if(wallet?.provider === "kasware") {
         txid = await WalletAdapter.sendKasware(tx.to, tx.amount_kas);
+      } else if(wallet?.provider === "kaspium") {
+        txid = await WalletAdapter.sendKaspium(tx.to, tx.amount_kas, tx.purpose);
       } else {
         // Simulate for demo/non-extension environments
         await new Promise(r=>setTimeout(r,1200));
@@ -30,7 +32,7 @@ export function SigningModal({tx, wallet, onSign, onReject}: any) {
       <Card p={28} style={{maxWidth:480, width:"100%", border:`1px solid ${C.warn}40`}}>
         <div style={{fontSize:14, color:C.warn, fontWeight:700, ...mono, marginBottom:4}}>⚠ TRANSACTION SIGNING REQUIRED</div>
         <div style={{fontSize:12, color:C.dim, marginBottom:18}}>
-          {wallet?.provider==="kasware" ? "Kasware will prompt you to sign." : "Confirm this transaction to proceed."}
+          {wallet?.provider==="kasware" ? "Kasware will prompt you to sign." : wallet?.provider==="kaspium" ? "Kaspium deep-link will open; paste txid after broadcast." : "Confirm this transaction to proceed."}
         </div>
         <Card p={0} style={{marginBottom:16}}>
           {[
