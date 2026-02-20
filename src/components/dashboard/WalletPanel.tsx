@@ -32,14 +32,22 @@ export function WalletPanel({agent, wallet}: any) {
     setLoading(false);
   },[wallet,agent]);
 
-  useEffect(()=>{refresh();},[]);
+  useEffect(()=>{refresh();},[refresh]);
 
   const bal = parseFloat(liveKas ?? agent.capitalLimit ?? 0);
-  const maxSend = Math.max(0, bal-RESERVE-NET_FEE).toFixed(4);
+  const maxSendKas = Math.max(0, bal - RESERVE - NET_FEE);
+  const maxSend = maxSendKas.toFixed(4);
 
   const initiateWithdraw = () => {
-    if(!isKaspaAddress(withdrawTo, ALLOWED_ADDRESS_PREFIXES) || parseFloat(withdrawAmt)<=0) return;
-    setSigningTx({type:"WITHDRAW", from:wallet?.address, to:withdrawTo, amount_kas:parseFloat(withdrawAmt), purpose:note || "Withdrawal"});
+    const requested = Number(withdrawAmt);
+    if(!isKaspaAddress(withdrawTo, ALLOWED_ADDRESS_PREFIXES) || !(requested > 0) || requested > maxSendKas) return;
+    setSigningTx({
+      type:"WITHDRAW",
+      from:wallet?.address,
+      to:withdrawTo,
+      amount_kas:Number(requested.toFixed(6)),
+      purpose:note || "Withdrawal",
+    });
   };
   const handleSigned = () => {setSigningTx(null); setWithdrawTo(""); setWithdrawAmt(""); setNote("");};
 
@@ -83,9 +91,22 @@ export function WalletPanel({agent, wallet}: any) {
           <Btn onClick={()=>setWithdrawAmt(maxSend)} variant="ghost" size="sm" style={{marginBottom:1}}>MAX</Btn>
         </div>
         <Inp label="Note (optional)" value={note} onChange={setNote} placeholder="e.g. Profit extraction"/>
-        <Btn onClick={initiateWithdraw} disabled={!isKaspaAddress(withdrawTo, ALLOWED_ADDRESS_PREFIXES) || parseFloat(withdrawAmt)<=0} style={{width:"100%", padding:"10px 0"}}>
+        <Btn
+          onClick={initiateWithdraw}
+          disabled={
+            !isKaspaAddress(withdrawTo, ALLOWED_ADDRESS_PREFIXES) ||
+            !(Number(withdrawAmt) > 0) ||
+            Number(withdrawAmt) > maxSendKas
+          }
+          style={{width:"100%", padding:"10px 0"}}
+        >
           INITIATE WITHDRAWAL — SIGN WITH {wallet?.provider?.toUpperCase()||"WALLET"}
         </Btn>
+        {Number(withdrawAmt || 0) > maxSendKas && (
+          <div style={{fontSize:11, color:C.warn, marginTop:6, ...mono}}>
+            Requested withdrawal exceeds available amount after reserve and network fee.
+          </div>
+        )}
       </Card>
 
       {/* Deposit */}

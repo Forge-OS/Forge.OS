@@ -103,7 +103,7 @@ AI settings:
 
 ## Overnight Go-Live + Domain
 1. Push to `main` to trigger deploy.
-2. Domain is committed in `public/CNAME` (`forge-us.xyz`) and auto-copied into deploy artifacts.
+2. Domain is committed in `public/CNAME` (`forge-os.xyz`) and auto-copied into deploy artifacts.
 3. In DNS provider, set records for root domain hosting on GitHub Pages:
 - `A` -> `185.199.108.153`
 - `A` -> `185.199.109.153`
@@ -115,11 +115,12 @@ AI settings:
 - `AAAA` -> `2606:50c0:8003::153`
 4. Optional `www` support:
 - `CNAME` `www` -> `gryszzz.github.io`
-5. In GitHub repo Settings -> Pages, set Custom domain to `forge-us.xyz` and enable `Enforce HTTPS`.
-6. Re-run `Deploy ForgeOS to GitHub Pages` workflow.
-7. Verify:
+5. Keep repo variable `GH_PAGES_CNAME` either empty or exactly `forge-os.xyz` (workflow now prefers `public/CNAME` and warns on mismatch).
+6. In GitHub repo Settings -> Pages, set Custom domain to `forge-os.xyz` and enable `Enforce HTTPS`.
+7. Re-run `Deploy ForgeOS to GitHub Pages` workflow.
+8. Verify:
 - `https://gryszzz.github.io/Forge.OS/`
-- `https://forge-us.xyz` (after DNS propagation)
+- `https://forge-os.xyz` (after DNS propagation)
 
 If GitHub shows `InvalidDNSError`, use the runbook:
 - `docs/ops/custom-domain.md`

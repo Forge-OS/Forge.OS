@@ -71,6 +71,7 @@ export function Dashboard({agent, wallet}: any) {
     const id = setInterval(refreshKasData, LIVE_POLL_MS);
 
     let ws: WebSocket | null = null;
+    let wsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
     if(KAS_WS_URL){
       ws = new WebSocket(KAS_WS_URL);
 
@@ -79,7 +80,12 @@ export function Dashboard({agent, wallet}: any) {
       };
 
       ws.onmessage = ()=>{
-        refreshKasData();
+        // Keep websocket-triggered refreshes bounded to avoid API flood under bursty feeds.
+        if (wsRefreshTimer) return;
+        wsRefreshTimer = setTimeout(() => {
+          wsRefreshTimer = null;
+          refreshKasData();
+        }, 1200);
       };
 
       ws.onerror = ()=>{
@@ -93,6 +99,10 @@ export function Dashboard({agent, wallet}: any) {
 
     return ()=>{
       clearInterval(id);
+      if (wsRefreshTimer) {
+        clearTimeout(wsRefreshTimer);
+        wsRefreshTimer = null;
+      }
       if(ws){
         ws.close();
       }
@@ -214,6 +224,10 @@ export function Dashboard({agent, wallet}: any) {
 
   const handleQueueSign = (item: any) => { setSigningItem(item); };
   const handleQueueReject = (id: string) => { setQueue((p: any)=>p.map((q: any)=>q.id===id?{...q,status:"rejected"}:q)); addLog({type:"SIGN", msg:`Transaction rejected by operator: ${id}`, fee:null}); };
+  const handleSigningReject = () => {
+    if (signingItem?.id) handleQueueReject(signingItem.id);
+    setSigningItem(null);
+  };
   const handleSigned = (tx: any) => {
     setQueue((p: any)=>p.map((q: any)=>q.id===signingItem?.id?{...q,status:"signed",txid:tx.txid}:q));
     addLog({type:"EXEC", msg:`SIGNED: ${signingItem?.type} · ${signingItem?.amount_kas} KAS · txid: ${tx.txid?.slice(0,16)}...`, fee:0.08});
@@ -221,7 +235,12 @@ export function Dashboard({agent, wallet}: any) {
     setSigningItem(null);
   };
 
-  const killSwitch = () => {setStatus("SUSPENDED"); addLog({type:"SYSTEM", msg:"KILL-SWITCH activated — agent suspended. All pending actions cancelled.", fee:null}); setQueue((p: any)=>p.map((q: any)=>q.status==="pending"?{...q,status:"rejected"}:q));};
+  const killSwitch = () => {
+    setStatus("SUSPENDED");
+    addLog({type:"SYSTEM", msg:"KILL-SWITCH activated — agent suspended. All pending actions cancelled.", fee:null});
+    setQueue((p: any)=>p.map((q: any)=>q.status==="pending"?{...q,status:"rejected"}:q));
+    setSigningItem(null);
+  };
 
   const pendingCount = queue.filter((q: any)=>q.status==="pending").length;
   const totalFees = parseFloat(log.filter((l: any)=>l.fee).reduce((s: number, l: any)=>s+(l.fee||0),0).toFixed(4));
@@ -229,7 +248,7 @@ export function Dashboard({agent, wallet}: any) {
 
   return(
     <div style={{maxWidth:1080, margin:"0 auto", padding:isMobile ? "14px 14px" : "18px 20px"}}>
-      {signingItem && <SigningModal tx={signingItem} wallet={wallet} onSign={handleSigned} onReject={()=>setSigningItem(null)}/>}
+      {signingItem && <SigningModal tx={signingItem} wallet={wallet} onSign={handleSigned} onReject={handleSigningReject}/>}
 
       {/* Header */}
       <div style={{display:"flex", flexDirection:isMobile ? "column" : "row", justifyContent:"space-between", alignItems:isMobile ? "stretch" : "flex-start", marginBottom:16, gap:isMobile ? 10 : 0}}>

@@ -22,8 +22,9 @@ body {
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
   background:
     radial-gradient(1200px 520px at 85% -6%, rgba(57, 221, 182, 0.13), transparent 62%),
-    radial-gradient(900px 460px at 10% -10%, rgba(143, 123, 255, 0.11), transparent 62%),
+    radial-gradient(900px 460px at 10% -10%, rgba(69, 151, 255, 0.1), transparent 62%),
     linear-gradient(180deg, #05070a 0%, #071017 100%);
+  animation: forgeBgPulse 14s ease-in-out infinite alternate;
 }
 
 /* Subtle grid to improve depth on large panels without visual clutter */
@@ -37,6 +38,12 @@ body::before {
     linear-gradient(to bottom, var(--forge-grid) 1px, transparent 1px);
   background-size: 34px 34px;
   mask-image: radial-gradient(circle at 50% 30%, black 24%, transparent 72%);
+}
+
+#root {
+  position: relative;
+  isolation: isolate;
+  animation: forgeFadeIn 280ms ease-out;
 }
 
 button,
@@ -65,3 +72,29 @@ input:focus-visible {
   background: #0b1118;
 }
 
+@keyframes forgeFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes forgeBgPulse {
+  from {
+    filter: saturate(96%);
+  }
+  to {
+    filter: saturate(108%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body,
+  #root {
+    animation: none;
+  }
+}

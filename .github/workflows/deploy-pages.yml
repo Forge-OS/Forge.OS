@@ -66,12 +66,16 @@ jobs:
         env:
           GH_PAGES_CNAME: ${{ vars.GH_PAGES_CNAME }}
         run: |
-          if [ -n "${GH_PAGES_CNAME}" ]; then
-            echo "${GH_PAGES_CNAME}" > dist/CNAME
-            echo "Configured custom domain: ${GH_PAGES_CNAME}"
-          elif [ -f public/CNAME ]; then
+          if [ -f public/CNAME ]; then
             cp public/CNAME dist/CNAME
-            echo "Configured custom domain from public/CNAME"
+            FILE_DOMAIN="$(tr -d '[:space:]' < public/CNAME)"
+            echo "Configured custom domain from public/CNAME: ${FILE_DOMAIN}"
+            if [ -n "${GH_PAGES_CNAME}" ] && [ "${GH_PAGES_CNAME}" != "${FILE_DOMAIN}" ]; then
+              echo "::warning::GH_PAGES_CNAME (${GH_PAGES_CNAME}) differs from public/CNAME (${FILE_DOMAIN}). Using public/CNAME."
+            fi
+          elif [ -n "${GH_PAGES_CNAME}" ]; then
+            echo "${GH_PAGES_CNAME}" > dist/CNAME
+            echo "Configured custom domain from GH_PAGES_CNAME: ${GH_PAGES_CNAME}"
           else
             echo "No GH_PAGES_CNAME configured; skipping CNAME"
           fi

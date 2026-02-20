@@ -1,4 +1,4 @@
-import { AGENT_SPLIT, EXPLORER, TREASURY_SPLIT } from "../../constants";
+import { AGENT_SPLIT, EXPLORER, FEE_RATE, TREASURY_SPLIT } from "../../constants";
 import { fmtT, shortAddr } from "../../helpers";
 import { C, mono } from "../../tokens";
 import { Badge, Btn, Card, ExtLink } from "../ui";
@@ -28,7 +28,7 @@ export function ActionQueue({queue, wallet, onSign, onReject}: any) {
           </div>
           <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:item.status==="pending"?12:0, fontSize:12, color:C.dim, ...mono}}>
             <div>To: <span style={{color:C.text}}>{shortAddr(item.to)}</span></div>
-            <div>Fee split: <span style={{color:C.text}}>Pool {(item.amount_kas*AGENT_SPLIT).toFixed(4)} / Treasury {(item.amount_kas*TREASURY_SPLIT).toFixed(4)}</span></div>
+            <div>Fee split: <span style={{color:C.text}}>Pool {(FEE_RATE*AGENT_SPLIT).toFixed(4)} / Treasury {(FEE_RATE*TREASURY_SPLIT).toFixed(4)}</span></div>
           </div>
           {item.status==="pending" && (
             <div style={{display:"flex", gap:8}}>
