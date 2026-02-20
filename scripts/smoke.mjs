@@ -28,6 +28,32 @@ if(!existsSync(`dist/${entry}`)) {
 
 const cssAssets = new Set();
 for (const value of Object.values(manifest || {})) {
+  const file = value?.file;
+  if (typeof file === "string" && file.length > 0) {
+    if (!existsSync(`dist/${file}`)) {
+      console.error(`[smoke] Manifest file missing on disk: dist/${file}`);
+      process.exit(1);
+    }
+  }
+
+  if (Array.isArray(value?.imports)) {
+    for (const importKey of value.imports) {
+      if (!manifest?.[importKey]) {
+        console.error(`[smoke] Manifest import key missing: ${importKey}`);
+        process.exit(1);
+      }
+    }
+  }
+
+  if (Array.isArray(value?.dynamicImports)) {
+    for (const importKey of value.dynamicImports) {
+      if (!manifest?.[importKey]) {
+        console.error(`[smoke] Manifest dynamic import key missing: ${importKey}`);
+        process.exit(1);
+      }
+    }
+  }
+
   const files = value?.css;
   if (!Array.isArray(files)) continue;
   for (const file of files) cssAssets.add(file);
