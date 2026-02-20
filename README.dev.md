@@ -104,6 +104,11 @@ AI engine:
 - `VITE_ANTHROPIC_API_KEY` (required when calling Anthropic directly)
 - `VITE_AI_FALLBACK_ENABLED` (`true` by default; deterministic conservative fallback if upstream AI is unavailable)
 
+Monetization / quota:
+- `VITE_FREE_CYCLES_PER_DAY` (free cycle limit, default `30`)
+- `VITE_BILLING_UPGRADE_URL` (checkout URL used by billing panel CTA)
+- `VITE_BILLING_CONTACT` (support label shown in billing panel)
+
 Runtime override:
 - Append `?network=mainnet` or `?network=testnet` to force a network profile without rebuilding.
 - The app persists active selection in local storage key `forgeos.network`.

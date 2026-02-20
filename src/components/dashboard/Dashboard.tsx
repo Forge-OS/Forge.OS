@@ -3,9 +3,11 @@ import {
   ACCUMULATE_ONLY,
   ACCUMULATION_VAULT,
   AGENT_SPLIT,
+  BILLING_UPGRADE_URL,
   CONF_THRESHOLD,
   EXPLORER,
   FEE_RATE,
+  FREE_CYCLES_PER_DAY,
   KAS_WS_URL,
   NETWORK_LABEL,
   NET_FEE,
@@ -18,10 +20,12 @@ import { runQuantEngine } from "../../quant/runQuantEngine";
 import { LOG_COL, seedLog } from "../../log/seedLog";
 import { C, mono } from "../../tokens";
 import { WalletAdapter } from "../../wallet/WalletAdapter";
+import { consumeUsageCycle, getUsageState } from "../../runtime/usageQuota";
 import { SigningModal } from "../SigningModal";
 import { Badge, Btn, Card, ExtLink, Label } from "../ui";
 import { EXEC_OPTS } from "../wizard/constants";
 import { ActionQueue } from "./ActionQueue";
+import { BillingPanel } from "./BillingPanel";
 import { WalletPanel } from "./WalletPanel";
 
 const PerfChart = lazy(() => import("./PerfChart").then((m) => ({ default: m.PerfChart })));
@@ -49,6 +53,7 @@ export function Dashboard({agent, wallet}: any) {
   const [liveConnected, setLiveConnected] = useState(false);
   const [streamConnected, setStreamConnected] = useState(false);
   const [streamRetryCount, setStreamRetryCount] = useState(0);
+  const [usage, setUsage] = useState(() => getUsageState(FREE_CYCLES_PER_DAY));
   const [viewportWidth, setViewportWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1200
   );
@@ -192,6 +197,18 @@ export function Dashboard({agent, wallet}: any) {
     }
     setLoading(true);
     addLog({type:"DATA", msg:`Kaspa DAG snapshot: DAA ${kasData?.dag?.daaScore||"—"} · Wallet ${kasData?.walletKas||"—"} KAS`, fee:null});
+    const usageAfterConsume = consumeUsageCycle(FREE_CYCLES_PER_DAY);
+    setUsage(usageAfterConsume);
+    if (usageAfterConsume.locked) {
+      setLoading(false);
+      setTab("billing");
+      addLog({
+        type:"SYSTEM",
+        msg:`Daily free cycle quota reached (${usageAfterConsume.used}/${usageAfterConsume.limit}). Upgrade required for additional runs.`,
+        fee:null,
+      });
+      return;
+    }
     try{
       const dec = await runQuantEngine(agent, kasData||{});
       const decSource = dec?.decision_source === "fallback" ? "fallback" : "ai";
@@ -325,7 +342,7 @@ export function Dashboard({agent, wallet}: any) {
         : "STREAM DOWN"
     : "STREAM OFF";
   const streamBadgeColor = KAS_WS_URL ? (streamConnected ? C.ok : C.warn) : C.dim;
-  const TABS = [{k:"overview",l:"OVERVIEW"},{k:"intelligence",l:"INTELLIGENCE"},{k:"queue",l:`QUEUE${pendingCount>0?` (${pendingCount})`:""}`},{k:"treasury",l:"TREASURY"},{k:"wallet",l:"WALLET"},{k:"log",l:"LOG"},{k:"controls",l:"CONTROLS"}];
+  const TABS = [{k:"overview",l:"OVERVIEW"},{k:"intelligence",l:"INTELLIGENCE"},{k:"queue",l:`QUEUE${pendingCount>0?` (${pendingCount})`:""}`},{k:"treasury",l:"TREASURY"},{k:"wallet",l:"WALLET"},{k:"billing",l:"BILLING"},{k:"log",l:"LOG"},{k:"controls",l:"CONTROLS"}];
 
   return(
     <div style={{maxWidth:1080, margin:"0 auto", padding:isMobile ? "14px 14px" : "18px 20px"}}>
@@ -392,6 +409,7 @@ export function Dashboard({agent, wallet}: any) {
                 <Badge text={status} color={status==="RUNNING"?C.ok:C.warn} dot />
                 <Badge text={execMode.toUpperCase()} color={C.accent} />
                 <Badge text={`SOURCE ${lastDecisionSource.toUpperCase()}`} color={lastDecisionSource === "fallback" ? C.warn : C.ok} />
+                <Badge text={`QUOTA ${usage.used}/${usage.limit}`} color={usage.locked ? C.danger : C.dim} />
               </div>
             </div>
             <div style={{display:"grid", gridTemplateColumns:isTablet ? "1fr" : "1fr 1fr 1fr", gap:8, marginBottom:10}}>
@@ -434,6 +452,21 @@ export function Dashboard({agent, wallet}: any) {
                 <Btn onClick={runCycle} disabled={loading||status!=="RUNNING"} style={{padding:"10px 0"}}>{loading?"PROCESSING...":"RUN QUANT CYCLE"}</Btn>
                 <Btn onClick={refreshKasData} disabled={kasDataLoading} variant="ghost" style={{padding:"9px 0"}}>{kasDataLoading?"FETCHING DAG...":liveConnected?"REFRESH KASPA DATA":KAS_WS_URL?"RECONNECT STREAM/DATA":"RECONNECT KASPA FEED"}</Btn>
                 <Btn onClick={()=>setTab("queue")} variant="ghost" style={{padding:"9px 0"}}>ACTION QUEUE {pendingCount>0?`(${pendingCount})`:""}</Btn>
+                {usage.locked && (
+                  <Btn
+                    onClick={() => {
+                      if (BILLING_UPGRADE_URL) {
+                        window.open(BILLING_UPGRADE_URL, "_blank", "noopener,noreferrer");
+                      } else {
+                        setTab("billing");
+                      }
+                    }}
+                    variant="warn"
+                    style={{padding:"9px 0"}}
+                  >
+                    UPGRADE TO CONTINUE
+                  </Btn>
+                )}
                 <Btn onClick={()=>setStatus((s: string)=>s==="RUNNING"?"PAUSED":"RUNNING")} variant="ghost" style={{padding:"9px 0"}}>{status==="RUNNING"?"PAUSE":"RESUME"}</Btn>
                 <Btn onClick={killSwitch} variant="danger" style={{padding:"9px 0"}}>KILL-SWITCH</Btn>
               </div>
@@ -454,6 +487,7 @@ export function Dashboard({agent, wallet}: any) {
         </Suspense>
       )}
       {tab==="wallet" && <WalletPanel agent={agent} wallet={wallet}/>}
+      {tab==="billing" && <BillingPanel usage={usage} />}
 
       {/* ── LOG ── */}
       {tab==="log" && (

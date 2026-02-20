@@ -82,10 +82,16 @@ AI settings:
 - `VITE_ANTHROPIC_API_KEY` (only if calling Anthropic directly from browser)
 - `VITE_AI_FALLBACK_ENABLED` (default `true`, uses conservative deterministic fallback when AI endpoint is unavailable)
 
+Monetization settings:
+- `VITE_FREE_CYCLES_PER_DAY` (default `30`)
+- `VITE_BILLING_UPGRADE_URL` (hosted checkout or subscription URL)
+- `VITE_BILLING_CONTACT` (support/contact string shown in billing panel)
+
 Runtime reliability defaults:
 - WebSocket stream auto-reconnect with exponential backoff (dashboard shows retry state)
 - Fallback decisions are clearly tagged in UI (`SOURCE FALLBACK`)
 - Auto-approve is disabled on fallback decisions (manual sign path only)
+- Daily free-cycle quota enforced at runtime; billing tab prompts upgrade when quota is exhausted
 
 ## Mainnet/Testnet Runtime Switch
 - Default profile comes from `VITE_KAS_NETWORK`.

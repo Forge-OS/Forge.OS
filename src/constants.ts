@@ -52,6 +52,9 @@ export const AGENT_SPLIT = Number((1 - TREASURY_SPLIT).toFixed(2));    // remain
 export const RESERVE  = 0.50;
 export const NET_FEE  = 0.0002;
 export const CONF_THRESHOLD = 0.75;
+export const FREE_CYCLES_PER_DAY = Number(env.VITE_FREE_CYCLES_PER_DAY || 30);
+export const BILLING_UPGRADE_URL = String(env.VITE_BILLING_UPGRADE_URL || "").trim();
+export const BILLING_CONTACT = String(env.VITE_BILLING_CONTACT || "").trim();
 
 if (!Number.isFinite(FEE_RATE) || FEE_RATE < 0) {
   throw new Error("Invalid VITE_FEE_RATE. Expected a non-negative numeric value.");
@@ -59,4 +62,8 @@ if (!Number.isFinite(FEE_RATE) || FEE_RATE < 0) {
 
 if (!Number.isFinite(TREASURY_SPLIT) || TREASURY_SPLIT < 0 || TREASURY_SPLIT > 1) {
   throw new Error("Invalid VITE_TREASURY_SPLIT. Expected a value between 0 and 1.");
+}
+
+if (!Number.isFinite(FREE_CYCLES_PER_DAY) || FREE_CYCLES_PER_DAY < 1) {
+  throw new Error("Invalid VITE_FREE_CYCLES_PER_DAY. Expected an integer >= 1.");
 }

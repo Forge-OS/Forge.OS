@@ -9,20 +9,28 @@
     <div id="root"></div>
     <script type="module">
       const isLocal = ["localhost", "127.0.0.1"].includes(window.location.hostname);
-      const repoBase = "/Forge.OS";
+      const pathname = window.location.pathname || "/";
+      const currentBase = pathname.endsWith("/") ? pathname : pathname.slice(0, pathname.lastIndexOf("/") + 1);
 
       async function fetchManifest() {
         const candidates = [
-          { url: `${repoBase}/manifest.json`, base: `${repoBase}/` },
-          { url: `${repoBase}/dist/manifest.json`, base: `${repoBase}/dist/` },
+          { url: `${currentBase}manifest.json`, base: currentBase },
+          { url: `${currentBase}dist/manifest.json`, base: `${currentBase}dist/` },
+          { url: "/manifest.json", base: "/" },
+          { url: "/dist/manifest.json", base: "/dist/" },
+          { url: "/Forge.OS/manifest.json", base: "/Forge.OS/" },
+          { url: "/Forge.OS/dist/manifest.json", base: "/Forge.OS/dist/" },
         ];
 
+        const seen = new Set();
         for(const c of candidates) {
+          if (seen.has(c.url)) continue;
+          seen.add(c.url);
           const res = await fetch(c.url, { cache: "no-store" });
           if(res.ok) return { manifest: await res.json(), base: c.base };
         }
 
-        throw new Error("Manifest fetch failed in both Actions and branch deployment paths");
+        throw new Error("Manifest fetch failed in root, dist, and repo-subpath deployment paths");
       }
 
       async function boot() {
@@ -39,7 +47,8 @@
 
         if(!entry) throw new Error("Could not resolve app entry from manifest");
 
-        await import(`${base}${entry}`);
+        const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+        await import(`${normalizedBase}${String(entry).replace(/^\.\//, "")}`);
       }
 
       boot().catch((err) => {
