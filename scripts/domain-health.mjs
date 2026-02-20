@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import dns from "node:dns/promises";
 
-const domain = (process.argv[2] || "forge-us.xyz").toLowerCase();
+const domain = (process.argv[2] || "forge-os.xyz").toLowerCase();
 const alt = (process.argv[3] || `www.${domain}`).toLowerCase();
 
 const GITHUB_PAGES_A = new Set([

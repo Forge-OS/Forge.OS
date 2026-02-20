@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 
-const domain = process.argv[2] || "forge-us.xyz";
+const domain = process.argv[2] || "forge-os.xyz";
 const alt = process.argv[3] || `www.${domain}`;
 const intervalMinutes = Number(process.env.DOMAIN_WATCH_INTERVAL_MINUTES || 10);
 const maxChecks = Number(process.env.DOMAIN_WATCH_MAX_CHECKS || 24);

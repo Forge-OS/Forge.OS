@@ -1,10 +1,10 @@
-# Custom Domain Operations (forge-us.xyz)
+# Custom Domain Operations (forge-os.xyz)
 
 This runbook is for GitHub Pages custom domain cutover and incident response.
 
 ## Target State
-- Root domain: `forge-us.xyz`
-- Alternate name: `www.forge-us.xyz`
+- Root domain: `forge-os.xyz`
+- Alternate name: `www.forge-os.xyz`
 - GitHub Pages project URL remains available: `https://gryszzz.github.io/Forge.OS/`
 
 ## DNS Records (Name.com)
@@ -31,7 +31,7 @@ If Name.com rejects AAAA input, continue with A records and CNAME; IPv4 launch i
 
 ## GitHub Settings
 In repository `Settings -> Pages`:
-1. Custom domain: `forge-us.xyz`
+1. Custom domain: `forge-os.xyz`
 2. Enable `Enforce HTTPS` once certificate is issued.
 
 `public/CNAME` is committed and workflow copies it into `dist/CNAME` automatically.
@@ -75,11 +75,11 @@ If GitHub Pages shows `InvalidDNSError`:
 4. Wait and retry after DNS TTL/registry propagation.
 
 5. If DNS resolves but you get GitHub 404 page ("There isn't a GitHub Pages site here"):
-- Re-save `forge-us.xyz` in GitHub `Settings -> Pages -> Custom domain`.
+- Re-save `forge-os.xyz` in GitHub `Settings -> Pages -> Custom domain`.
 - Wait for cert issuance, then enable `Enforce HTTPS`.
 
 6. If still unresolved after several hours, contact registrar support and ask:
-- “Please confirm delegation for `forge-us.xyz` is published in `.xyz` registry.”
+- “Please confirm delegation for `forge-os.xyz` is published in `.xyz` registry.”
 
 ## Notes
 - This repo’s deploy pipeline automatically switches base path:
