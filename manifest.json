@@ -4,7 +4,7 @@
     "name": "charts-vendor"
   },
   "index.html": {
-    "file": "assets/index-BqSpz0e-.js",
+    "file": "assets/index-CTsW0WPy.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -17,11 +17,11 @@
       "src/components/dashboard/TreasuryPanel.tsx"
     ],
     "css": [
-      "assets/index-9TRxJUe-.css"
+      "assets/index-B-kpPEVn.css"
     ]
   },
   "src/components/dashboard/IntelligencePanel.tsx": {
-    "file": "assets/IntelligencePanel-BYnlHjPS.js",
+    "file": "assets/IntelligencePanel-DMB1n5Ws.js",
     "name": "IntelligencePanel",
     "src": "src/components/dashboard/IntelligencePanel.tsx",
     "isDynamicEntry": true,
@@ -31,7 +31,7 @@
     ]
   },
   "src/components/dashboard/PerfChart.tsx": {
-    "file": "assets/PerfChart-BtjhKs8B.js",
+    "file": "assets/PerfChart-7OvW-qJ9.js",
     "name": "PerfChart",
     "src": "src/components/dashboard/PerfChart.tsx",
     "isDynamicEntry": true,
@@ -41,7 +41,7 @@
     ]
   },
   "src/components/dashboard/TreasuryPanel.tsx": {
-    "file": "assets/TreasuryPanel-DhmES3ui.js",
+    "file": "assets/TreasuryPanel-C57fkp32.js",
     "name": "TreasuryPanel",
     "src": "src/components/dashboard/TreasuryPanel.tsx",
     "isDynamicEntry": true,

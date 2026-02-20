@@ -9,12 +9,13 @@
     "build": "npm run typecheck && vite build",
     "build:offline": "npm run build",
     "pages:fallback": "node scripts/sync-pages-fallback.mjs",
+    "verify:fallback": "node scripts/verify-pages-fallback.mjs",
     "verify:domain": "node scripts/verify-domain-config.mjs",
     "smoke": "node scripts/smoke.mjs",
     "domain:check": "node scripts/domain-health.mjs",
     "domain:watch": "node scripts/domain-watch.mjs",
     "preview": "vite preview",
-    "ci": "npm run verify:domain && npm run typecheck && npm run build && npm run smoke"
+    "ci": "npm run verify:domain && npm run typecheck && npm run build && npm run verify:fallback && npm run smoke"
   },
   "dependencies": {
     "react": "^18.3.1",

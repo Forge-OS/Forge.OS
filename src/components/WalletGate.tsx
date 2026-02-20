@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { ALLOWED_ADDRESS_PREFIXES, DEFAULT_NETWORK, NETWORK_LABEL } from "../constants";
 import { C, mono } from "../tokens";
-import { isKaspaAddress } from "../helpers";
+import { isKaspaAddress, normalizeKaspaAddress, shortAddr } from "../helpers";
 import { WalletAdapter } from "../wallet/WalletAdapter";
 import { Badge, Btn, Card, Divider, ExtLink, Inp } from "./ui";
 import { ForgeAtmosphere } from "./chrome/ForgeAtmosphere";
 
 export function WalletGate({onConnect}: any) {
-  const [busy, setBusy] = useState(false);
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
   const [err,  setErr]  = useState(null as any);
+  const [info, setInfo] = useState("");
   const [kaspiumAddress, setKaspiumAddress] = useState("");
   const [savedKaspiumAddress, setSavedKaspiumAddress] = useState("");
+  const [lastProvider, setLastProvider] = useState("");
   const detected = WalletAdapter.detect();
   const kaspiumStorageKey = useMemo(() => `forgeos.kaspium.address.${DEFAULT_NETWORK}`, []);
+  const providerStorageKey = useMemo(() => `forgeos.wallet.lastProvider.${DEFAULT_NETWORK}`, []);
   const activeKaspiumAddress = (kaspiumAddress.trim() || savedKaspiumAddress.trim()).trim();
   const kaspiumAddressValid = isKaspaAddress(activeKaspiumAddress, ALLOWED_ADDRESS_PREFIXES);
+  const busy = Boolean(busyProvider);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -25,10 +29,12 @@ export function WalletGate({onConnect}: any) {
         setSavedKaspiumAddress(normalized);
         setKaspiumAddress(normalized);
       }
+      const rememberedProvider = (window.localStorage.getItem(providerStorageKey) || "").trim();
+      if (rememberedProvider) setLastProvider(rememberedProvider);
     } catch {
       // Ignore storage failures in strict browser contexts.
     }
-  }, [kaspiumStorageKey]);
+  }, [kaspiumStorageKey, providerStorageKey]);
 
   const persistKaspiumAddress = (value: string) => {
     const normalized = value.trim();
@@ -42,43 +48,105 @@ export function WalletGate({onConnect}: any) {
     }
   };
 
+  const persistProvider = (provider: string) => {
+    setLastProvider(provider);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(providerStorageKey, provider);
+    } catch {
+      // Ignore storage failures in strict browser contexts.
+    }
+  };
+
+  const resolveKaspiumAddress = async () => {
+    const active = activeKaspiumAddress.trim();
+    if (active && isKaspaAddress(active, ALLOWED_ADDRESS_PREFIXES)) {
+      return normalizeKaspaAddress(active, ALLOWED_ADDRESS_PREFIXES);
+    }
+
+    if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
+      try {
+        const clipboardRaw = await navigator.clipboard.readText();
+        const candidate = String(clipboardRaw || "").trim().split(/\s+/)[0] || "";
+        if (candidate && isKaspaAddress(candidate, ALLOWED_ADDRESS_PREFIXES)) {
+          const normalized = normalizeKaspaAddress(candidate, ALLOWED_ADDRESS_PREFIXES);
+          setKaspiumAddress(normalized);
+          persistKaspiumAddress(normalized);
+          return normalized;
+        }
+      } catch {
+        // Clipboard can fail in strict browser permission modes.
+      }
+    }
+
+    const raw = window.prompt(
+      `Paste your ${NETWORK_LABEL} Kaspium address (${ALLOWED_ADDRESS_PREFIXES.join(", ")}).`
+    ) || "";
+    const normalized = normalizeKaspaAddress(raw, ALLOWED_ADDRESS_PREFIXES);
+    setKaspiumAddress(normalized);
+    persistKaspiumAddress(normalized);
+    return normalized;
+  };
+
   const connect = async (provider: string) => {
-    setBusy(true); setErr(null);
+    setBusyProvider(provider);
+    setErr(null);
+    setInfo("");
     try {
       let session;
       if(provider === "kasware") {
         session = await WalletAdapter.connectKasware();
+        setInfo("Kasware session ready. Extension signing is armed.");
       } else if(provider === "kaspium") {
-        session = WalletAdapter.connectKaspium(activeKaspiumAddress);
+        const resolvedAddress = await resolveKaspiumAddress();
+        session = WalletAdapter.connectKaspium(resolvedAddress);
         persistKaspiumAddress(session.address);
+        setInfo(`Kaspium session ready for ${shortAddr(session.address)}.`);
       } else {
         // Demo mode — no extension
         const demoPrefix = ALLOWED_ADDRESS_PREFIXES[0] || "kaspatest";
         session = { address:`${demoPrefix}:qp3t6flvhqd4d9jkk8m5v0xelwm6zxx99qx5p8f3j8vcm9y5la2vsnjsklav`, network:DEFAULT_NETWORK, provider:"demo" };
+        setInfo("Demo session ready.");
       }
+      persistProvider(provider);
       onConnect(session);
-    } catch(e: any) { setErr(e.message); }
-    setBusy(false);
+    } catch(e: any) {
+      setErr(e?.message || "Wallet connection failed.");
+    }
+    setBusyProvider(null);
   };
 
   const wallets = [
     {
       k:"kasware",
       l:"Kasware",
-      desc:detected.kasware ? "Browser extension wallet" : "Install extension for injected signing",
-      available:detected.kasware,
+      desc:"Injected browser wallet for direct signing.",
+      status: detected.kasware ? "Detected in this tab" : "Not detected in this tab",
+      statusColor: detected.kasware ? C.ok : C.warn,
       icon:"🦊",
-      installUrl: "https://github.com/kasware-wallet/extension"
+      docsUrl: "https://github.com/kasware-wallet/extension",
+      cta:"Connect Kasware",
     },
     {
       k:"kaspium",
       l:"Kaspium",
-      desc:savedKaspiumAddress ? "Mobile wallet via deep-link (saved address ready)" : "Mobile wallet via deep-link",
-      available:detected.kaspium,
+      desc:"Mobile wallet via deep-link flow.",
+      status: kaspiumAddressValid ? `Address ready · ${shortAddr(activeKaspiumAddress)}` : "Address resolves on connect",
+      statusColor: kaspiumAddressValid ? C.ok : C.warn,
       icon:"📱",
-      installUrl: "https://github.com/azbuky/kaspium_wallet"
+      docsUrl: "https://github.com/azbuky/kaspium_wallet",
+      cta: kaspiumAddressValid ? "Connect Kaspium" : "Connect + Pair Address",
     },
-    { k:"demo",    l:"Demo Mode", desc:"Simulated wallet — UI preview only", available:true, icon:"🧪" },
+    {
+      k:"demo",
+      l:"Demo Mode",
+      desc:"Simulated signer for UI testing.",
+      status:"No blockchain broadcast",
+      statusColor:C.dim,
+      icon:"🧪",
+      docsUrl: "",
+      cta:"Enter Demo Mode",
+    },
   ];
 
   return (
@@ -93,8 +161,13 @@ export function WalletGate({onConnect}: any) {
             </h1>
             <p className="forge-gate-copy">
               Full-screen command center for wallet-native execution, AI-guided quant cycles, and DAG-aware capital routing.
-              Connect with Kasware or Kaspium and keep signing strictly in-wallet.
+              Wallets are treated as installed and ready. Connect instantly and keep signing strictly in-wallet.
             </p>
+            <div style={{display:"flex", gap:8, flexWrap:"wrap", marginTop:16}}>
+              <Badge text={`${NETWORK_LABEL} PROFILE`} color={C.ok} dot/>
+              <Badge text="NON-CUSTODIAL SIGNING" color={C.accent} dot/>
+              <Badge text="SESSION REUSE ENABLED" color={C.purple} dot/>
+            </div>
           </div>
           <div className="forge-gate-points">
             <div className="forge-gate-point">
@@ -122,55 +195,84 @@ export function WalletGate({onConnect}: any) {
           <div className="forge-content" style={{width:"100%", maxWidth:560}}>
             <Card p={32} style={{width:"100%"}}>
               <div style={{fontSize:14, color:C.text, fontWeight:700, ...mono, marginBottom:4}}>Connect Wallet</div>
-              <div style={{fontSize:12, color:C.dim, marginBottom:22}}>All operations are wallet-native. No custodial infrastructure. No private keys stored server-side.</div>
+              <div style={{fontSize:12, color:C.dim, marginBottom:14}}>
+                All operations are wallet-native. No custodial infrastructure. No private keys stored server-side.
+              </div>
               <div style={{fontSize:11, color:C.dim, ...mono, marginBottom:14}}>
                 Session profile: {NETWORK_LABEL} · allowed prefixes: {ALLOWED_ADDRESS_PREFIXES.join(", ")}
               </div>
-              <div style={{display:"flex", flexDirection:"column", gap:10}}>
+
+              <div className="forge-wallet-grid">
                 {wallets.map(w=> (
                   <div
                     key={w.k}
-                    onClick={() => {
-                      if (busy) return;
-                      if (!w.available && w.installUrl) {
-                        window.open(w.installUrl, "_blank", "noopener,noreferrer");
-                        return;
-                      }
-                      if (w.k === "kaspium") return;
-                      connect(w.k);
-                    }}
-                    style={{padding:"14px 16px", borderRadius:5, border:`1px solid ${w.available?C.border:C.muted}`, background:w.available?C.s2:C.s1, cursor:w.available ? "pointer" : (w.installUrl ? "pointer" : "not-allowed"), opacity:w.available?1:0.68, transition:"all 0.15s", display:"flex", alignItems:"center", gap:14}}
-                    onMouseEnter={e=>{if(w.available){e.currentTarget.style.borderColor=C.accent; e.currentTarget.style.background=C.aLow;}}}
-                    onMouseLeave={e=>{e.currentTarget.style.borderColor=w.available?C.border:C.muted; e.currentTarget.style.background=w.available?C.s2:C.s1;}}>
-                    <span style={{fontSize:22}}>{w.icon}</span>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:13, color:C.text, fontWeight:700, ...mono, marginBottom:2}}>{w.l}</div>
-                      <div style={{fontSize:11, color:C.dim}}>{w.desc}</div>
+                    className={`forge-wallet-card ${lastProvider === w.k ? "forge-wallet-card--preferred" : ""}`}
+                  >
+                    <div style={{display:"flex", alignItems:"center", gap:12}}>
+                      <div style={{fontSize:24, width:34, display:"flex", justifyContent:"center"}}>{w.icon}</div>
+                      <div style={{flex:1}}>
+                        <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+                          <div style={{fontSize:13, color:C.text, fontWeight:700, ...mono}}>{w.l}</div>
+                          {lastProvider === w.k ? <Badge text="LAST USED" color={C.accent}/> : null}
+                        </div>
+                        <div style={{fontSize:11, color:C.dim, marginTop:2}}>{w.desc}</div>
+                      </div>
+                      <Badge text={w.status} color={w.statusColor}/>
                     </div>
-                    {w.available ? (
-                      <Badge text={w.k==="kaspium" ? (kaspiumAddressValid ? "CONNECT" : "SET ADDRESS") : "CONNECT"} color={C.accent}/>
-                    ) : (
-                      <Badge text="INSTALL" color={C.warn}/>
-                    )}
+
+                    <div style={{display:"flex", gap:8, marginTop:12, flexWrap:"wrap"}}>
+                      <Btn
+                        onClick={() => connect(w.k)}
+                        disabled={busy && busyProvider !== w.k}
+                        variant={w.k === "demo" ? "ghost" : "primary"}
+                        size="sm"
+                        style={{minWidth:190}}
+                      >
+                        {busyProvider === w.k ? "CONNECTING..." : w.cta}
+                      </Btn>
+                      {w.docsUrl ? <ExtLink href={w.docsUrl} label="DOCS ↗" /> : null}
+                    </div>
                   </div>
                 ))}
               </div>
 
-              <div style={{marginTop:12}}>
-                <Inp label="Kaspium Address" value={kaspiumAddress} onChange={setKaspiumAddress} placeholder={`${ALLOWED_ADDRESS_PREFIXES[0]}:...`} hint={savedKaspiumAddress ? `Saved for ${NETWORK_LABEL}: ${savedKaspiumAddress}` : `Allowed prefixes: ${ALLOWED_ADDRESS_PREFIXES.join(", ")}`} />
-                <div style={{display:"flex", gap:8, marginBottom:10, flexWrap:"wrap"}}>
+              <div style={{marginTop:14}}>
+                <Inp
+                  label="Kaspium Address (Optional Prefill)"
+                  value={kaspiumAddress}
+                  onChange={(value: string) => {
+                    setKaspiumAddress(value);
+                    if (err) setErr(null);
+                  }}
+                  placeholder={`${ALLOWED_ADDRESS_PREFIXES[0]}:...`}
+                  hint={savedKaspiumAddress ? `Saved for ${NETWORK_LABEL}: ${savedKaspiumAddress}` : "Leave blank to auto-pair at connect time"}
+                />
+                <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
                   {savedKaspiumAddress && savedKaspiumAddress !== kaspiumAddress ? (
                     <Btn onClick={() => setKaspiumAddress(savedKaspiumAddress)} variant="ghost" size="sm">
                       USE SAVED ADDRESS
                     </Btn>
                   ) : null}
-                  <ExtLink href="https://github.com/azbuky/kaspium_wallet" label="KASPIUM DOCS ↗" />
+                  <Btn
+                    onClick={() => {
+                      if (!kaspiumAddressValid) {
+                        setErr(`Invalid Kaspium address. Use: ${ALLOWED_ADDRESS_PREFIXES.join(", ")}`);
+                        return;
+                      }
+                      persistKaspiumAddress(normalizeKaspaAddress(kaspiumAddress, ALLOWED_ADDRESS_PREFIXES));
+                      setErr(null);
+                      setInfo("Kaspium address saved for faster reconnects.");
+                    }}
+                    disabled={!kaspiumAddressValid}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    SAVE ADDRESS
+                  </Btn>
                 </div>
-                <Btn onClick={()=>connect("kaspium")} disabled={busy || !kaspiumAddressValid} variant="ghost" style={{width:"100%", padding:"10px 0"}}>
-                  CONNECT KASPIUM
-                </Btn>
               </div>
 
+              {info ? <div style={{marginTop:12, padding:"10px 14px", background:C.oLow, border:`1px solid ${C.ok}44`, borderRadius:4, fontSize:12, color:C.ok, ...mono}}>{info}</div> : null}
               {err && <div style={{marginTop:14, padding:"10px 14px", background:C.dLow, borderRadius:4, fontSize:12, color:C.danger, ...mono}}>{err}</div>}
               <Divider m={18}/>
               <div style={{fontSize:11, color:C.dim, ...mono, lineHeight:1.6}}>
