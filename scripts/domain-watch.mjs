@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 
-const domain = process.argv[2] || "forge-os.xyz";
+const domain = process.argv[2] || "forge-us.xyz";
 const alt = process.argv[3] || `www.${domain}`;
 const intervalMinutes = Number(process.env.DOMAIN_WATCH_INTERVAL_MINUTES || 10);
 const maxChecks = Number(process.env.DOMAIN_WATCH_MAX_CHECKS || 24);
@@ -38,4 +38,3 @@ for (let i = 1; i <= maxChecks; i += 1) {
 
 console.log("Domain watch reached max checks without healthy status.");
 process.exit(1);
-

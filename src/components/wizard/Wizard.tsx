@@ -7,7 +7,7 @@ import { DEFS } from "./constants";
 import { WStep1 } from "./WStep1";
 import { WStep2 } from "./WStep2";
 import { WStep3 } from "./WStep3";
-import { TREASURY } from "../../constants";
+import { ACCUMULATION_VAULT } from "../../constants";
 
 export function Wizard({wallet, onComplete}: any) {
   const [step, setStep] = useState(0);
@@ -23,7 +23,13 @@ export function Wizard({wallet, onComplete}: any) {
     onComplete({...d, wallet, deployTx:tx, deployedAt:Date.now(), agentId:`forge_${uid()}`});
   };
 
-  const deployTx = { type:"AGENT_DEPLOY", from:wallet?.address, to:TREASURY, amount_kas:parseFloat(d.capitalLimit) || 5000, purpose:"Agent vault provisioning + initial capital" };
+  const deployTx = {
+    type:"AGENT_DEPLOY",
+    from:wallet?.address,
+    to:ACCUMULATION_VAULT,
+    amount_kas:parseFloat(d.capitalLimit) || 5000,
+    purpose:"Agent vault provisioning + initial capital"
+  };
 
   return(
     <div style={{maxWidth:560, margin:"36px auto", padding:"0 20px"}}>

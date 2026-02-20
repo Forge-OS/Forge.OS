@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ACCUMULATE_ONLY,
   ACCUMULATION_VAULT,
@@ -20,10 +20,13 @@ import { SigningModal } from "../SigningModal";
 import { Badge, Btn, Card, Label } from "../ui";
 import { EXEC_OPTS } from "../wizard/constants";
 import { ActionQueue } from "./ActionQueue";
-import { IntelligencePanel } from "./IntelligencePanel";
-import { PerfChart } from "./PerfChart";
 import { TreasuryPanel } from "./TreasuryPanel";
 import { WalletPanel } from "./WalletPanel";
+
+const PerfChart = lazy(() => import("./PerfChart").then((m) => ({ default: m.PerfChart })));
+const IntelligencePanel = lazy(() =>
+  import("./IntelligencePanel").then((m) => ({ default: m.IntelligencePanel }))
+);
 
 export function Dashboard({agent, wallet}: any) {
   const LIVE_POLL_MS = 5000;
@@ -41,6 +44,9 @@ export function Dashboard({agent, wallet}: any) {
   const [kasDataError, setKasDataError] = useState(null as any);
   const [liveConnected, setLiveConnected] = useState(false);
   const [streamConnected, setStreamConnected] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1200
+  );
 
   const addLog = useCallback((e: any)=>setLog((p: any)=>[{ts:Date.now(), ...e}, ...p]), []);
 
@@ -92,6 +98,25 @@ export function Dashboard({agent, wallet}: any) {
       }
     };
   },[refreshKasData]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isMobile = viewportWidth < 760;
+  const isTablet = viewportWidth < 1024;
+
+  const summaryGridCols = useMemo(() => {
+    if (isMobile) return "1fr";
+    if (isTablet) return "repeat(2,1fr)";
+    return "repeat(4,1fr)";
+  }, [isMobile, isTablet]);
+
+  const splitGridCols = isTablet ? "1fr" : "2fr 1fr";
+  const controlsGridCols = isTablet ? "1fr" : "1fr 1fr";
 
   const riskThresh = agent.risk==="low"?0.4:agent.risk==="medium"?0.65:0.85;
 
@@ -152,7 +177,7 @@ export function Dashboard({agent, wallet}: any) {
             ts:Date.now(),
             dec
           };
-          const isAutoApprove = execMode==="autonomous" && dec.capital_allocation_kas<=autoThresh;
+          const isAutoApprove = execMode==="autonomous" && txItem.amount_kas <= autoThresh;
           if(isAutoApprove){
             try {
               let txid = "";
@@ -166,7 +191,7 @@ export function Dashboard({agent, wallet}: any) {
                 txid = Array.from({length:64},()=>"0123456789abcdef"[Math.floor(Math.random()*16)]).join("");
               }
 
-              addLog({type:"EXEC", msg:`AUTO-APPROVED: ${dec.action} · ${dec.capital_allocation_kas} KAS · txid: ${txid.slice(0,16)}...`, fee:0.08});
+              addLog({type:"EXEC", msg:`AUTO-APPROVED: ${dec.action} · ${txItem.amount_kas} KAS · txid: ${txid.slice(0,16)}...`, fee:0.08});
               addLog({type:"TREASURY", msg:`Fee split → Pool: ${(FEE_RATE*AGENT_SPLIT).toFixed(4)} KAS / Treasury: ${(FEE_RATE*TREASURY_SPLIT).toFixed(4)} KAS`, fee:FEE_RATE});
               setQueue((p: any)=>[{...txItem, status:"signed", txid}, ...p]);
             } catch (e: any) {
@@ -174,7 +199,7 @@ export function Dashboard({agent, wallet}: any) {
               addLog({type:"SIGN", msg:`Auto-approve fallback to manual queue: ${e?.message || "wallet broadcast failed"}`, fee:null});
             }
           } else {
-            addLog({type:"SIGN", msg:`Action queued for wallet signature: ${dec.action} · ${dec.capital_allocation_kas} KAS`, fee:null});
+            addLog({type:"SIGN", msg:`Action queued for wallet signature: ${dec.action} · ${txItem.amount_kas} KAS`, fee:null});
             setQueue((p: any)=>[txItem, ...p]);
           }
         } else {
@@ -201,18 +226,19 @@ export function Dashboard({agent, wallet}: any) {
   const TABS = [{k:"overview",l:"OVERVIEW"},{k:"intelligence",l:"INTELLIGENCE"},{k:"queue",l:`QUEUE${pendingCount>0?` (${pendingCount})`:""}`},{k:"treasury",l:"TREASURY"},{k:"wallet",l:"WALLET"},{k:"log",l:"LOG"},{k:"controls",l:"CONTROLS"}];
 
   return(
-    <div style={{maxWidth:1080, margin:"0 auto", padding:"18px 20px"}}>
+    <div style={{maxWidth:1080, margin:"0 auto", padding:isMobile ? "14px 14px" : "18px 20px"}}>
       {signingItem && <SigningModal tx={signingItem} wallet={wallet} onSign={handleSigned} onReject={()=>setSigningItem(null)}/>}
 
       {/* Header */}
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16}}>
+      <div style={{display:"flex", flexDirection:isMobile ? "column" : "row", justifyContent:"space-between", alignItems:isMobile ? "stretch" : "flex-start", marginBottom:16, gap:isMobile ? 10 : 0}}>
         <div>
           <div style={{fontSize:11, color:C.dim, letterSpacing:"0.1em", ...mono, marginBottom:2}}>FORGEOS / AGENT / {agent.name}</div>
           <div style={{fontSize:18, color:C.text, fontWeight:700, ...mono}}>{agent.name}</div>
         </div>
-        <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", justifyContent:"flex-end"}}>
+        <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", justifyContent:isMobile ? "flex-start" : "flex-end"}}>
           <Badge text={status} color={status==="RUNNING"?C.ok:status==="PAUSED"?C.warn:C.danger} dot/>
           <Badge text={execMode.toUpperCase()} color={C.accent}/>
+          <Badge text={ACCUMULATE_ONLY ? "ACCUMULATE-ONLY" : "MULTI-ACTION"} color={ACCUMULATE_ONLY ? C.ok : C.warn}/>
           <Badge text={wallet?.provider?.toUpperCase()||"WALLET"} color={C.purple} dot/>
           <Badge text={liveConnected?"DAG LIVE":"DAG OFFLINE"} color={liveConnected?C.ok:C.danger} dot/>
           <Badge text={KAS_WS_URL?(streamConnected?"STREAM LIVE":"STREAM DOWN"):"STREAM OFF"} color={KAS_WS_URL?(streamConnected?C.ok:C.warn):C.dim} dot/>
@@ -228,7 +254,7 @@ export function Dashboard({agent, wallet}: any) {
 
       {/* Pending signature alert */}
       {pendingCount>0 && (
-        <div style={{background:C.wLow, border:`1px solid ${C.warn}40`, borderRadius:6, padding:"11px 16px", marginBottom:14, display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+        <div style={{background:C.wLow, border:`1px solid ${C.warn}40`, borderRadius:6, padding:"11px 16px", marginBottom:14, display:"flex", alignItems:isMobile ? "flex-start" : "center", justifyContent:"space-between", flexDirection:isMobile ? "column" : "row", gap:isMobile ? 8 : 0}}>
           <span style={{fontSize:12, color:C.warn, ...mono}}>⚠ {pendingCount} transaction{pendingCount>1?"s":""} awaiting wallet signature</span>
           <Btn onClick={()=>setTab("queue")} size="sm" variant="warn">VIEW QUEUE</Btn>
         </div>
@@ -246,7 +272,7 @@ export function Dashboard({agent, wallet}: any) {
       {/* ── OVERVIEW ── */}
       {tab==="overview" && (
         <div>
-          <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:12}}>
+          <div style={{display:"grid", gridTemplateColumns:summaryGridCols, gap:10, marginBottom:12}}>
             {[
               {l:"Wallet Balance",    v:`${kasData?.walletKas||agent.capitalLimit} KAS`, s:shortAddr(wallet?.address),          c:C.accent},
               {l:"DAA Score",         v:kasData?.dag?.daaScore?.toLocaleString()||"—",   s:"Kaspa DAG height",                  c:C.text},
@@ -256,8 +282,12 @@ export function Dashboard({agent, wallet}: any) {
               <Card key={r.l} p={14}><Label>{r.l}</Label><div style={{fontSize:18, color:r.c, fontWeight:700, ...mono, marginBottom:2}}>{r.v}</div><div style={{fontSize:11, color:C.dim}}>{r.s}</div></Card>
             ))}
           </div>
-          <div style={{marginBottom:12}}><PerfChart decisions={decisions} kpiTarget={agent.kpiTarget}/></div>
-          <div style={{display:"grid", gridTemplateColumns:"2fr 1fr", gap:12}}>
+          <div style={{marginBottom:12}}>
+            <Suspense fallback={<Card p={18}><Label>Performance</Label><div style={{fontSize:12,color:C.dim}}>Loading performance chart...</div></Card>}>
+              <PerfChart decisions={decisions} kpiTarget={agent.kpiTarget}/>
+            </Suspense>
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:splitGridCols, gap:12}}>
             <Card p={18}>
               <Label>Agent Configuration</Label>
               {[["Strategy","Momentum / On-Chain Flow"],["Risk",agent.risk.toUpperCase()],["Capital / Cycle",`${agent.capitalLimit} KAS`],["Exec Mode",execMode.toUpperCase()],["Auto-Approve ≤",`${autoThresh} KAS`],["Horizon",`${agent.horizon} days`],["KPI Target",`${agent.kpiTarget}% ROI`]].map(([k,v])=> (
@@ -281,7 +311,11 @@ export function Dashboard({agent, wallet}: any) {
         </div>
       )}
 
-      {tab==="intelligence" && <IntelligencePanel decisions={decisions} loading={loading} onRun={runCycle}/>}
+      {tab==="intelligence" && (
+        <Suspense fallback={<Card p={18}><Label>Intelligence</Label><div style={{fontSize:12,color:C.dim}}>Loading intelligence panel...</div></Card>}>
+          <IntelligencePanel decisions={decisions} loading={loading} onRun={runCycle}/>
+        </Suspense>
+      )}
       {tab==="queue" && <ActionQueue queue={queue} wallet={wallet} onSign={handleQueueSign} onReject={handleQueueReject}/>}
       {tab==="treasury" && <TreasuryPanel log={log} agentCapital={agent.capitalLimit}/>}
       {tab==="wallet" && <WalletPanel agent={agent} wallet={wallet}/>}
@@ -295,11 +329,11 @@ export function Dashboard({agent, wallet}: any) {
           </div>
           <div style={{maxHeight:520, overflowY:"auto"}}>
             {log.map((e: any, i: number)=>(
-              <div key={i} style={{display:"grid", gridTemplateColumns:"92px 72px 1fr 80px", gap:10, padding:"8px 18px", borderBottom:`1px solid ${C.border}`, alignItems:"center"}}>
+              <div key={i} style={{display:"grid", gridTemplateColumns:isMobile ? "74px 58px 1fr" : "92px 72px 1fr 80px", gap:10, padding:"8px 18px", borderBottom:`1px solid ${C.border}`, alignItems:"center"}}>
                 <span style={{fontSize:11, color:C.dim, ...mono}}>{fmtT(e.ts)}</span>
                 <span style={{fontSize:11, color:LOG_COL[e.type]||C.dim, fontWeight:700, ...mono}}>{e.type}</span>
                 <span style={{fontSize:12, color:C.text, ...mono, lineHeight:1.4}}>{e.msg}</span>
-                <span style={{fontSize:11, color:C.dim, textAlign:"right", ...mono}}>{e.fee!=null?`${e.fee} KAS`:"—"}</span>
+                {!isMobile && <span style={{fontSize:11, color:C.dim, textAlign:"right", ...mono}}>{e.fee!=null?`${e.fee} KAS`:"—"}</span>}
               </div>
             ))}
           </div>
@@ -308,7 +342,7 @@ export function Dashboard({agent, wallet}: any) {
 
       {/* ── CONTROLS ── */}
       {tab==="controls" && (
-        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+        <div style={{display:"grid", gridTemplateColumns:controlsGridCols, gap:14}}>
           <Card p={18}>
             <Label>Execution Mode</Label>
             {EXEC_OPTS.map(m=>{const on=execMode===m.v; return(
