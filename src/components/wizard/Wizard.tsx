@@ -32,14 +32,14 @@ export function Wizard({wallet, onComplete}: any) {
   };
 
   return(
-    <div style={{maxWidth:560, margin:"36px auto", padding:"0 20px"}}>
+    <div style={{maxWidth:1040, margin:"0 auto", padding:"clamp(18px, 2.2vw, 34px)"}}>
       {pendingSign && <SigningModal tx={deployTx} wallet={wallet} onSign={handleSigned} onReject={()=>setPendingSign(false)}/>}
       <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:22}}>
         <span style={{fontSize:10, color:C.dim, letterSpacing:"0.12em", ...mono}}>FORGEOS / NEW AGENT</span>
         <span style={{width:1, height:12, background:C.border, display:"inline-block"}}/>
         <Badge text={wallet?.provider?.toUpperCase() || "CONNECTED"} color={C.ok} dot/>
       </div>
-      <Card p={28}>
+      <Card p={28} style={{maxWidth:680, margin:"0 auto"}}>
         <div style={{display:"flex", gap:5, marginBottom:26}}>
           {[0,1,2].map(i=><div key={i} style={{height:3, flex:1, borderRadius:2, background:i<=step?C.accent:C.muted, transition:"background 0.3s"}}/>)}
         </div>

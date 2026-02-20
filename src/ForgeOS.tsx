@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_NETWORK, NETWORK_LABEL, NETWORK_PROFILE } from "./constants";
 import { shortAddr } from "./helpers";
 import { C, mono } from "./tokens";
@@ -7,12 +7,16 @@ import { Wizard } from "./components/wizard/Wizard";
 import { Dashboard } from "./components/dashboard/Dashboard";
 import { Btn } from "./components/ui";
 import { KASPA_NETWORK_PROFILES } from "./kaspa/network";
+import { ForgeAtmosphere } from "./components/chrome/ForgeAtmosphere";
 
 export default function ForgeOS() {
   const [wallet, setWallet] = useState(null as any);
   const [view, setView] = useState("create");
   const [agent, setAgent] = useState(null as any);
   const [switchingNetwork, setSwitchingNetwork] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
 
   const handleConnect = (session: any) => { setWallet(session); };
   const handleDeploy = (a: any) => { setAgent(a); setView("dashboard"); };
@@ -21,6 +25,7 @@ export default function ForgeOS() {
     () => KASPA_NETWORK_PROFILES.filter((profile) => profile.id === "mainnet" || profile.id.startsWith("testnet")),
     []
   );
+  const isMobile = viewportWidth < 860;
 
   const switchNetwork = (targetNetwork: string) => {
     if (typeof window === "undefined" || switchingNetwork || targetNetwork === DEFAULT_NETWORK) return;
@@ -43,18 +48,27 @@ export default function ForgeOS() {
     }
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   if(!wallet) return <WalletGate onConnect={handleConnect}/>;
 
   return(
-    <div style={{background:C.bg, minHeight:"100vh", color:C.text}}>
+    <div className="forge-shell" style={{color:C.text}}>
+      <ForgeAtmosphere />
+      <div className="forge-content" style={{minHeight:"100vh"}}>
       {/* Topbar */}
-      <div style={{borderBottom:`1px solid ${C.border}`, padding:"10px 22px", display:"flex", alignItems:"center", justifyContent:"space-between"}}>
-        <div style={{display:"flex", alignItems:"center", gap:14}}>
+      <div className="forge-topbar" style={{borderBottom:`1px solid ${C.border}`, padding:"12px clamp(14px, 2vw, 24px)", display:"flex", flexDirection:isMobile ? "column" : "row", alignItems:isMobile ? "stretch" : "center", justifyContent:"space-between", gap:isMobile ? 10 : 0}}>
+        <div style={{display:"flex", alignItems:"center", gap:14, justifyContent:isMobile ? "space-between" : "flex-start"}}>
           <div style={{fontSize:14, fontWeight:700, letterSpacing:"0.14em", ...mono}}><span style={{color:C.accent}}>FORGE</span><span style={{color:C.text}}>OS</span></div>
           <div style={{width:1, height:14, background:C.border}}/>
           <div style={{fontSize:10, color:C.dim, letterSpacing:"0.08em", ...mono}}>AI-NATIVE FINANCIAL OS · KASPA</div>
         </div>
-        <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", justifyContent:"flex-end"}}>
+        <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", justifyContent:isMobile ? "flex-start" : "flex-end"}}>
           <div style={{display:"flex", alignItems:"center", gap:6, border:`1px solid ${isMainnet ? C.warn : C.ok}50`, background:isMainnet?C.wLow:C.oLow, borderRadius:6, padding:"4px 6px"}}>
             <span style={{fontSize:10, color:isMainnet?C.warn:C.ok, letterSpacing:"0.08em", ...mono}}>
               {NETWORK_LABEL.toUpperCase()}
@@ -92,6 +106,7 @@ export default function ForgeOS() {
         </div>
       </div>
       {view==="create" ? <Wizard wallet={wallet} onComplete={handleDeploy}/> : <Dashboard agent={agent} wallet={wallet}/>}
+      </div>
     </div>
   );
 }

@@ -3,12 +3,14 @@ import {
   ACCUMULATE_ONLY,
   ACCUMULATION_VAULT,
   AGENT_SPLIT,
+  AUTO_CYCLE_SECONDS,
   BILLING_UPGRADE_URL,
   CONF_THRESHOLD,
   EXPLORER,
   FEE_RATE,
   FREE_CYCLES_PER_DAY,
   KAS_WS_URL,
+  LIVE_EXECUTION_DEFAULT,
   NETWORK_LABEL,
   NET_FEE,
   RESERVE,
@@ -38,6 +40,8 @@ export function Dashboard({agent, wallet}: any) {
   const LIVE_POLL_MS = 5000;
   const STREAM_RECONNECT_MAX_DELAY_MS = 12000;
   const execModeStorageKey = `forgeos.execMode.${agent?.agentId || agent?.name || "default"}`;
+  const liveExecutionStorageKey = `forgeos.liveExecution.${agent?.agentId || agent?.name || "default"}`;
+  const cycleIntervalMs = AUTO_CYCLE_SECONDS * 1000;
   const [tab, setTab] = useState("overview");
   const [status, setStatus] = useState("RUNNING");
   const [log, setLog] = useState(()=>seedLog(agent.name));
@@ -54,6 +58,8 @@ export function Dashboard({agent, wallet}: any) {
   const [streamConnected, setStreamConnected] = useState(false);
   const [streamRetryCount, setStreamRetryCount] = useState(0);
   const [usage, setUsage] = useState(() => getUsageState(FREE_CYCLES_PER_DAY));
+  const [liveExecutionArmed, setLiveExecutionArmed] = useState(LIVE_EXECUTION_DEFAULT);
+  const [nextAutoCycleAt, setNextAutoCycleAt] = useState(() => Date.now() + cycleIntervalMs);
   const [viewportWidth, setViewportWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1200
   );
@@ -95,6 +101,27 @@ export function Dashboard({agent, wallet}: any) {
       // Ignore localStorage write issues in restricted environments.
     }
   }, [execMode, execModeStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = window.localStorage.getItem(liveExecutionStorageKey);
+      if (saved === "true" || saved === "false") {
+        setLiveExecutionArmed(saved === "true");
+      }
+    } catch {
+      // Ignore localStorage read issues in restricted environments.
+    }
+  }, [liveExecutionStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(liveExecutionStorageKey, liveExecutionArmed ? "true" : "false");
+    } catch {
+      // Ignore localStorage write issues in restricted environments.
+    }
+  }, [liveExecutionArmed, liveExecutionStorageKey]);
 
   useEffect(()=>{
     refreshKasData();
@@ -175,6 +202,12 @@ export function Dashboard({agent, wallet}: any) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  useEffect(() => {
+    if (status === "RUNNING") {
+      setNextAutoCycleAt(Date.now() + cycleIntervalMs);
+    }
+  }, [status, cycleIntervalMs]);
+
   const isMobile = viewportWidth < 760;
   const isTablet = viewportWidth < 1024;
 
@@ -195,6 +228,7 @@ export function Dashboard({agent, wallet}: any) {
       addLog({type:"ERROR", msg:"No live Kaspa data available. Reconnect feed before running cycle.", fee:null});
       return;
     }
+    setNextAutoCycleAt(Date.now() + cycleIntervalMs);
     setLoading(true);
     addLog({type:"DATA", msg:`Kaspa DAG snapshot: DAA ${kasData?.dag?.daaScore||"—"} · Wallet ${kasData?.walletKas||"—"} KAS`, fee:null});
     const usageAfterConsume = consumeUsageCycle(FREE_CYCLES_PER_DAY);
@@ -250,6 +284,15 @@ export function Dashboard({agent, wallet}: any) {
 
         if (execMode === "notify") {
           addLog({type:"EXEC", msg:`NOTIFY mode active — ${dec.action} signal recorded, no transaction broadcast.`, fee:0.01});
+        } else if (!liveExecutionArmed || !liveExecutionReady) {
+          const reason = !liveExecutionArmed
+            ? "live execution is disarmed"
+            : "network feed or wallet provider is not execution-ready";
+          addLog({
+            type:"EXEC",
+            msg:`Signal generated (${dec.action}) but no transaction broadcast because ${reason}.`,
+            fee:0.01,
+          });
         } else if(dec.action!=="HOLD"){
           const requested = Number(dec.capital_allocation_kas || 0);
           const amountKas = dec.action === "ACCUMULATE" ? Math.min(requested, availableToSpend) : requested;
@@ -308,6 +351,18 @@ export function Dashboard({agent, wallet}: any) {
     setLoading(false);
   };
 
+  useEffect(() => {
+    if (status !== "RUNNING") return;
+    const tickId = setInterval(() => {
+      if (loading) return;
+      if (!liveConnected || kasDataError) return;
+      if (Date.now() < nextAutoCycleAt) return;
+      setNextAutoCycleAt(Date.now() + cycleIntervalMs);
+      void runCycle();
+    }, 1000);
+    return () => clearInterval(tickId);
+  }, [status, loading, liveConnected, kasDataError, nextAutoCycleAt, cycleIntervalMs, runCycle]);
+
   const handleQueueSign = (item: any) => { setSigningItem(item); };
   const handleQueueReject = (id: string) => { setQueue((p: any)=>p.map((q: any)=>q.id===id?{...q,status:"rejected"}:q)); addLog({type:"SIGN", msg:`Transaction rejected by operator: ${id}`, fee:null}); };
   const handleSigningReject = () => {
@@ -332,6 +387,11 @@ export function Dashboard({agent, wallet}: any) {
   const totalFees = parseFloat(log.filter((l: any)=>l.fee).reduce((s: number, l: any)=>s+(l.fee||0),0).toFixed(4));
   const liveKasNum = Number(kasData?.walletKas || 0);
   const spendableKas = Math.max(0, liveKasNum - RESERVE - NET_FEE);
+  const liveExecutionReady = liveConnected && !kasDataError && wallet?.provider !== "demo";
+  const autoCycleCountdown = Math.max(0, Math.ceil((nextAutoCycleAt - Date.now()) / 1000));
+  const autoCycleCountdownLabel = `${Math.floor(autoCycleCountdown / 60)
+    .toString()
+    .padStart(2, "0")}:${(autoCycleCountdown % 60).toString().padStart(2, "0")}`;
   const lastDecision = decisions[0]?.dec;
   const lastDecisionSource = String(lastDecision?.decision_source || decisions[0]?.source || "ai");
   const streamBadgeText = KAS_WS_URL
@@ -345,7 +405,7 @@ export function Dashboard({agent, wallet}: any) {
   const TABS = [{k:"overview",l:"OVERVIEW"},{k:"intelligence",l:"INTELLIGENCE"},{k:"queue",l:`QUEUE${pendingCount>0?` (${pendingCount})`:""}`},{k:"treasury",l:"TREASURY"},{k:"wallet",l:"WALLET"},{k:"billing",l:"BILLING"},{k:"log",l:"LOG"},{k:"controls",l:"CONTROLS"}];
 
   return(
-    <div style={{maxWidth:1080, margin:"0 auto", padding:isMobile ? "14px 14px" : "18px 20px"}}>
+    <div style={{maxWidth:1460, margin:"0 auto", padding:isMobile ? "14px 14px 22px" : "22px 24px 34px"}}>
       {signingItem && <SigningModal tx={signingItem} wallet={wallet} onSign={handleSigned} onReject={handleSigningReject}/>}
 
       {/* Header */}
@@ -357,6 +417,7 @@ export function Dashboard({agent, wallet}: any) {
         <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", justifyContent:isMobile ? "flex-start" : "flex-end"}}>
           <Badge text={status} color={status==="RUNNING"?C.ok:status==="PAUSED"?C.warn:C.danger} dot/>
           <Badge text={execMode.toUpperCase()} color={C.accent}/>
+          <Badge text={liveExecutionArmed ? "LIVE EXEC ON" : "LIVE EXEC OFF"} color={liveExecutionArmed ? C.ok : C.warn} dot/>
           <Badge text={ACCUMULATE_ONLY ? "ACCUMULATE-ONLY" : "MULTI-ACTION"} color={ACCUMULATE_ONLY ? C.ok : C.warn}/>
           <Badge text={wallet?.provider?.toUpperCase()||"WALLET"} color={C.purple} dot/>
           <Badge text={liveConnected?"DAG LIVE":"DAG OFFLINE"} color={liveConnected?C.ok:C.danger} dot/>
@@ -368,6 +429,14 @@ export function Dashboard({agent, wallet}: any) {
         <div style={{background:C.dLow,border:`1px solid ${C.danger}40`,borderRadius:6,padding:"11px 16px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
           <span style={{fontSize:12,color:C.danger,...mono}}>Kaspa live feed error (poll fallback): {kasDataError}</span>
           <Btn onClick={refreshKasData} disabled={kasDataLoading} size="sm" variant="ghost">{kasDataLoading?"RECONNECTING...":"RECONNECT FEED"}</Btn>
+        </div>
+      )}
+
+      {liveExecutionArmed && !liveExecutionReady && (
+        <div style={{background:C.wLow, border:`1px solid ${C.warn}40`, borderRadius:6, padding:"11px 16px", marginBottom:14}}>
+          <span style={{fontSize:12, color:C.warn, ...mono}}>
+            Live execution is armed but not ready. Require DAG live feed and a real wallet provider (Kasware or Kaspium).
+          </span>
         </div>
       )}
 
@@ -408,11 +477,13 @@ export function Dashboard({agent, wallet}: any) {
                 <Badge text={NETWORK_LABEL.toUpperCase()} color={DEFAULT_BADGE_COLOR(NETWORK_LABEL)} />
                 <Badge text={status} color={status==="RUNNING"?C.ok:C.warn} dot />
                 <Badge text={execMode.toUpperCase()} color={C.accent} />
+                <Badge text={liveExecutionArmed ? "EXEC ARMED" : "EXEC SAFE"} color={liveExecutionArmed ? C.ok : C.warn} dot />
+                <Badge text={`AUTO ${autoCycleCountdownLabel}`} color={status==="RUNNING" ? C.ok : C.dim} />
                 <Badge text={`SOURCE ${lastDecisionSource.toUpperCase()}`} color={lastDecisionSource === "fallback" ? C.warn : C.ok} />
                 <Badge text={`QUOTA ${usage.used}/${usage.limit}`} color={usage.locked ? C.danger : C.dim} />
               </div>
             </div>
-            <div style={{display:"grid", gridTemplateColumns:isTablet ? "1fr" : "1fr 1fr 1fr", gap:8, marginBottom:10}}>
+            <div style={{display:"grid", gridTemplateColumns:isTablet ? "1fr" : "1fr 1fr 1fr 1fr", gap:8, marginBottom:10}}>
               <div style={{background:C.s2, border:`1px solid ${C.border}`, borderRadius:6, padding:"10px 12px"}}>
                 <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>Spendable Balance</div>
                 <div style={{fontSize:13, color:C.ok, fontWeight:700, ...mono}}>{spendableKas.toFixed(4)} KAS</div>
@@ -424,6 +495,12 @@ export function Dashboard({agent, wallet}: any) {
               <div style={{background:C.s2, border:`1px solid ${C.border}`, borderRadius:6, padding:"10px 12px"}}>
                 <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>Capital / Cycle</div>
                 <div style={{fontSize:13, color:C.text, fontWeight:700, ...mono}}>{agent.capitalLimit} KAS</div>
+              </div>
+              <div style={{background:C.s2, border:`1px solid ${C.border}`, borderRadius:6, padding:"10px 12px"}}>
+                <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>Execution Readiness</div>
+                <div style={{fontSize:13, color:liveExecutionReady ? C.ok : C.warn, fontWeight:700, ...mono}}>
+                  {liveExecutionReady ? "READY" : "NOT READY"}
+                </div>
               </div>
             </div>
             <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
@@ -451,6 +528,13 @@ export function Dashboard({agent, wallet}: any) {
               <div style={{display:"flex", flexDirection:"column", gap:8}}>
                 <Btn onClick={runCycle} disabled={loading||status!=="RUNNING"} style={{padding:"10px 0"}}>{loading?"PROCESSING...":"RUN QUANT CYCLE"}</Btn>
                 <Btn onClick={refreshKasData} disabled={kasDataLoading} variant="ghost" style={{padding:"9px 0"}}>{kasDataLoading?"FETCHING DAG...":liveConnected?"REFRESH KASPA DATA":KAS_WS_URL?"RECONNECT STREAM/DATA":"RECONNECT KASPA FEED"}</Btn>
+                <Btn
+                  onClick={()=>setLiveExecutionArmed((v: boolean)=>!v)}
+                  variant={liveExecutionArmed ? "warn" : "primary"}
+                  style={{padding:"9px 0"}}
+                >
+                  {liveExecutionArmed ? "DISARM LIVE EXECUTION" : "ARM LIVE EXECUTION"}
+                </Btn>
                 <Btn onClick={()=>setTab("queue")} variant="ghost" style={{padding:"9px 0"}}>ACTION QUEUE {pendingCount>0?`(${pendingCount})`:""}</Btn>
                 {usage.locked && (
                   <Btn
@@ -527,8 +611,14 @@ export function Dashboard({agent, wallet}: any) {
           <div style={{display:"flex", flexDirection:"column", gap:12}}>
             <Card p={18}>
               <Label>Agent Controls</Label>
+              <div style={{fontSize:11, color:C.dim, ...mono, marginBottom:10}}>
+                Auto cycle cadence: every {AUTO_CYCLE_SECONDS}s · Next cycle in {autoCycleCountdownLabel}
+              </div>
               <div style={{display:"flex", flexDirection:"column", gap:8}}>
                 <Btn onClick={()=>setStatus((s: string)=>s==="RUNNING"?"PAUSED":"RUNNING")} variant="ghost" style={{padding:"10px 0"}}>{status==="RUNNING"?"PAUSE AGENT":"RESUME AGENT"}</Btn>
+                <Btn onClick={()=>setLiveExecutionArmed((v: boolean)=>!v)} variant={liveExecutionArmed ? "warn" : "primary"} style={{padding:"10px 0"}}>
+                  {liveExecutionArmed ? "DISARM LIVE EXECUTION" : "ARM LIVE EXECUTION"}
+                </Btn>
                 <Btn onClick={()=>setTab("wallet")} variant="ghost" style={{padding:"10px 0"}}>MANAGE WALLET</Btn>
                 <Btn onClick={killSwitch} variant="danger" style={{padding:"10px 0"}}>ACTIVATE KILL-SWITCH</Btn>
               </div>

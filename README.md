@@ -86,12 +86,16 @@ Monetization settings:
 - `VITE_FREE_CYCLES_PER_DAY` (default `30`)
 - `VITE_BILLING_UPGRADE_URL` (hosted checkout or subscription URL)
 - `VITE_BILLING_CONTACT` (support/contact string shown in billing panel)
+- `VITE_AUTO_CYCLE_SECONDS` (default `120`, minimum `15`)
+- `VITE_LIVE_EXECUTION_DEFAULT` (`false` recommended for safe boot)
 
 Runtime reliability defaults:
 - WebSocket stream auto-reconnect with exponential backoff (dashboard shows retry state)
 - Fallback decisions are clearly tagged in UI (`SOURCE FALLBACK`)
 - Auto-approve is disabled on fallback decisions (manual sign path only)
 - Daily free-cycle quota enforced at runtime; billing tab prompts upgrade when quota is exhausted
+- Automatic cycle scheduler runs while agent status is `RUNNING`
+- Live execution requires explicit arming in UI and readiness checks (real wallet + DAG live feed)
 
 ## Mainnet/Testnet Runtime Switch
 - Default profile comes from `VITE_KAS_NETWORK`.

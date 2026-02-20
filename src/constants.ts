@@ -55,6 +55,8 @@ export const CONF_THRESHOLD = 0.75;
 export const FREE_CYCLES_PER_DAY = Number(env.VITE_FREE_CYCLES_PER_DAY || 30);
 export const BILLING_UPGRADE_URL = String(env.VITE_BILLING_UPGRADE_URL || "").trim();
 export const BILLING_CONTACT = String(env.VITE_BILLING_CONTACT || "").trim();
+export const AUTO_CYCLE_SECONDS = Number(env.VITE_AUTO_CYCLE_SECONDS || 120);
+export const LIVE_EXECUTION_DEFAULT = String(env.VITE_LIVE_EXECUTION_DEFAULT || "false").toLowerCase() === "true";
 
 if (!Number.isFinite(FEE_RATE) || FEE_RATE < 0) {
   throw new Error("Invalid VITE_FEE_RATE. Expected a non-negative numeric value.");
@@ -66,4 +68,8 @@ if (!Number.isFinite(TREASURY_SPLIT) || TREASURY_SPLIT < 0 || TREASURY_SPLIT > 1
 
 if (!Number.isFinite(FREE_CYCLES_PER_DAY) || FREE_CYCLES_PER_DAY < 1) {
   throw new Error("Invalid VITE_FREE_CYCLES_PER_DAY. Expected an integer >= 1.");
+}
+
+if (!Number.isFinite(AUTO_CYCLE_SECONDS) || AUTO_CYCLE_SECONDS < 15) {
+  throw new Error("Invalid VITE_AUTO_CYCLE_SECONDS. Expected a numeric value >= 15.");
 }
