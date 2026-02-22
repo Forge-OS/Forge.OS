@@ -24,7 +24,7 @@
     ]
   },
   "index.html": {
-    "file": "assets/index--UtmOqVm.js",
+    "file": "assets/index-N4jWqhc1.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -51,7 +51,7 @@
     "src": "src/assets/wallets/kastle.svg"
   },
   "src/components/dashboard/AlertsPanel.tsx": {
-    "file": "assets/AlertsPanel-7Glnz-14.js",
+    "file": "assets/AlertsPanel-CpTvC1B6.js",
     "name": "AlertsPanel",
     "src": "src/components/dashboard/AlertsPanel.tsx",
     "isDynamicEntry": true,
@@ -61,7 +61,7 @@
     ]
   },
   "src/components/dashboard/IntelligencePanel.tsx": {
-    "file": "assets/IntelligencePanel-Bvyl6TWH.js",
+    "file": "assets/IntelligencePanel-BpovSl2z.js",
     "name": "IntelligencePanel",
     "src": "src/components/dashboard/IntelligencePanel.tsx",
     "isDynamicEntry": true,
@@ -71,7 +71,7 @@
     ]
   },
   "src/components/dashboard/PerfChart.tsx": {
-    "file": "assets/PerfChart-DsxX6a0I.js",
+    "file": "assets/PerfChart-Bm3T6K_3.js",
     "name": "PerfChart",
     "src": "src/components/dashboard/PerfChart.tsx",
     "isDynamicEntry": true,
@@ -84,7 +84,7 @@
     ]
   },
   "src/components/dashboard/PnlAttributionPanel.tsx": {
-    "file": "assets/PnlAttributionPanel-DA8zS809.js",
+    "file": "assets/PnlAttributionPanel-BuwrBOOb.js",
     "name": "PnlAttributionPanel",
     "src": "src/components/dashboard/PnlAttributionPanel.tsx",
     "isDynamicEntry": true,
@@ -94,7 +94,7 @@
     ]
   },
   "src/components/dashboard/PortfolioPanel.tsx": {
-    "file": "assets/PortfolioPanel-BF85DAZ5.js",
+    "file": "assets/PortfolioPanel-btxaZ9YJ.js",
     "name": "PortfolioPanel",
     "src": "src/components/dashboard/PortfolioPanel.tsx",
     "isDynamicEntry": true,
@@ -104,7 +104,7 @@
     ]
   },
   "src/components/dashboard/TreasuryPanel.tsx": {
-    "file": "assets/TreasuryPanel-CiOsL31U.js",
+    "file": "assets/TreasuryPanel-1E3KJINB.js",
     "name": "TreasuryPanel",
     "src": "src/components/dashboard/TreasuryPanel.tsx",
     "isDynamicEntry": true,

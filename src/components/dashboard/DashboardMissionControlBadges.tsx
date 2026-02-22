@@ -46,7 +46,7 @@ export function DashboardMissionControlBadges(props: Props) {
       <Badge text={liveExecutionArmed ? "EXEC ARMED" : "EXEC SAFE"} color={liveExecutionArmed ? C.ok : C.warn} dot />
       <Badge text={`AUTO ${autoCycleCountdownLabel}`} color={status==="RUNNING" ? C.ok : C.dim} />
       <Badge text={`SOURCE ${lastDecisionSource.toUpperCase()}`} color={decisionSourceBadgeColor(lastDecisionSource)} />
-      <Badge text={`QUOTA ${usage.used}/${usage.limit}`} color={usage.locked ? C.danger : C.dim} />
+      <Badge text={`CYCLES ${usage.used}`} color={C.dim} />
       <Badge
         text={`CAL ${String(executionGuardrails?.calibration?.tier || "healthy").toUpperCase()} ${Number(executionGuardrails?.calibration?.health || 1).toFixed(2)}`}
         color={
@@ -68,4 +68,3 @@ export function DashboardMissionControlBadges(props: Props) {
     </div>
   );
 }
-

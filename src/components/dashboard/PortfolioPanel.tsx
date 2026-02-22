@@ -17,6 +17,16 @@ export function PortfolioPanel({
   onRefresh,
 }: any) {
   const rows = Array.isArray(summary?.rows) ? summary.rows : [];
+  const summaryCards: Array<[string, string, string, string]> = [
+    ["Wallet KAS", `${Number(walletKas || 0).toFixed(4)}`, C.accent, "Current wallet balance seen by the portfolio allocator. This is the funding pool the bot can work from."],
+    ["Allocatable", `${Number(summary?.allocatableKas || 0).toFixed(4)} KAS`, C.text, "KAS available for bot allocation after reserves and allocator guards."],
+    ["Target Budget", `${Number(summary?.targetBudgetKas || 0).toFixed(4)} KAS`, C.ok, "Allocator target pool for all agents this cycle based on budget settings and wallet size."],
+    ["Allocated", `${Number(summary?.allocatedKas || 0).toFixed(4)} KAS`, C.text, "Total KAS currently assigned across agent budgets/cycle caps."],
+    ["Utilization", pct(summary?.utilizationPct, 1), (summary?.utilizationPct || 0) >= 95 ? C.ok : C.warn, "How much of the target budget is actually allocated. Low utilization can indicate risk/truth/calibration throttling."],
+    ["Concentration", pct(summary?.concentrationPct, 1), (summary?.concentrationPct || 0) > 55 ? C.warn : C.ok, "Largest single-agent share of the allocated budget. High concentration increases single-strategy risk."],
+    ["RW Exposure", pct((Number(summary?.riskWeightedExposurePct || 0) * 100), 1), C.warn, "Risk-weighted exposure proxy across all agents (higher means more aggregate aggressiveness)."],
+    ["Agents", String(Array.isArray(agents) ? agents.length : 0), C.dim, "Number of agents participating in the shared allocator."],
+  ];
 
   return (
     <div>
@@ -24,24 +34,28 @@ export function PortfolioPanel({
         <div>
           <div style={{ fontSize: 13, color: C.text, fontWeight: 700, ...mono }}>Multi-Agent Portfolio Control</div>
           <div style={{ fontSize: 11, color: C.dim }}>
-            Shared risk budget allocator across agents using quant signals, queue pressure, and configured weights.
+            Fund the bot in KAS and the allocator distributes cycle caps across agents automatically using calibration, truth quality, and risk controls.
           </div>
         </div>
         <Btn onClick={onRefresh} size="sm" variant="ghost">REFRESH ALLOCATOR</Btn>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8, marginBottom: 12 }}>
         {[
-          ["Wallet KAS", `${Number(walletKas || 0).toFixed(4)}`, C.accent],
-          ["Allocatable", `${Number(summary?.allocatableKas || 0).toFixed(4)} KAS`, C.text],
-          ["Target Budget", `${Number(summary?.targetBudgetKas || 0).toFixed(4)} KAS`, C.ok],
-          ["Allocated", `${Number(summary?.allocatedKas || 0).toFixed(4)} KAS`, C.text],
-          ["Utilization", pct(summary?.utilizationPct, 1), (summary?.utilizationPct || 0) >= 95 ? C.ok : C.warn],
-          ["Concentration", pct(summary?.concentrationPct, 1), (summary?.concentrationPct || 0) > 55 ? C.warn : C.ok],
-          ["RW Exposure", pct((Number(summary?.riskWeightedExposurePct || 0) * 100), 1), C.warn],
-          ["Agents", String(Array.isArray(agents) ? agents.length : 0), C.dim],
-        ].map(([label, value, color]) => (
-          <Card key={String(label)} p={12}>
+          ["Capital", "Wallet KAS + Allocatable tell you how much the bot can deploy this cycle."],
+          ["Safety", "Concentration + RW Exposure explain portfolio risk concentration across all agents."],
+          ["Automation", "Calibration/truth quality can reduce allocations even when balance is available."],
+        ].map(([title, text]) => (
+          <div key={String(title)} style={{ background: `linear-gradient(180deg, ${C.s2} 0%, ${C.s1} 100%)`, border: `1px solid ${C.border}`, borderRadius: 6, padding: "9px 10px" }}>
+            <div style={{ fontSize: 10, color: C.accent, ...mono, marginBottom: 3 }}>{title}</div>
+            <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.35 }}>{text}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginBottom: 12 }}>
+        {summaryCards.map(([label, value, color, hint]) => (
+          <Card key={String(label)} p={12} title={hint}>
             <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>{label}</div>
             <div style={{ fontSize: 13, color: color as any, fontWeight: 700, ...mono }}>{value}</div>
           </Card>
@@ -49,41 +63,51 @@ export function PortfolioPanel({
       </div>
 
       <Card p={14} style={{ marginBottom: 12 }}>
-        <Label>Shared Budget Settings</Label>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
-          <Inp
-            label="Total Budget %"
-            value={String(Math.round(Number(config?.totalBudgetPct || 0) * 10000) / 100)}
-            onChange={(v: string) => onConfigPatch({ totalBudgetPct: Math.max(5, Math.min(100, Number(v) || 0)) / 100 })}
-            type="number"
-            suffix="%"
-            hint="Share of wallet balance allocator can assign."
-          />
-          <Inp
-            label="Reserve"
-            value={String(config?.reserveKas ?? 0)}
-            onChange={(v: string) => onConfigPatch({ reserveKas: Math.max(0, Number(v) || 0) })}
-            type="number"
-            suffix="KAS"
-            hint="Hard reserve before shared budget allocation."
-          />
-          <Inp
-            label="Max Agent Share %"
-            value={String(Math.round(Number(config?.maxAgentAllocationPct || 0) * 10000) / 100)}
-            onChange={(v: string) => onConfigPatch({ maxAgentAllocationPct: Math.max(5, Math.min(100, Number(v) || 0)) / 100 })}
-            type="number"
-            suffix="%"
-            hint="Concentration cap per agent in shared budget."
-          />
-          <Inp
-            label="Rebalance Threshold %"
-            value={String(Math.round(Number(config?.rebalanceThresholdPct || 0) * 10000) / 100)}
-            onChange={(v: string) => onConfigPatch({ rebalanceThresholdPct: Math.max(1, Math.min(50, Number(v) || 0)) / 100 })}
-            type="number"
-            suffix="%"
-            hint="Only surface rebalance deltas above this threshold."
-          />
-        </div>
+        <details>
+          <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div>
+              <Label>Allocator Controls (Advanced)</Label>
+              <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>
+                Optional tuning for shared portfolio behavior. Default auto settings are fine for most operators.
+              </div>
+            </div>
+            <Badge text="ADVANCED" color={C.dim} />
+          </summary>
+          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
+            <Inp
+              label="Total Budget %"
+              value={String(Math.round(Number(config?.totalBudgetPct || 0) * 10000) / 100)}
+              onChange={(v: string) => onConfigPatch({ totalBudgetPct: Math.max(5, Math.min(100, Number(v) || 0)) / 100 })}
+              type="number"
+              suffix="%"
+              hint="Share of wallet balance allocator can assign."
+            />
+            <Inp
+              label="Reserve"
+              value={String(config?.reserveKas ?? 0)}
+              onChange={(v: string) => onConfigPatch({ reserveKas: Math.max(0, Number(v) || 0) })}
+              type="number"
+              suffix="KAS"
+              hint="Hard reserve before shared budget allocation."
+            />
+            <Inp
+              label="Max Agent Share %"
+              value={String(Math.round(Number(config?.maxAgentAllocationPct || 0) * 10000) / 100)}
+              onChange={(v: string) => onConfigPatch({ maxAgentAllocationPct: Math.max(5, Math.min(100, Number(v) || 0)) / 100 })}
+              type="number"
+              suffix="%"
+              hint="Concentration cap per agent in shared budget."
+            />
+            <Inp
+              label="Rebalance Threshold %"
+              value={String(Math.round(Number(config?.rebalanceThresholdPct || 0) * 10000) / 100)}
+              onChange={(v: string) => onConfigPatch({ rebalanceThresholdPct: Math.max(1, Math.min(50, Number(v) || 0)) / 100 })}
+              type="number"
+              suffix="%"
+              hint="Only surface rebalance deltas above this threshold."
+            />
+          </div>
+        </details>
       </Card>
 
       <Card p={0}>
@@ -142,59 +166,65 @@ export function PortfolioPanel({
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8, marginBottom: 8 }}>
-                <div style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
+                <div title="Allocator target share for this agent before risk/calibration/truth penalties and cycle caps." style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
                   <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 2 }}>Target Alloc</div>
                   <div style={{ fontSize: 12, color: C.text, ...mono }}>{pct(row.targetPct, 1)}</div>
                 </div>
-                <div style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
+                <div title="Actual budget share assigned after shared portfolio allocator weighting and caps." style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
                   <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 2 }}>Budget Share</div>
                   <div style={{ fontSize: 12, color: C.text, ...mono }}>{pct(row.budgetPct, 1)}</div>
                 </div>
-                <div style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
-                  <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 2 }}>Risk Weight</div>
+                <div title="Relative allocator priority for this agent when conditions are favorable. Higher means more share before safety penalties." style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
+                  <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 2 }}>Allocator Weight</div>
                   <div style={{ fontSize: 12, color: C.text, ...mono }}>{row.riskWeight}</div>
                 </div>
-                <div style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
+                <div title="Backlog pressure from queue items for this agent. Higher pressure can reduce new cycle allocation." style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
                   <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 2 }}>Queue Pressure</div>
                   <div style={{ fontSize: 12, color: row.queuePressurePct > 20 ? C.warn : C.dim, ...mono }}>{pct(row.queuePressurePct, 1)}</div>
                 </div>
-                <div style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
+                <div title="Signal confidence and feature data quality feeding the shared allocator quality score for this agent." style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
                   <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 2 }}>Confidence / DataQ</div>
                   <div style={{ fontSize: 12, color: C.text, ...mono }}>{row.confidence} / {row.dataQuality}</div>
                 </div>
-                <div style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
+                <div title="Truth quality (receipt consistency/coverage) and calibration health directly affect allocator routing and cycle caps." style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
                   <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 2 }}>Truth Quality / Cal</div>
                   <div style={{ fontSize: 12, color: C.text, ...mono }}>{row.truthQualityScore} / {row.calibrationHealth}</div>
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: C.dim, ...mono }}>
-                    <input
-                      type="checkbox"
-                      checked={row.enabled}
-                      onChange={(e) => onAgentOverridePatch?.(row.agentId, { enabled: e.target.checked })}
-                    />
-                    ENABLED
-                  </label>
+              <details>
+                <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: C.dim, ...mono, marginBottom: 8 }}>
+                  <Badge text="ADVANCED AGENT OVERRIDES" color={C.dim} />
+                  <span>Enable / allocation / allocator weight</span>
+                </summary>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: C.dim, ...mono }}>
+                      <input
+                        type="checkbox"
+                        checked={row.enabled}
+                        onChange={(e) => onAgentOverridePatch?.(row.agentId, { enabled: e.target.checked })}
+                      />
+                      ENABLED
+                    </label>
+                  </div>
+                  <Inp
+                    label="Target Allocation %"
+                    value={String(row.targetPct)}
+                    onChange={(v: string) => onAgentOverridePatch?.(row.agentId, { targetAllocationPct: Math.max(0, Math.min(100, Number(v) || 0)) })}
+                    type="number"
+                    suffix="%"
+                    hint="Portfolio target share for this agent."
+                  />
+                  <Inp
+                    label="Allocator Weight"
+                    value={String(row.riskWeight)}
+                    onChange={(v: string) => onAgentOverridePatch?.(row.agentId, { riskWeight: Math.max(0, Math.min(10, Number(v) || 0)) })}
+                    type="number"
+                    hint="Relative allocator weight when signals are favorable."
+                  />
                 </div>
-                <Inp
-                  label="Target Allocation %"
-                  value={String(row.targetPct)}
-                  onChange={(v: string) => onAgentOverridePatch?.(row.agentId, { targetAllocationPct: Math.max(0, Math.min(100, Number(v) || 0)) })}
-                  type="number"
-                  suffix="%"
-                  hint="Portfolio target share for this agent."
-                />
-                <Inp
-                  label="Risk Weight"
-                  value={String(row.riskWeight)}
-                  onChange={(v: string) => onAgentOverridePatch?.(row.agentId, { riskWeight: Math.max(0, Math.min(10, Number(v) || 0)) })}
-                  type="number"
-                  hint="Relative allocator weight when signals are favorable."
-                />
-              </div>
+              </details>
 
               <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {(row.notes || []).map((note: string) => (

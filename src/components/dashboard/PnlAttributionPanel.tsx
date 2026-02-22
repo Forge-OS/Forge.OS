@@ -23,6 +23,29 @@ export function PnlAttributionPanel({ summary }: any) {
   const truthDegradedReason = String(summary?.truthDegradedReason || "");
 
   const modeLabel = netMode === "realized" ? "Realized" : netMode === "hybrid" ? "Hybrid" : "Estimated";
+  const metricCards: Array<[string, string, string, string]> = [
+    [
+      netMode === "realized" ? "Net PnL (realized)" : netMode === "hybrid" ? "Net PnL (hybrid)" : "Net PnL (est)",
+      `${net >= 0 ? "+" : ""}${net.toFixed(4)} KAS`,
+      net >= 0 ? C.ok : C.danger,
+      "Total net result after attribution components. Realized/hybrid depends on receipt confirmations and truth quality.",
+    ],
+    ["Fill Rate", `${Number(summary?.fillRatePct || 0).toFixed(1)}%`, Number(summary?.fillRatePct || 0) >= 70 ? C.ok : C.warn, "How often actionable signals became executed queue/broadcast outcomes."],
+    ["Confirmed Receipts", `${Number(summary?.confirmedSignals || 0)}`, Number(summary?.confirmedSignals || 0) > 0 ? C.ok : C.dim, "Signals with receipt confirmation data available."],
+    ["Receipt Coverage", `${Number(summary?.receiptCoveragePct || 0).toFixed(1)}%`, Number(summary?.receiptCoveragePct || 0) >= 50 ? C.ok : C.warn, "Share of executed signals with any receipt telemetry (chain or backend)."],
+    ["Realized Receipt Coverage", `${Number(summary?.realizedReceiptCoveragePct || 0).toFixed(1)}%`, Number(summary?.realizedReceiptCoveragePct || 0) >= 50 ? C.ok : C.warn, "Share of executed signals that meet the active confirmation floor for realized accounting."],
+    ["Chain Fee Coverage", `${Number(summary?.chainFeeCoveragePct || 0).toFixed(1)}%`, Number(summary?.chainFeeCoveragePct || 0) >= 50 ? C.ok : C.warn, "Share of signals with chain-derived fee data (stronger than estimated fee attribution)."],
+    ["Signal Quality", `${quality.toFixed(3)}`, quality >= 0.65 ? C.ok : C.warn, "Composite score summarizing signal usefulness from realized outcomes and execution funnel quality."],
+    ["Conf Brier (↓)", `${confidenceBrier.toFixed(4)}`, confidenceBrier <= 0.20 ? C.ok : C.warn, "Confidence calibration error. Lower is better; high means confidence is misaligned with actual outcomes."],
+    ["EV Cal Error", `${evCalErrorPct.toFixed(3)}%`, evCalErrorPct <= 1.5 ? C.ok : C.warn, "Gap between expected value forecasts and realized edge. Lower is better."],
+    ["Regime Hit", `${regimeHitRatePct.toFixed(1)}% (${regimeHitSamples})`, regimeHitRatePct >= 55 ? C.ok : C.warn, "How often the strategy/regime framing matched profitable or correct execution conditions."],
+    ["Realized vs Exp Edge", `${realizedVsExpectedEdgeKas >= 0 ? "+" : ""}${realizedVsExpectedEdgeKas.toFixed(4)} KAS`, realizedVsExpectedEdgeKas >= 0 ? C.ok : C.warn, "Difference between realized edge and expected edge. Positive means execution + decisions beat forecast."],
+    ["Timing Alpha", `${timing >= 0 ? "+" : ""}${timing.toFixed(3)}%`, timing >= 0 ? C.ok : C.warn, "Timing contribution from when the bot entered/exited relative to subsequent snapshots."],
+    ["Avg Confidence", `${Number(summary?.avgSignalConfidence || 0).toFixed(3)}`, C.text, "Average confidence output across signals (use with Brier score, not alone)."],
+    ["Avg EV", `${Number(summary?.avgExpectedValuePct || 0).toFixed(3)}%`, C.text, "Average expected value forecast before realized execution drift."],
+    ["Missed Fill", `${Number(summary?.missedFillKas || 0).toFixed(4)} KAS`, Number(summary?.missedFillKas || 0) > 0 ? C.warn : C.ok, "Estimated opportunity left unexecuted due to queue delays/rejections/unfilled actions."],
+    ["Timing Wins", `${Number(summary?.timingWins || 0)}/${Number(summary?.timingSamples || 0)}`, C.dim, "Count of positive timing outcomes over all timing-evaluable signals."],
+  ];
   return (
     <div>
       <div style={{ marginBottom: 14 }}>
@@ -65,28 +88,23 @@ export function PnlAttributionPanel({ summary }: any) {
           />
           {truthDegraded && <Badge text="TRUTH DEGRADED" color={C.danger} />}
         </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8, marginTop: 10 }}>
+          {[
+            ["Profit Truth", "Net PnL becomes trustworthy only as receipt coverage and confirmation depth increase."],
+            ["Calibration", "Conf Brier + EV Cal Error + Regime Hit measure whether the bot's confidence and forecasts match reality."],
+            ["Execution Drag", "Timing Alpha, fees, and missed fills explain why a good signal can still underperform."],
+          ].map(([title, text]) => (
+            <div key={String(title)} style={{ background: `linear-gradient(180deg, ${C.s2} 0%, ${C.s1} 100%)`, border: `1px solid ${C.border}`, borderRadius: 6, padding: "9px 10px" }}>
+              <div style={{ fontSize: 10, color: C.accent, ...mono, marginBottom: 3 }}>{title}</div>
+              <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.35 }}>{text}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginBottom: 12 }}>
-        {[
-          [netMode === "realized" ? "Net PnL (realized)" : netMode === "hybrid" ? "Net PnL (hybrid)" : "Net PnL (est)", `${net >= 0 ? "+" : ""}${net.toFixed(4)} KAS`, net >= 0 ? C.ok : C.danger],
-          ["Fill Rate", `${Number(summary?.fillRatePct || 0).toFixed(1)}%`, Number(summary?.fillRatePct || 0) >= 70 ? C.ok : C.warn],
-          ["Confirmed Receipts", `${Number(summary?.confirmedSignals || 0)}`, Number(summary?.confirmedSignals || 0) > 0 ? C.ok : C.dim],
-          ["Receipt Coverage", `${Number(summary?.receiptCoveragePct || 0).toFixed(1)}%`, Number(summary?.receiptCoveragePct || 0) >= 50 ? C.ok : C.warn],
-          ["Realized Receipt Coverage", `${Number(summary?.realizedReceiptCoveragePct || 0).toFixed(1)}%`, Number(summary?.realizedReceiptCoveragePct || 0) >= 50 ? C.ok : C.warn],
-          ["Chain Fee Coverage", `${Number(summary?.chainFeeCoveragePct || 0).toFixed(1)}%`, Number(summary?.chainFeeCoveragePct || 0) >= 50 ? C.ok : C.warn],
-          ["Signal Quality", `${quality.toFixed(3)}`, quality >= 0.65 ? C.ok : C.warn],
-          ["Conf Brier (↓)", `${confidenceBrier.toFixed(4)}`, confidenceBrier <= 0.20 ? C.ok : C.warn],
-          ["EV Cal Error", `${evCalErrorPct.toFixed(3)}%`, evCalErrorPct <= 1.5 ? C.ok : C.warn],
-          ["Regime Hit", `${regimeHitRatePct.toFixed(1)}% (${regimeHitSamples})`, regimeHitRatePct >= 55 ? C.ok : C.warn],
-          ["Realized vs Exp Edge", `${realizedVsExpectedEdgeKas >= 0 ? "+" : ""}${realizedVsExpectedEdgeKas.toFixed(4)} KAS`, realizedVsExpectedEdgeKas >= 0 ? C.ok : C.warn],
-          ["Timing Alpha", `${timing >= 0 ? "+" : ""}${timing.toFixed(3)}%`, timing >= 0 ? C.ok : C.warn],
-          ["Avg Confidence", `${Number(summary?.avgSignalConfidence || 0).toFixed(3)}`, C.text],
-          ["Avg EV", `${Number(summary?.avgExpectedValuePct || 0).toFixed(3)}%`, C.text],
-          ["Missed Fill", `${Number(summary?.missedFillKas || 0).toFixed(4)} KAS`, Number(summary?.missedFillKas || 0) > 0 ? C.warn : C.ok],
-          ["Timing Wins", `${Number(summary?.timingWins || 0)}/${Number(summary?.timingSamples || 0)}`, C.dim],
-        ].map(([label, value, color]) => (
-          <Card key={String(label)} p={12}>
+        {metricCards.map(([label, value, color, hint]) => (
+          <Card key={String(label)} p={12} title={hint}>
             <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>{label}</div>
             <div style={{ fontSize: 13, color: color as any, fontWeight: 700, ...mono }}>{value}</div>
           </Card>
@@ -115,6 +133,9 @@ export function PnlAttributionPanel({ summary }: any) {
 
       <Card p={14}>
         <Label>Execution Funnel</Label>
+        <div style={{ fontSize: 11, color: C.dim, marginBottom: 8 }}>
+          Funnel counts explain where profitable intent gets lost: queue pending, user rejects, and execution delays usually show up here before they hit net PnL.
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8 }}>
           {[
             ["Actionable Signals", summary?.actionableSignals ?? 0, C.text],

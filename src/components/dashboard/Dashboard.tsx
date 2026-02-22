@@ -4,7 +4,6 @@ import {
   ACCUMULATION_VAULT,
   AGENT_SPLIT,
   AUTO_CYCLE_SECONDS,
-  BILLING_UPGRADE_URL,
   CONF_THRESHOLD,
   EXPLORER,
   FEE_RATE,
@@ -45,7 +44,6 @@ import { SigningModal } from "../SigningModal";
 import { Badge, Btn, Card, ExtLink, Label } from "../ui";
 import { EXEC_OPTS } from "../wizard/constants";
 import { ActionQueue } from "./ActionQueue";
-import { BillingPanel } from "./BillingPanel";
 import { DashboardMissionControlBadges } from "./DashboardMissionControlBadges";
 import { DashboardRuntimeNotices } from "./DashboardRuntimeNotices";
 import { WalletPanel } from "./WalletPanel";
@@ -198,6 +196,11 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
     }
   }, [status, cycleIntervalMs]);
 
+  useEffect(() => {
+    // Migrate legacy persisted tab value after billing/paywall UI removal.
+    if (tab === "billing") setTab("treasury");
+  }, [tab]);
+
   const riskThresh = agent.risk==="low"?0.4:agent.risk==="medium"?0.65:0.85;
   const allAgents = useMemo(() => {
     const source = Array.isArray(agents) && agents.length > 0 ? agents : [agent];
@@ -304,17 +307,7 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
 
       setNextAutoCycleAt(Date.now() + cycleIntervalMs);
       addLog({type:"DATA", msg:`Kaspa DAG snapshot: DAA ${kasData?.dag?.daaScore||"—"} · Wallet ${kasData?.walletKas||"—"} KAS`, fee:null});
-      const usageAfterConsume = consumeUsageCycle(FREE_CYCLES_PER_DAY, usageScope);
-      setUsage(usageAfterConsume);
-      if (usageAfterConsume.locked) {
-        setTab("billing");
-        addLog({
-          type:"SYSTEM",
-          msg:`Daily free cycle quota reached (${usageAfterConsume.used}/${usageAfterConsume.limit}). Upgrade required for additional runs.`,
-          fee:null,
-        });
-        return;
-      }
+      setUsage(consumeUsageCycle(FREE_CYCLES_PER_DAY, usageScope));
 
       const dec = await runQuantEngineClient(agent, kasData||{}, { history: marketHistory });
       const decSource = String(dec?.decision_source || "ai");
@@ -651,7 +644,6 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
     {k:"queue",l:`QUEUE${pendingCount>0?` (${pendingCount})`:""}`},
     {k:"treasury",l:"TREASURY"},
     {k:"wallet",l:"WALLET"},
-    {k:"billing",l:"BILLING"},
     {k:"log",l:"LOG"},
     {k:"controls",l:"CONTROLS"},
   ];
@@ -799,21 +791,6 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
                   {liveExecutionArmed ? "DISARM LIVE EXECUTION" : "ARM LIVE EXECUTION"}
                 </Btn>
                 <Btn onClick={()=>setTab("queue")} variant="ghost" style={{padding:"9px 0"}}>ACTION QUEUE {pendingCount>0?`(${pendingCount})`:""}</Btn>
-                {usage.locked && (
-                  <Btn
-                    onClick={() => {
-                      if (BILLING_UPGRADE_URL) {
-                        window.open(BILLING_UPGRADE_URL, "_blank", "noopener,noreferrer");
-                      } else {
-                        setTab("billing");
-                      }
-                    }}
-                    variant="warn"
-                    style={{padding:"9px 0"}}
-                  >
-                    UPGRADE TO CONTINUE
-                  </Btn>
-                )}
                 <Btn onClick={()=>transitionAgentStatus({ type: status==="RUNNING" ? "PAUSE" : "RESUME" })} variant="ghost" style={{padding:"9px 0"}}>{status==="RUNNING"?"PAUSE":"RESUME"}</Btn>
                 <Btn onClick={killSwitch} variant="danger" style={{padding:"9px 0"}}>KILL-SWITCH</Btn>
               </div>
@@ -876,7 +853,6 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
         </Suspense>
       )}
       {tab==="wallet" && <WalletPanel agent={agent} wallet={wallet}/>}
-      {tab==="billing" && <BillingPanel usage={usage} />}
 
       {/* ── LOG ── */}
       {tab==="log" && (

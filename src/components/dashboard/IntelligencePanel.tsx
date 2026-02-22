@@ -204,20 +204,32 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
             {/* Quant metrics grid */}
             <div style={{display:"grid", gridTemplateColumns:metricsCols, gap:10, marginBottom:14}}>
               {[
-                ["Kelly Fraction",    `${(dec.kelly_fraction*100).toFixed(1)}%`, C.accent],
-                ["Monte Carlo Win",   `${dec.monte_carlo_win_pct}%`,             C.ok],
-                ["Capital Alloc",     `${dec.capital_allocation_kas} KAS`,       C.text],
-                ["Expected Value",    `+${dec.expected_value_pct}%`,             C.ok],
-                ["Stop Loss",         `-${dec.stop_loss_pct}%`,                  C.danger],
-                ["Take Profit",       `+${dec.take_profit_pct}%`,                C.ok],
-                ["Volatility",        dec.volatility_estimate,                   dec.volatility_estimate==="HIGH"?C.danger:dec.volatility_estimate==="MEDIUM"?C.warn:C.ok],
-                ["Liquidity Impact",  dec.liquidity_impact,                      dec.liquidity_impact==="SIGNIFICANT"?C.danger:C.dim],
-                ["Engine Latency",    `${dec.engine_latency_ms || 0} ms`,       (dec.engine_latency_ms || 0) <= 2500 ? C.ok : C.warn],
-                ["Data Quality",      quant?.data_quality_score ?? "—",          (quant?.data_quality_score ?? 0) >= 0.75 ? C.ok : C.warn],
-              ].map(([k,v,c])=> (
-                <div key={k as any} style={{background:C.s2, borderRadius:4, padding:"10px 12px"}}>
+                ["Kelly Fraction", `${(dec.kelly_fraction*100).toFixed(1)}%`, C.accent, "Position sizing fraction after quant/AI guardrails. Higher is more aggressive."],
+                ["Monte Carlo Win", `${dec.monte_carlo_win_pct}%`, C.ok, "Model-estimated win probability for the current setup; not guaranteed realized PnL."],
+                ["Capital Alloc", `${dec.capital_allocation_kas} KAS`, C.text, "Proposed KAS amount for this cycle after portfolio caps and risk controls."],
+                ["Expected Value", `+${dec.expected_value_pct}%`, C.ok, "Expected edge for this decision before realized execution drift is known."],
+                ["Stop Loss", `-${dec.stop_loss_pct}%`, C.danger, "Loss control target used for risk envelope logic."],
+                ["Take Profit", `+${dec.take_profit_pct}%`, C.ok, "Profit-taking target used for expected value and phase planning."],
+                ["Volatility", dec.volatility_estimate, dec.volatility_estimate==="HIGH"?C.danger:dec.volatility_estimate==="MEDIUM"?C.warn:C.ok, "Quant-estimated volatility bucket; high volatility tightens trust in raw signals."],
+                ["Liquidity Impact", dec.liquidity_impact, dec.liquidity_impact==="SIGNIFICANT"?C.danger:C.dim, "Estimated execution friction/slippage pressure for current market conditions."],
+                ["Engine Latency", `${dec.engine_latency_ms || 0} ms`, (dec.engine_latency_ms || 0) <= 2500 ? C.ok : C.warn, "Decision engine runtime (quant + AI overlay path + fusion) for this cycle."],
+                ["Data Quality", quant?.data_quality_score ?? "—", (quant?.data_quality_score ?? 0) >= 0.75 ? C.ok : C.warn, "Signal trust score from quant feature sufficiency and stability. Low quality reduces automation confidence."],
+              ].map(([k,v,c,hint])=> (
+                <div key={k as any} title={String(hint)} style={{background:C.s2, borderRadius:4, padding:"10px 12px"}}>
                   <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.06em", marginBottom:4}}>{k}</div>
                   <div style={{fontSize:13, color:c as any, fontWeight:700, ...mono}}>{v}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"grid", gridTemplateColumns:isMobile ? "1fr" : "repeat(3,1fr)", gap:8, marginBottom:14}}>
+              {[
+                ["Sizing", "Kelly Fraction + Capital Alloc are your practical position-size controls in KAS."],
+                ["Trust", "Data Quality + Regime + Risk/Confidence tell you whether to trust the action or wait."],
+                ["Execution", "Liquidity Impact + Engine Latency help explain slippage risk and cycle responsiveness."],
+              ].map(([title, text]) => (
+                <div key={String(title)} style={{background:`linear-gradient(180deg, ${C.s2} 0%, ${C.s1} 100%)`, border:`1px solid ${C.border}`, borderRadius:6, padding:"9px 10px"}}>
+                  <div style={{fontSize:10, color:C.accent, ...mono, marginBottom:3}}>{title}</div>
+                  <div style={{fontSize:11, color:C.dim, lineHeight:1.35}}>{text}</div>
                 </div>
               ))}
             </div>
@@ -274,6 +286,9 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
                   <Badge text={`EDGE ${formatMetric(quant.edge_score)}`} color={(Number(quant.edge_score) || 0) > 0 ? C.ok : C.warn}/>
                   {quant.ai_overlay_applied && <Badge text="AI OVERLAY APPLIED" color={C.accent}/>}
                 </div>
+              </div>
+              <div style={{fontSize:11, color:C.dim, marginBottom:10}}>
+                Raw quant features behind the decision. Use these to understand regime behavior and why guardrails or AI fusion changed sizing/action.
               </div>
               <div style={{display:"grid", gridTemplateColumns:isMobile ? "1fr" : "1fr 1fr", gap:8}}>
                 {[
