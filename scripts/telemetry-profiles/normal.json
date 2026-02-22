@@ -1,5 +1,7 @@
 {
   "name": "normal",
   "observedConfirmP95Ms": 9000,
-  "daaCongestionPct": 35
+  "daaCongestionPct": 35,
+  "receiptLagP95Ms": 3200,
+  "schedulerCallbackLatencyP95BucketMs": 250
 }

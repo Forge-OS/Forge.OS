@@ -62,6 +62,7 @@ export function DashboardRuntimeNotices(props: Props) {
             <span style={{fontSize:12, color:executionGuardrails.calibration.tier === "critical" ? C.danger : C.warn, ...mono}}>
               Calibration guardrail {String(executionGuardrails.calibration.tier).toUpperCase()} · health {executionGuardrails.calibration.health.toFixed(3)} · size multiplier {executionGuardrails.calibration.sizeMultiplier.toFixed(2)}
               {executionGuardrails.calibration.autoApproveDisabled ? " · auto-approve disabled" : ""}
+              {executionGuardrails.calibration.autoApproveDisableDeferred ? " · size-first throttle (auto-approve still enabled)" : ""}
             </span>
             <div style={{display:"flex", gap:6, flexWrap:"wrap"}}>
               <Badge text={`BRIER ${Number(executionGuardrails.calibration.metrics.brier || 0).toFixed(4)}`} color={C.dim} />
@@ -80,4 +81,3 @@ export function DashboardRuntimeNotices(props: Props) {
     </>
   );
 }
-

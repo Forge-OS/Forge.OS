@@ -145,7 +145,7 @@ body {
   width: min(1380px, 100%);
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(500px, 760px);
-  align-items: stretch;
+  align-items: start;
   gap: 24px;
 }
 
@@ -160,7 +160,40 @@ body {
   box-shadow: 0 28px 64px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.forge-gate-hero-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.forge-gate-hero-strip {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.forge-gate-hero-strip-item {
+  border: 1px solid rgba(33, 48, 67, 0.72);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(11, 20, 30, 0.78) 0%, rgba(9, 15, 23, 0.7) 100%);
+  padding: 9px 10px;
+}
+
+.forge-gate-hero-strip-k {
+  font: 700 10px/1.2 "IBM Plex Mono", monospace;
+  color: #39ddb6;
+  letter-spacing: 0.1em;
+  margin-bottom: 3px;
+}
+
+.forge-gate-hero-strip-v {
+  font: 500 10px/1.35 "IBM Plex Mono", monospace;
+  color: #8fa0b5;
 }
 
 .forge-gate-kicker {
@@ -289,6 +322,10 @@ body {
   }
 
   .forge-gate-points {
+    grid-template-columns: 1fr;
+  }
+
+  .forge-gate-hero-strip {
     grid-template-columns: 1fr;
   }
 

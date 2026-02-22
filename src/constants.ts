@@ -265,6 +265,10 @@ export const CALIBRATION_AUTO_APPROVE_DISABLE_HEALTH_BELOW = Math.max(
   0,
   Math.min(1, Number(env.VITE_CALIBRATION_AUTO_APPROVE_DISABLE_HEALTH_BELOW || 0.4))
 );
+export const CALIBRATION_AUTO_APPROVE_DISABLE_MIN_SIZE_REDUCTION_PCT = Math.max(
+  0,
+  Math.min(0.95, Number(env.VITE_CALIBRATION_AUTO_APPROVE_DISABLE_MIN_SIZE_REDUCTION_PCT || 0.1))
+);
 
 if (!Number.isFinite(FEE_RATE) || FEE_RATE < 0) {
   throw new Error("Invalid VITE_FEE_RATE. Expected a non-negative numeric value.");

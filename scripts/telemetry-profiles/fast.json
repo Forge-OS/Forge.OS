@@ -1,5 +1,7 @@
 {
   "name": "fast",
   "observedConfirmP95Ms": 4500,
-  "daaCongestionPct": 12
+  "daaCongestionPct": 12,
+  "receiptLagP95Ms": 1200,
+  "schedulerCallbackLatencyP95BucketMs": 100
 }

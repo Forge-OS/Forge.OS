@@ -62,11 +62,18 @@ const metrics = {
   localWasmUtxoFetchErrorsTotal: 0,
   localWasmPolicySelectedInputsTotal: 0,
   localWasmPolicyTotalInputsSeen: 0,
+  localWasmPolicySelectedAmountSompiTotal: 0,
+  localWasmPolicyRequiredTargetSompiTotal: 0,
+  localWasmPolicyOverfundSompiTotal: 0,
   localWasmPolicyPriorityFeeSompiTotal: 0,
   localWasmPolicyTruncatedSelectionsTotal: 0,
   localWasmPolicyFallbackAllInputsTotal: 0,
   localWasmPolicySelectionModeTotal: new Map(),
   localWasmPolicyPriorityFeeModeTotal: new Map(),
+  localWasmPolicyAdaptiveSamplesTotal: 0,
+  localWasmPolicyAdaptiveObservedConfirmP95MsTotal: 0,
+  localWasmPolicyAdaptiveReceiptLagP95MsTotal: 0,
+  localWasmPolicyAdaptiveSchedulerCallbackP95BucketMsTotal: 0,
   upstreamRequestsTotal: 0,
   upstreamErrorsTotal: 0,
   commandRequestsTotal: 0,
@@ -349,11 +356,25 @@ function mergeLiveTelemetry(inputTelemetry, callbackSummary, schedulerSummary) {
   );
   const schedulerCallbackP95BucketMs = Number(schedulerSummary?.callbacks?.latencyP95BucketMs ?? 0);
 
-  if (!base.observedConfirmP95Ms && confirmP95Ms > 0) {
-    base.observedConfirmP95Ms = Math.round(confirmP95Ms);
+  const derivedConfirmP95Ms = confirmP95Ms > 0
+    ? confirmP95Ms
+    : receiptLagP95Ms > 0
+      ? Math.round(Math.max(1000, receiptLagP95Ms * 0.75))
+      : schedulerCallbackP95BucketMs > 0
+        ? Math.round(Math.max(1000, schedulerCallbackP95BucketMs * 8))
+        : 0;
+  if (!base.observedConfirmP95Ms && derivedConfirmP95Ms > 0) {
+    base.observedConfirmP95Ms = Math.round(derivedConfirmP95Ms);
   }
-  if (base.daaCongestionPct == null && saturationProxyPct > 0) {
-    base.daaCongestionPct = Math.max(0, Math.min(100, Math.round(saturationProxyPct)));
+  if (base.daaCongestionPct == null) {
+    const derivedCongestion = saturationProxyPct > 0
+      ? saturationProxyPct
+      : schedulerCallbackP95BucketMs > 0
+        ? Math.min(100, Math.max(0, Math.round((schedulerCallbackP95BucketMs / 2500) * 100)))
+        : 0;
+    if (derivedCongestion > 0) {
+      base.daaCongestionPct = Math.max(0, Math.min(100, Math.round(derivedCongestion)));
+    }
   }
   if (receiptLagP95Ms > 0) base.receiptLagP95Ms = Math.round(receiptLagP95Ms);
   if (schedulerCallbackP95BucketMs > 0) base.schedulerCallbackLatencyP95BucketMs = Math.round(schedulerCallbackP95BucketMs);
@@ -544,13 +565,35 @@ async function buildTxJsonLocalWasm(payload) {
       config: describeLocalTxPolicyConfig(localTxPolicyConfig),
     };
 
+    const selectedAmountSompiNum = Math.max(0, Number(policyMeta.selectedAmountSompi || 0));
+    const requiredTargetSompiNum = Math.max(0, Number(policyMeta.requiredTargetSompi || 0));
+    const overfundSompiNum = Math.max(0, selectedAmountSompiNum - requiredTargetSompiNum);
+
     metrics.localWasmPolicySelectedInputsTotal += Number(policyMeta.selectedInputs || 0);
     metrics.localWasmPolicyTotalInputsSeen += Number(policyMeta.totalInputs || 0);
+    metrics.localWasmPolicySelectedAmountSompiTotal += selectedAmountSompiNum;
+    metrics.localWasmPolicyRequiredTargetSompiTotal += requiredTargetSompiNum;
+    metrics.localWasmPolicyOverfundSompiTotal += overfundSompiNum;
     metrics.localWasmPolicyPriorityFeeSompiTotal += Number(policyMeta.priorityFeeSompi || 0);
     if (policyMeta.truncatedByMaxInputs) metrics.localWasmPolicyTruncatedSelectionsTotal += 1;
     if (policyMeta.fallbackUsedAllInputs) metrics.localWasmPolicyFallbackAllInputsTotal += 1;
     inc(metrics.localWasmPolicySelectionModeTotal, String(policyMeta.selectionMode || "auto"));
     inc(metrics.localWasmPolicyPriorityFeeModeTotal, String(policyMeta.priorityFeeMode || "request_or_fixed"));
+    if (policyMeta.priorityFeeMode === "adaptive") {
+      metrics.localWasmPolicyAdaptiveSamplesTotal += 1;
+      metrics.localWasmPolicyAdaptiveObservedConfirmP95MsTotal += Math.max(
+        0,
+        Number(policyMeta?.adaptiveSignals?.observedConfirmP95Ms || policyMeta?.telemetry?.observedConfirmP95Ms || 0)
+      );
+      metrics.localWasmPolicyAdaptiveReceiptLagP95MsTotal += Math.max(
+        0,
+        Number(policyMeta?.adaptiveSignals?.receiptLagP95Ms || policyMeta?.telemetry?.receiptLagP95Ms || 0)
+      );
+      metrics.localWasmPolicyAdaptiveSchedulerCallbackP95BucketMsTotal += Math.max(
+        0,
+        Number(policyMeta?.adaptiveSignals?.schedulerCallbackLatencyP95BucketMs || policyMeta?.telemetry?.schedulerCallbackLatencyP95BucketMs || 0)
+      );
+    }
 
 
     let jsonObject;
@@ -686,6 +729,15 @@ function exportPrometheus() {
   push("# HELP forgeos_tx_builder_local_wasm_policy_total_inputs_seen_total Sum of candidate UTXOs seen across local WASM builds.");
   push("# TYPE forgeos_tx_builder_local_wasm_policy_total_inputs_seen_total counter");
   push(`forgeos_tx_builder_local_wasm_policy_total_inputs_seen_total ${metrics.localWasmPolicyTotalInputsSeen}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_selected_amount_sompi_total Sum of selected UTXO amount sompi across local WASM builds.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_selected_amount_sompi_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_selected_amount_sompi_total ${metrics.localWasmPolicySelectedAmountSompiTotal}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_required_target_sompi_total Sum of required target sompi across local WASM builds.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_required_target_sompi_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_required_target_sompi_total ${metrics.localWasmPolicyRequiredTargetSompiTotal}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_overfund_sompi_total Sum of overfund sompi beyond required target across local WASM builds.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_overfund_sompi_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_overfund_sompi_total ${metrics.localWasmPolicyOverfundSompiTotal}`);
   push("# HELP forgeos_tx_builder_local_wasm_policy_priority_fee_sompi_total Sum of priority fee sompi selected by local policy.");
   push("# TYPE forgeos_tx_builder_local_wasm_policy_priority_fee_sompi_total counter");
   push(`forgeos_tx_builder_local_wasm_policy_priority_fee_sompi_total ${metrics.localWasmPolicyPriorityFeeSompiTotal}`);
@@ -705,6 +757,44 @@ function exportPrometheus() {
   for (const [mode, value] of metrics.localWasmPolicyPriorityFeeModeTotal.entries()) {
     push(`forgeos_tx_builder_local_wasm_policy_priority_fee_mode_total{mode=${JSON.stringify(String(mode))}} ${value}`);
   }
+  push("# HELP forgeos_tx_builder_local_wasm_policy_adaptive_samples_total Local WASM builds using adaptive priority fee mode.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_adaptive_samples_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_adaptive_samples_total ${metrics.localWasmPolicyAdaptiveSamplesTotal}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_adaptive_observed_confirm_p95_ms_total Sum of observed confirmation p95 ms used by adaptive fee mode.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_adaptive_observed_confirm_p95_ms_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_adaptive_observed_confirm_p95_ms_total ${metrics.localWasmPolicyAdaptiveObservedConfirmP95MsTotal}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_adaptive_receipt_lag_p95_ms_total Sum of receipt lag p95 ms used by adaptive fee mode.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_adaptive_receipt_lag_p95_ms_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_adaptive_receipt_lag_p95_ms_total ${metrics.localWasmPolicyAdaptiveReceiptLagP95MsTotal}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_adaptive_scheduler_callback_p95_bucket_ms_total Sum of scheduler callback latency p95 bucket ms used by adaptive fee mode.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_adaptive_scheduler_callback_p95_bucket_ms_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_adaptive_scheduler_callback_p95_bucket_ms_total ${metrics.localWasmPolicyAdaptiveSchedulerCallbackP95BucketMsTotal}`);
+  const localWasmRequests = Math.max(0, Number(metrics.localWasmRequestsTotal || 0));
+  const adaptiveSamples = Math.max(0, Number(metrics.localWasmPolicyAdaptiveSamplesTotal || 0));
+  const avgSelectedInputs = localWasmRequests > 0 ? metrics.localWasmPolicySelectedInputsTotal / localWasmRequests : 0;
+  const avgOverfundSompi = localWasmRequests > 0 ? metrics.localWasmPolicyOverfundSompiTotal / localWasmRequests : 0;
+  const fallbackAllInputsRate = localWasmRequests > 0 ? metrics.localWasmPolicyFallbackAllInputsTotal / localWasmRequests : 0;
+  const overfundRatio = metrics.localWasmPolicyRequiredTargetSompiTotal > 0
+    ? metrics.localWasmPolicyOverfundSompiTotal / metrics.localWasmPolicyRequiredTargetSompiTotal
+    : 0;
+  const avgAdaptiveObservedConfirmP95Ms = adaptiveSamples > 0
+    ? metrics.localWasmPolicyAdaptiveObservedConfirmP95MsTotal / adaptiveSamples
+    : 0;
+  push("# HELP forgeos_tx_builder_local_wasm_policy_avg_selected_inputs Average selected inputs per local WASM build.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_avg_selected_inputs gauge");
+  push(`forgeos_tx_builder_local_wasm_policy_avg_selected_inputs ${avgSelectedInputs}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_avg_overfund_sompi Average overfund sompi per local WASM build.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_avg_overfund_sompi gauge");
+  push(`forgeos_tx_builder_local_wasm_policy_avg_overfund_sompi ${avgOverfundSompi}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_overfund_ratio Ratio of overfund sompi to required target sompi.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_overfund_ratio gauge");
+  push(`forgeos_tx_builder_local_wasm_policy_overfund_ratio ${overfundRatio}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_fallback_all_inputs_rate Ratio of local WASM builds that fell back to all inputs.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_fallback_all_inputs_rate gauge");
+  push(`forgeos_tx_builder_local_wasm_policy_fallback_all_inputs_rate ${fallbackAllInputsRate}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_adaptive_avg_observed_confirm_p95_ms Average observed confirmation p95 ms used by adaptive fee mode.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_adaptive_avg_observed_confirm_p95_ms gauge");
+  push(`forgeos_tx_builder_local_wasm_policy_adaptive_avg_observed_confirm_p95_ms ${avgAdaptiveObservedConfirmP95Ms}`);
   push("# HELP forgeos_tx_builder_auth_failures_total Auth failures.");
   push("# TYPE forgeos_tx_builder_auth_failures_total counter");
   push(`forgeos_tx_builder_auth_failures_total ${metrics.authFailuresTotal}`);

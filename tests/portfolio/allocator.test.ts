@@ -89,4 +89,52 @@ describe("portfolio allocator calibration routing", () => {
     expect(good!.truthQualityScore).toBeGreaterThan(bad!.truthQualityScore);
     expect(good!.calibrationHealth).toBeGreaterThan(bad!.calibrationHealth);
   });
+
+  it("applies stricter dynamic concentration caps when calibration/truth quality degrades", () => {
+    const summary = computeSharedRiskBudgetAllocation({
+      walletKas: 250,
+      agents: [
+        {
+          agentId: "healthy-trend",
+          name: "Healthy Trend",
+          targetAllocationPct: 90,
+          riskBudgetWeight: 2,
+          strategyTemplate: "trend",
+          pendingKas: 0,
+          capitalLimitKas: 200,
+          lastDecision: makeDecision({ regime: "TREND_UP", confidence: 0.9, risk: 0.22, dataQuality: 0.95 }),
+          attributionSummary: makeAttribution({ brier: 0.06, evCalibrationErrorPct: 1.2, regimeHitRatePct: 74, regimeHitSamples: 60 }),
+        },
+        {
+          agentId: "degraded-range",
+          name: "Degraded Range",
+          targetAllocationPct: 90,
+          riskBudgetWeight: 2,
+          strategyTemplate: "mean_reversion",
+          pendingKas: 0,
+          capitalLimitKas: 200,
+          lastDecision: makeDecision({ regime: "TREND_UP", confidence: 0.72, risk: 0.66, dataQuality: 0.52 }),
+          attributionSummary: makeAttribution({
+            brier: 0.34,
+            evCalibrationErrorPct: 21,
+            regimeHitRatePct: 34,
+            regimeHitSamples: 60,
+            truthDegraded: true,
+            truthMismatchRatePct: 42,
+            realizedReceiptCoveragePct: 35,
+          }),
+        },
+      ],
+      config: { totalBudgetPct: 0.9, reserveKas: 5, maxAgentAllocationPct: 0.9 },
+    });
+
+    const healthy = summary.rows.find((r) => r.agentId === "healthy-trend");
+    const degraded = summary.rows.find((r) => r.agentId === "degraded-range");
+    expect(healthy).toBeTruthy();
+    expect(degraded).toBeTruthy();
+    expect(healthy!.maxShareCapPct).toBeGreaterThan(degraded!.maxShareCapPct);
+    expect(degraded!.routingCapMultiplier).toBeLessThan(healthy!.routingCapMultiplier);
+    expect(degraded!.notes.some((n) => /dynamic concentration cap/i.test(n))).toBe(true);
+    expect(degraded!.budgetPct).toBeLessThanOrEqual(degraded!.maxShareCapPct + 0.001);
+  });
 });

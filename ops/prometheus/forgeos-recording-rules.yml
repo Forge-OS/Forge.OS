@@ -35,6 +35,21 @@ groups:
           rate(forgeos_tx_builder_local_wasm_policy_priority_fee_sompi_total[5m])
           /
           clamp_min(rate(forgeos_tx_builder_local_wasm_requests_total[5m]), 0.000001)
+      - record: forgeos:tx_builder:avg_overfund_sompi5m
+        expr: |
+          rate(forgeos_tx_builder_local_wasm_policy_overfund_sompi_total[5m])
+          /
+          clamp_min(rate(forgeos_tx_builder_local_wasm_requests_total[5m]), 0.000001)
+      - record: forgeos:tx_builder:overfund_ratio5m
+        expr: |
+          rate(forgeos_tx_builder_local_wasm_policy_overfund_sompi_total[5m])
+          /
+          clamp_min(rate(forgeos_tx_builder_local_wasm_policy_required_target_sompi_total[5m]), 0.000001)
+      - record: forgeos:tx_builder:adaptive_avg_observed_confirm_p95_ms5m
+        expr: |
+          rate(forgeos_tx_builder_local_wasm_policy_adaptive_observed_confirm_p95_ms_total[5m])
+          /
+          clamp_min(rate(forgeos_tx_builder_local_wasm_policy_adaptive_samples_total[5m]), 0.000001)
       - record: forgeos:tx_builder:fallback_all_inputs_spike
         expr: forgeos:tx_builder:fallback_all_inputs_ratio5m > 0.05
       - record: forgeos:tx_builder:telemetry_summary_fetch_error_ratio5m
@@ -48,3 +63,18 @@ groups:
         expr: rate(forgeos_tx_builder_telemetry_summary_stale_hard_total[5m])
       - record: forgeos:tx_builder:telemetry_summary_stale_drop_rate5m
         expr: rate(forgeos_tx_builder_telemetry_summary_stale_drops_total[5m])
+      - record: forgeos:tx_builder:telemetry_summary_stale_soft_ratio5m
+        expr: |
+          rate(forgeos_tx_builder_telemetry_summary_stale_soft_total[5m])
+          /
+          clamp_min(rate(forgeos_tx_builder_local_wasm_policy_adaptive_samples_total[5m]), 0.000001)
+      - record: forgeos:tx_builder:telemetry_summary_stale_hard_ratio5m
+        expr: |
+          rate(forgeos_tx_builder_telemetry_summary_stale_hard_total[5m])
+          /
+          clamp_min(rate(forgeos_tx_builder_local_wasm_policy_adaptive_samples_total[5m]), 0.000001)
+      - record: forgeos:tx_builder:telemetry_summary_stale_drop_ratio5m
+        expr: |
+          rate(forgeos_tx_builder_telemetry_summary_stale_drops_total[5m])
+          /
+          clamp_min(rate(forgeos_tx_builder_local_wasm_policy_adaptive_samples_total[5m]), 0.000001)

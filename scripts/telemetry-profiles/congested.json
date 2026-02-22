@@ -1,5 +1,7 @@
 {
   "name": "congested",
   "observedConfirmP95Ms": 38000,
-  "daaCongestionPct": 88
+  "daaCongestionPct": 88,
+  "receiptLagP95Ms": 19000,
+  "schedulerCallbackLatencyP95BucketMs": 1200
 }

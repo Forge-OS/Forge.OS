@@ -1,5 +1,7 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -7,24 +9,68 @@
   "links": [],
   "panels": [
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "targets": [
-        { "expr": "sum(rate(forgeos_callback_consumer_receipt_consistency_checks_total[5m]))", "legendFormat": "checks/s", "refId": "A" },
-        { "expr": "sum(rate(forgeos_callback_consumer_receipt_consistency_mismatch_total[5m]))", "legendFormat": "mismatch/s", "refId": "B" }
+        {
+          "expr": "sum(rate(forgeos_callback_consumer_receipt_consistency_checks_total[5m]))",
+          "legendFormat": "checks/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(forgeos_callback_consumer_receipt_consistency_mismatch_total[5m]))",
+          "legendFormat": "mismatch/s",
+          "refId": "B"
+        }
       ],
       "title": "Receipt Consistency Throughput",
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
       "id": 2,
-      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      },
       "targets": [
         {
           "expr": "sum by (type) (increase(forgeos_callback_consumer_receipt_consistency_mismatch_by_type_total[1h]))",
@@ -36,11 +82,34 @@
       "type": "barchart"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
       "id": 3,
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
       "targets": [
         {
           "expr": "clamp_min(sum(rate(forgeos_callback_consumer_receipt_consistency_mismatch_total[5m])) / clamp_min(sum(rate(forgeos_callback_consumer_receipt_consistency_checks_total[5m])), 0.0001), 0)",
@@ -51,80 +120,257 @@
       "type": "gauge"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "id": 4,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "targets": [
-        { "expr": "sum(rate(forgeos_scheduler_callback_duplicate_total[5m]))", "legendFormat": "duplicate callbacks/s", "refId": "A" },
-        { "expr": "sum(rate(forgeos_callback_consumer_callback_stale_fence_total[5m]))", "legendFormat": "stale fence rejects/s", "refId": "B" }
+        {
+          "expr": "sum(rate(forgeos_scheduler_callback_duplicate_total[5m]))",
+          "legendFormat": "duplicate callbacks/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(forgeos_callback_consumer_callback_stale_fence_total[5m]))",
+          "legendFormat": "stale fence rejects/s",
+          "refId": "B"
+        }
       ],
       "title": "Control Plane Idempotency / Fence Health",
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
       "id": 5,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "targets": [
-        { "expr": "sum(forgeos_scheduler_queue_ready)", "legendFormat": "scheduler ready", "refId": "A" },
-        { "expr": "sum(forgeos_scheduler_queue_processing)", "legendFormat": "scheduler processing", "refId": "B" },
-        { "expr": "sum(forgeos_scheduler_saturation_events_total)", "legendFormat": "saturation total", "refId": "C" }
+        {
+          "expr": "sum(forgeos_scheduler_queue_ready)",
+          "legendFormat": "scheduler ready",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(forgeos_scheduler_queue_processing)",
+          "legendFormat": "scheduler processing",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(forgeos_scheduler_saturation_events_total)",
+          "legendFormat": "saturation total",
+          "refId": "C"
+        }
       ],
       "title": "Scheduler Queue / Saturation",
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
       "id": 6,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "targets": [
-        { "expr": "forgeos:tx_builder:avg_selected_inputs5m", "legendFormat": "avg selected inputs", "refId": "A" },
-        { "expr": "forgeos:tx_builder:avg_priority_fee_sompi5m", "legendFormat": "avg priority fee sompi", "refId": "B" },
-        { "expr": "forgeos:tx_builder:fallback_all_inputs_ratio5m", "legendFormat": "fallback-all-inputs ratio", "refId": "C" }
+        {
+          "expr": "forgeos:tx_builder:avg_selected_inputs5m",
+          "legendFormat": "avg selected inputs",
+          "refId": "A"
+        },
+        {
+          "expr": "forgeos:tx_builder:avg_overfund_sompi5m",
+          "legendFormat": "avg overfund sompi",
+          "refId": "B"
+        },
+        {
+          "expr": "forgeos:tx_builder:overfund_ratio5m",
+          "legendFormat": "overfund ratio",
+          "refId": "C"
+        },
+        {
+          "expr": "forgeos:tx_builder:fallback_all_inputs_ratio5m",
+          "legendFormat": "fallback-all-inputs ratio",
+          "refId": "D"
+        }
       ],
-      "title": "Tx-Builder Policy Efficiency",
+      "title": "Tx-Builder Policy Efficiency / Cost",
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
       "id": 7,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "targets": [
-        { "expr": "forgeos:tx_builder:telemetry_summary_fetch_error_ratio5m", "legendFormat": "summary fetch error ratio", "refId": "A" },
-        { "expr": "forgeos:tx_builder:telemetry_summary_stale_soft_rate5m", "legendFormat": "stale-soft/s", "refId": "B" },
-        { "expr": "forgeos:tx_builder:telemetry_summary_stale_hard_rate5m", "legendFormat": "stale-hard/s", "refId": "C" }
+        {
+          "expr": "forgeos:tx_builder:adaptive_avg_observed_confirm_p95_ms5m",
+          "legendFormat": "adaptive confirm p95 ms",
+          "refId": "A"
+        },
+        {
+          "expr": "forgeos_tx_builder_telemetry_summary_callback_receipt_lag_p95_ms",
+          "legendFormat": "receipt lag p95 ms (latest)",
+          "refId": "B"
+        },
+        {
+          "expr": "forgeos_tx_builder_telemetry_summary_scheduler_callback_p95_bucket_ms",
+          "legendFormat": "scheduler callback p95 bucket ms (latest)",
+          "refId": "C"
+        },
+        {
+          "expr": "forgeos:tx_builder:telemetry_summary_fetch_error_ratio5m",
+          "legendFormat": "summary fetch error ratio",
+          "refId": "D"
+        }
       ],
-      "title": "Tx-Builder Telemetry Freshness",
+      "title": "Tx-Builder Adaptive Telemetry / Freshness",
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
       "id": 8,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "targets": [
-        { "expr": "sum(forgeos_tx_builder_telemetry_summary_freshness_state_code)", "legendFormat": "freshness state code", "refId": "A" },
-        { "expr": "sum(forgeos_tx_builder_telemetry_summary_freshness_max_age_ms)", "legendFormat": "freshness max age ms", "refId": "B" },
-        { "expr": "sum(forgeos_tx_builder_telemetry_summary_stale_drops_total)", "legendFormat": "stale drops total", "refId": "C" }
+        {
+          "expr": "sum(forgeos_tx_builder_telemetry_summary_freshness_state_code)",
+          "legendFormat": "freshness state code",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(forgeos_tx_builder_telemetry_summary_freshness_max_age_ms)",
+          "legendFormat": "freshness max age ms",
+          "refId": "B"
+        },
+        {
+          "expr": "forgeos:tx_builder:telemetry_summary_stale_hard_ratio5m",
+          "legendFormat": "stale-hard ratio",
+          "refId": "C"
+        },
+        {
+          "expr": "forgeos:tx_builder:telemetry_summary_stale_drop_ratio5m",
+          "legendFormat": "stale-drop ratio",
+          "refId": "D"
+        }
       ],
-      "title": "Tx-Builder Telemetry Freshness State",
+      "title": "Tx-Builder Telemetry Freshness State / Drop Risk",
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
       "id": 9,
-      "options": { "content": "Use Forge.OS UI PnL Attribution panel for calibration metrics (`Brier`, `EV calibration error`, `Regime hit-rate`). This Grafana board is the backend truth/control/execution surface. Tune alert thresholds from production baselines, not local smoke runs.", "mode": "markdown" },
+      "options": {
+        "content": "Use Forge.OS UI for calibration metrics (`Brier`, `EV calibration error`, `Regime hit-rate`) and truth banners/provenance.\n\nUse this Grafana board for backend truth/control/execution SLOs:\n- receipt consistency mismatch ratio\n- callback duplicate / stale-fence events\n- scheduler saturation\n- tx-builder fee/overfund/fallback efficiency\n- telemetry freshness + stale-drop pressure\n\nTune alert thresholds from production baselines, then lock them in Prometheus rules.",
+        "mode": "markdown"
+      },
       "title": "Calibration / Ops Guidance",
       "type": "text"
     }
@@ -132,13 +378,23 @@
   "refresh": "15s",
   "schemaVersion": 39,
   "style": "dark",
-  "tags": ["forgeos", "kaspa", "quant-ai", "ops"],
-  "templating": { "list": [] },
-  "time": { "from": "now-6h", "to": "now" },
+  "tags": [
+    "forgeos",
+    "kaspa",
+    "quant-ai",
+    "ops"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "",
   "title": "Forge.OS Operator Overview",
   "uid": "forgeos-operator-overview",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }

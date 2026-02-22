@@ -54,6 +54,12 @@ export function readLocalTxPolicyConfig() {
     priorityFeeAdaptiveTruncationBumpSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_TRUNCATION_BUMP_SOMPI", 8_000, 0),
     priorityFeeAdaptiveDaaCongestionThresholdPct: envNum("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_DAA_CONGESTION_THRESHOLD_PCT", 70, 0),
     priorityFeeAdaptiveDaaCongestionBumpSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_DAA_CONGESTION_BUMP_SOMPI", 6_000, 0),
+    priorityFeeAdaptiveReceiptLagHighMs: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_RECEIPT_LAG_HIGH_MS", 12000, 0),
+    priorityFeeAdaptiveReceiptLagCriticalMs: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_RECEIPT_LAG_CRITICAL_MS", 45000, 0),
+    priorityFeeAdaptiveReceiptLagBumpSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_RECEIPT_LAG_BUMP_SOMPI", 4_000, 0),
+    priorityFeeAdaptiveSchedulerCallbackHighMs: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_SCHEDULER_CALLBACK_HIGH_MS", 500, 0),
+    priorityFeeAdaptiveSchedulerCallbackCriticalMs: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_SCHEDULER_CALLBACK_CRITICAL_MS", 2500, 0),
+    priorityFeeAdaptiveSchedulerCallbackBumpSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_SCHEDULER_CALLBACK_BUMP_SOMPI", 2_500, 0),
     preferConsolidation: envBool("TX_BUILDER_LOCAL_WASM_PREFER_CONSOLIDATION", true),
   };
 }
@@ -123,6 +129,15 @@ function adaptiveLatencyMultiplier(confirmP95Ms, cfg) {
   return 1;
 }
 
+function adaptivePressureSeverity(valueMs, highMs, criticalMs) {
+  const v = Math.max(0, Math.round(Number(valueMs || 0)));
+  const high = Math.max(0, Math.round(Number(highMs || 0)));
+  const critical = Math.max(high, Math.round(Number(criticalMs || 0)));
+  if (!(v > 0) || !(high > 0) || v < high) return 0;
+  if (critical <= high) return 1;
+  return clamp((v - high) / Math.max(1, critical - high), 0, 1.5);
+}
+
 export function computePriorityFeeSompi({ requestPriorityFeeSompi, outputsTotalSompi, outputCount, config, telemetry, selectionStats }) {
   const cfg = config || readLocalTxPolicyConfig();
   const baseFees = computeBaselineFeeSompi({ requestPriorityFeeSompi, outputsTotalSompi, outputCount, cfg });
@@ -143,6 +158,12 @@ export function computePriorityFeeSompi({ requestPriorityFeeSompi, outputsTotalS
     const confirmP95Ms = staleHard
       ? 0
       : Math.max(0, Math.round(Number(telemetry?.observedConfirmP95Ms || telemetry?.confirmP95Ms || 0)));
+    const receiptLagP95Ms = staleHard
+      ? 0
+      : Math.max(0, Math.round(Number(telemetry?.receiptLagP95Ms || telemetry?.observedReceiptLagP95Ms || 0)));
+    const schedulerCallbackLatencyP95BucketMs = staleHard
+      ? 0
+      : Math.max(0, Math.round(Number(telemetry?.schedulerCallbackLatencyP95BucketMs || 0)));
     const daaCongestionPct = staleHard ? 0 : clamp(Number(telemetry?.daaCongestionPct || 0), 0, 100);
     const rawLatencyMultiplier = adaptiveLatencyMultiplier(confirmP95Ms, cfg);
     const freshnessDampen = staleSoft ? 0.45 : 1;
@@ -158,6 +179,26 @@ export function computePriorityFeeSompi({ requestPriorityFeeSompi, outputsTotalS
     }
     if (daaCongestionPct >= Number(cfg.priorityFeeAdaptiveDaaCongestionThresholdPct || 70)) {
       fee += Math.round(Math.max(0, Math.round(cfg.priorityFeeAdaptiveDaaCongestionBumpSompi || 0)) * freshnessDampen);
+    }
+    const receiptLagSeverity = adaptivePressureSeverity(
+      receiptLagP95Ms,
+      cfg.priorityFeeAdaptiveReceiptLagHighMs,
+      cfg.priorityFeeAdaptiveReceiptLagCriticalMs
+    );
+    if (receiptLagSeverity > 0) {
+      fee += Math.round(Math.max(0, Math.round(cfg.priorityFeeAdaptiveReceiptLagBumpSompi || 0)) * receiptLagSeverity * freshnessDampen);
+    }
+    const schedulerCallbackSeverity = adaptivePressureSeverity(
+      schedulerCallbackLatencyP95BucketMs,
+      cfg.priorityFeeAdaptiveSchedulerCallbackHighMs,
+      cfg.priorityFeeAdaptiveSchedulerCallbackCriticalMs
+    );
+    if (schedulerCallbackSeverity > 0) {
+      fee += Math.round(
+        Math.max(0, Math.round(cfg.priorityFeeAdaptiveSchedulerCallbackBumpSompi || 0)) *
+        schedulerCallbackSeverity *
+        freshnessDampen
+      );
     }
     return clampPriorityFeeSompi(fee, cfg);
   }
@@ -250,6 +291,8 @@ export function selectUtxoEntriesForLocalBuild({ entries, outputsTotalSompi, out
       summaryFreshnessState: String(telemetry?.summaryFreshnessState || "fresh"),
       observedConfirmP95Ms: Math.max(0, Math.round(Number(telemetry?.observedConfirmP95Ms || telemetry?.confirmP95Ms || 0))),
       daaCongestionPct: clamp(Number(telemetry?.daaCongestionPct || 0), 0, 100),
+      receiptLagP95Ms: Math.max(0, Math.round(Number(telemetry?.receiptLagP95Ms || telemetry?.observedReceiptLagP95Ms || 0))),
+      schedulerCallbackLatencyP95BucketMs: Math.max(0, Math.round(Number(telemetry?.schedulerCallbackLatencyP95BucketMs || 0))),
       selectedInputCount: selectedEntries.length,
       truncatedByMaxInputs,
       provisionalPriorityFeeSompi: priorityFeeSompi,
@@ -329,6 +372,12 @@ export function describeLocalTxPolicyConfig(config = readLocalTxPolicyConfig()) 
     priorityFeeAdaptiveTruncationBumpSompi: config.priorityFeeAdaptiveTruncationBumpSompi,
     priorityFeeAdaptiveDaaCongestionThresholdPct: config.priorityFeeAdaptiveDaaCongestionThresholdPct,
     priorityFeeAdaptiveDaaCongestionBumpSompi: config.priorityFeeAdaptiveDaaCongestionBumpSompi,
+    priorityFeeAdaptiveReceiptLagHighMs: config.priorityFeeAdaptiveReceiptLagHighMs,
+    priorityFeeAdaptiveReceiptLagCriticalMs: config.priorityFeeAdaptiveReceiptLagCriticalMs,
+    priorityFeeAdaptiveReceiptLagBumpSompi: config.priorityFeeAdaptiveReceiptLagBumpSompi,
+    priorityFeeAdaptiveSchedulerCallbackHighMs: config.priorityFeeAdaptiveSchedulerCallbackHighMs,
+    priorityFeeAdaptiveSchedulerCallbackCriticalMs: config.priorityFeeAdaptiveSchedulerCallbackCriticalMs,
+    priorityFeeAdaptiveSchedulerCallbackBumpSompi: config.priorityFeeAdaptiveSchedulerCallbackBumpSompi,
     preferConsolidation: config.preferConsolidation,
   };
 }

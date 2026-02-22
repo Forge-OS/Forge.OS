@@ -159,6 +159,8 @@ export function PortfolioPanel({
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <Badge text={`BUDGET ${row.budgetKas} KAS`} color={C.text} />
                   <Badge text={`CYCLE CAP ${row.cycleCapKas} KAS`} color={C.ok} />
+                  <Badge text={`CAP ${Number(row.maxShareCapPct || 0).toFixed(1)}%`} color={C.dim} />
+                  <Badge text={`ALIGN x${Number(row.templateRegimeMultiplier || 1).toFixed(2)}`} color={Number(row.templateRegimeMultiplier || 1) >= 1 ? C.ok : C.warn} />
                   {row.rebalanceDeltaKas !== 0 && (
                     <Badge text={`REBAL ${row.rebalanceDeltaKas > 0 ? "+" : ""}${row.rebalanceDeltaKas} KAS`} color={row.rebalanceDeltaKas > 0 ? C.ok : C.warn} />
                   )}

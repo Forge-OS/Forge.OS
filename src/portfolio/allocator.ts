@@ -32,6 +32,9 @@ export type PortfolioAllocationRow = {
   targetPct: number;
   riskWeight: number;
   score: number;
+  routingCapMultiplier: number;
+  maxShareCapPct: number;
+  templateRegimeMultiplier: number;
   budgetPct: number;
   budgetKas: number;
   cycleCapKas: number;
@@ -108,6 +111,30 @@ function strategyTemplateRegimeMultiplier(strategyTemplate: string, strategyClas
     return 1.02;
   }
   return 1;
+}
+
+function calibrationRoutingCapMultiplier(params: {
+  calibrationRouting: ReturnType<typeof deriveCalibrationRouting>;
+  templateRegimeBoost: number;
+  regime: string;
+  action: string;
+}) {
+  const { calibrationRouting, templateRegimeBoost, regime, action } = params;
+  let cap = 1;
+  if (!calibrationRouting.samplesSufficient) cap *= 0.92;
+  if (calibrationRouting.tier === "watch") cap *= 0.88;
+  if (calibrationRouting.tier === "degraded") cap *= 0.68;
+  if (calibrationRouting.tier === "critical") cap *= 0.45;
+  if (calibrationRouting.truthDegraded) {
+    cap *= clamp(1 - calibrationRouting.truthMismatchRatePct / 140, 0.55, 0.9);
+  }
+  if (templateRegimeBoost < 1) {
+    // Misaligned templates can still run, but they should not dominate capital during drift.
+    cap *= clamp(0.65 + templateRegimeBoost * 0.35, 0.58, 0.95);
+  }
+  if (String(regime || "").toUpperCase() === "RISK_OFF") cap *= 0.72;
+  if (String(action || "").toUpperCase() === "REDUCE") cap *= 0.65;
+  return clamp(cap, 0.2, 1);
 }
 
 function deriveCalibrationRouting(attribution: any) {
@@ -241,6 +268,7 @@ export function computeSharedRiskBudgetAllocation(params: {
       pendingKas,
       strategyTemplate,
       strategyClass,
+      templateRegimeBoost,
       action,
       regime,
       confidence,
@@ -261,13 +289,20 @@ export function computeSharedRiskBudgetAllocation(params: {
         ? row.score / totalScore
         : (row.enabled ? Math.max(0.1, row.riskWeight) / Math.max(0.1, fallbackWeightSum) : 0);
 
+    const routingCapMultiplier = calibrationRoutingCapMultiplier({
+      calibrationRouting: row.calibrationRouting,
+      templateRegimeBoost: row.templateRegimeBoost,
+      regime: row.regime,
+      action: row.action,
+    });
+    const maxShareCapPct = clamp(maxAgentAllocationPct * routingCapMultiplier, 0.02, 1);
     const rawBudgetKas = targetBudgetKas * normalizedWeight;
-    const budgetKas = Math.min(rawBudgetKas, targetBudgetKas * maxAgentAllocationPct);
+    const budgetKas = Math.min(rawBudgetKas, targetBudgetKas * maxShareCapPct);
     const budgetPct = targetBudgetKas > 0 ? clamp((budgetKas / targetBudgetKas) * 100, 0, 100) : 0;
     const cycleCapKas = Math.min(
       budgetKas,
       row.capitalLimitKas > 0 ? row.capitalLimitKas : budgetKas,
-      Math.max(0, targetBudgetKas * maxAgentAllocationPct)
+      Math.max(0, targetBudgetKas * maxShareCapPct)
     );
     const rebalanceDeltaKas = budgetKas - row.pendingKas;
 
@@ -278,6 +313,9 @@ export function computeSharedRiskBudgetAllocation(params: {
       targetPct: row.targetPct,
       riskWeight: row.riskWeight,
       score: Number(row.score.toFixed(6)),
+      routingCapMultiplier: Number(routingCapMultiplier.toFixed(4)),
+      maxShareCapPct: Number((maxShareCapPct * 100).toFixed(2)),
+      templateRegimeMultiplier: Number(row.templateRegimeBoost.toFixed(4)),
       budgetPct: Number(budgetPct.toFixed(2)),
       budgetKas: Number(budgetKas.toFixed(6)),
       cycleCapKas: Number(Math.max(0, cycleCapKas).toFixed(6)),
@@ -306,7 +344,13 @@ export function computeSharedRiskBudgetAllocation(params: {
         dataQuality: row.dataQuality,
         calibrationTier: row.calibrationRouting.tier,
         truthDegraded: row.calibrationRouting.truthDegraded,
-      }),
+      })
+        .concat(
+          routingCapMultiplier < 0.999 || rawBudgetKas > budgetKas + 1e-9
+            ? ["dynamic concentration cap"]
+            : []
+        )
+        .slice(0, 5),
     };
   });
 

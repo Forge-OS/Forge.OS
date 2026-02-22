@@ -1,5 +1,5 @@
 import { C, mono } from "../../tokens";
-import { Divider, Inp } from "../ui";
+import { Divider } from "../ui";
 import { EXEC_OPTS } from "./constants";
 
 export const WStep2 = ({d, set}: any) => (
@@ -23,6 +23,12 @@ export const WStep2 = ({d, set}: any) => (
       </div>
     </div>
     <Divider/>
-    <Inp label="Auto-Approve Threshold" value={d.autoApproveThreshold} onChange={(v: string)=>set("autoApproveThreshold", v)} type="number" suffix="KAS" hint="Transactions under this amount sign automatically in autonomous mode. Above threshold always requires manual wallet signing."/>
+    <div style={{padding:"10px 12px", borderRadius:6, border:`1px solid ${C.border}`, background:C.s2}}>
+      <div style={{fontSize:11, color:C.dim, ...mono, marginBottom:4}}>SIGNING POLICY</div>
+      <div style={{fontSize:12, color:C.text}}>Wallet-Native Guardrails</div>
+      <div style={{fontSize:11, color:C.dim, marginTop:2}}>
+        Forge.OS handles queueing and safety checks automatically. Larger or riskier actions can still require manual wallet signing depending on execution mode and runtime guardrails.
+      </div>
+    </div>
   </div>
 );

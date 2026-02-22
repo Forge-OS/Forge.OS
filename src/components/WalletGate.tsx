@@ -243,7 +243,7 @@ export function WalletGate({onConnect}: any) {
       <ForgeAtmosphere />
       <div className="forge-content forge-gate-layout">
         <section className="forge-gate-hero">
-          <div>
+          <div className="forge-gate-hero-main">
             <div className="forge-gate-kicker">FORGE.OS // KASPA-NATIVE QUANT STACK</div>
             <h1 className="forge-gate-title">
               <span style={{color:C.accent}}>FORGE</span>.OS TRADING CONTROL SURFACE
@@ -256,6 +256,19 @@ export function WalletGate({onConnect}: any) {
               <Badge text={`${NETWORK_LABEL} SESSION`} color={C.ok} dot/>
               <Badge text="WALLET-NATIVE AUTHORIZATION" color={C.accent} dot/>
               <Badge text="SESSION CONTINUITY" color={C.purple} dot/>
+            </div>
+
+            <div className="forge-gate-hero-strip">
+              {[
+                ["EXECUTION", "Wallet-native signing + queue lifecycle"],
+                ["TRUTH", "Receipt-aware attribution + consistency checks"],
+                ["ROUTING", "DAG-aware capital allocation + guardrails"],
+              ].map(([k, v]) => (
+                <div key={k} className="forge-gate-hero-strip-item">
+                  <div className="forge-gate-hero-strip-k">{k}</div>
+                  <div className="forge-gate-hero-strip-v">{v}</div>
+                </div>
+              ))}
             </div>
           </div>
           <div className="forge-gate-points">

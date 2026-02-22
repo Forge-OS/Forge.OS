@@ -81,6 +81,8 @@ function benchmarkOne({ shape, outputsTotalSompi, outputCount, telemetry }) {
   const requiredTargetSompi = Number(plan.requiredTargetSompi || 0n);
   const overfundSompi = Math.max(0, selectedAmountSompi - requiredTargetSompi);
   const selectedInputs = plan.selectedEntries.length;
+  const feeBps = outputsTotalSompi > 0 ? (Number(plan.priorityFeeSompi || 0) / outputsTotalSompi) * 10_000 : 0;
+  const overfundPct = requiredTargetSompi > 0 ? (overfundSompi / requiredTargetSompi) * 100 : 0;
   return {
     shape,
     outputCount,
@@ -89,7 +91,9 @@ function benchmarkOne({ shape, outputsTotalSompi, outputCount, telemetry }) {
     totalInputs: plan.totalEntries,
     inputUsePct: plan.totalEntries > 0 ? (selectedInputs / plan.totalEntries) * 100 : 0,
     priorityFeeSompi: Number(plan.priorityFeeSompi || 0),
+    feeBps,
     overfundSompi,
+    overfundPct,
     truncated: Boolean(plan.truncatedByMaxInputs),
     selectionMode: String(plan.selectionMode || cfg.coinSelection),
     priorityFeeMode: String(plan.priorityFeeMode || cfg.priorityFeeMode),
@@ -104,7 +108,9 @@ function fmtRow(row) {
     `${row.selectedInputs}/${row.totalInputs}`.padStart(8),
     `${row.inputUsePct.toFixed(1)}%`.padStart(8),
     String(row.priorityFeeSompi).padStart(10),
+    `${row.feeBps.toFixed(1)}`.padStart(8),
     String(row.overfundSompi).padStart(12),
+    `${row.overfundPct.toFixed(1)}%`.padStart(9),
     `${row.elapsedMs.toFixed(2)}ms`.padStart(10),
     (row.truncated ? "yes" : "no").padStart(5),
   ].join("  ");
@@ -122,6 +128,12 @@ function loadTelemetryProfile() {
     name: String(parsed?.name || raw),
     observedConfirmP95Ms: envInt("TX_POLICY_BENCH_CONFIRM_P95_MS", Number(parsed?.observedConfirmP95Ms ?? 12000), 0),
     daaCongestionPct: envInt("TX_POLICY_BENCH_DAA_CONGESTION_PCT", Number(parsed?.daaCongestionPct ?? 45), 0),
+    receiptLagP95Ms: envInt("TX_POLICY_BENCH_RECEIPT_LAG_P95_MS", Number(parsed?.receiptLagP95Ms ?? 0), 0),
+    schedulerCallbackLatencyP95BucketMs: envInt(
+      "TX_POLICY_BENCH_SCHEDULER_CALLBACK_P95_BUCKET_MS",
+      Number(parsed?.schedulerCallbackLatencyP95BucketMs ?? 0),
+      0
+    ),
   };
 }
 
@@ -132,6 +144,8 @@ function run() {
   const telemetry = telemetryProfile || {
     observedConfirmP95Ms: envInt("TX_POLICY_BENCH_CONFIRM_P95_MS", 12000, 0),
     daaCongestionPct: envInt("TX_POLICY_BENCH_DAA_CONGESTION_PCT", 45, 0),
+    receiptLagP95Ms: envInt("TX_POLICY_BENCH_RECEIPT_LAG_P95_MS", 0, 0),
+    schedulerCallbackLatencyP95BucketMs: envInt("TX_POLICY_BENCH_SCHEDULER_CALLBACK_P95_BUCKET_MS", 0, 0),
     name: "env-default",
   };
   const outputCounts = String(process.env.TX_POLICY_BENCH_OUTPUT_COUNTS || "1,2,4")
@@ -149,8 +163,8 @@ function run() {
   console.log("[tx-policy-bench] config", JSON.stringify(describeLocalTxPolicyConfig(readLocalTxPolicyConfig())));
   console.log("[tx-policy-bench] telemetry", JSON.stringify(telemetry));
   console.log("");
-  console.log("shape          out   selected     use%   fee_sompi  overfund_sompi    elapsed  trunc");
-  console.log("---------------------------------------------------------------------------------------");
+  console.log("shape          out   selected     use%   fee_sompi   feebps  overfund_sompi overfund%    elapsed  trunc");
+  console.log("---------------------------------------------------------------------------------------------------------");
   for (const row of rows) console.log(fmtRow(row));
 
   const summary = rows.reduce(
@@ -158,12 +172,24 @@ function run() {
       acc.count += 1;
       acc.selectedInputs += row.selectedInputs;
       acc.feeSompi += row.priorityFeeSompi;
+      acc.feeBps += row.feeBps;
+      acc.overfundSompi += row.overfundSompi;
+      acc.overfundPct += row.overfundPct;
       acc.elapsedMs += row.elapsedMs;
       acc.truncated += row.truncated ? 1 : 0;
       return acc;
     },
-    { count: 0, selectedInputs: 0, feeSompi: 0, elapsedMs: 0, truncated: 0 }
+    { count: 0, selectedInputs: 0, feeSompi: 0, feeBps: 0, overfundSompi: 0, overfundPct: 0, elapsedMs: 0, truncated: 0 }
   );
+  const byShape = new Map();
+  for (const row of rows) {
+    const agg = byShape.get(row.shape) || { count: 0, feeBps: 0, overfundPct: 0, selectedInputs: 0 };
+    agg.count += 1;
+    agg.feeBps += row.feeBps;
+    agg.overfundPct += row.overfundPct;
+    agg.selectedInputs += row.selectedInputs;
+    byShape.set(row.shape, agg);
+  }
   console.log("");
   console.log(
     "[tx-policy-bench] summary",
@@ -171,9 +197,28 @@ function run() {
       samples: summary.count,
       avgSelectedInputs: Number((summary.selectedInputs / Math.max(1, summary.count)).toFixed(2)),
       avgPriorityFeeSompi: Math.round(summary.feeSompi / Math.max(1, summary.count)),
+      avgFeeBps: Number((summary.feeBps / Math.max(1, summary.count)).toFixed(2)),
+      avgOverfundSompi: Math.round(summary.overfundSompi / Math.max(1, summary.count)),
+      avgOverfundPct: Number((summary.overfundPct / Math.max(1, summary.count)).toFixed(2)),
       avgElapsedMs: Number((summary.elapsedMs / Math.max(1, summary.count)).toFixed(3)),
       truncatedSelections: summary.truncated,
     })
+  );
+  console.log(
+    "[tx-policy-bench] byShape",
+    JSON.stringify(
+      Object.fromEntries(
+        Array.from(byShape.entries()).map(([shape, agg]) => [
+          shape,
+          {
+            samples: agg.count,
+            avgSelectedInputs: Number((agg.selectedInputs / Math.max(1, agg.count)).toFixed(2)),
+            avgFeeBps: Number((agg.feeBps / Math.max(1, agg.count)).toFixed(2)),
+            avgOverfundPct: Number((agg.overfundPct / Math.max(1, agg.count)).toFixed(2)),
+          },
+        ])
+      )
+    )
   );
 }
 
