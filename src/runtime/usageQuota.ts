@@ -71,7 +71,9 @@ function normalizeRecord(limit: number, scope?: string): UsageRecord {
     return reset;
   }
   const clamped = { day: today, used: Math.min(existing.used, Math.max(0, Math.floor(limit))) };
-  safeWrite(clamped, scope);
+  if (clamped.day !== existing.day || clamped.used !== existing.used) {
+    safeWrite(clamped, scope);
+  }
   return clamped;
 }
 

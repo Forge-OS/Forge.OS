@@ -87,12 +87,20 @@ function requireKaspaAddress(value: string, allowedPrefixes: string[], label: st
   }
 }
 
+export const MAINNET_TREASURY_LOCK_ADDRESS =
+  "kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85";
+
 const MAINNET_TREASURY_RAW =
-  env.VITE_TREASURY_ADDRESS_MAINNET || "kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85";
+  env.VITE_TREASURY_ADDRESS_MAINNET || MAINNET_TREASURY_LOCK_ADDRESS;
 const TESTNET_TREASURY_RAW =
   env.VITE_TREASURY_ADDRESS_TESTNET || "kaspatest:qpqz2vxj23kvh0m73ta2jjn2u4cv4tlufqns2eap8mxyyt0rvrxy6ejkful67";
 const MAINNET_TREASURY = requireKaspaAddress(MAINNET_TREASURY_RAW, ["kaspa"], "VITE_TREASURY_ADDRESS_MAINNET");
 const TESTNET_TREASURY = requireKaspaAddress(TESTNET_TREASURY_RAW, ["kaspatest"], "VITE_TREASURY_ADDRESS_TESTNET");
+if (MAINNET_TREASURY !== MAINNET_TREASURY_LOCK_ADDRESS) {
+  throw new Error(
+    `Mainnet treasury address is pinned and must be ${MAINNET_TREASURY_LOCK_ADDRESS}.`
+  );
+}
 
 const MAINNET_ACCUMULATION_RAW = env.VITE_ACCUMULATION_ADDRESS_MAINNET || MAINNET_TREASURY;
 const TESTNET_ACCUMULATION_RAW = env.VITE_ACCUMULATION_ADDRESS_TESTNET || TESTNET_TREASURY;
@@ -118,6 +126,8 @@ export const ACCUMULATION_VAULT = IS_TESTNET ? TESTNET_ACCUMULATION : MAINNET_AC
 export const FEE_RATE = Number(env.VITE_FEE_RATE || 0.20);       // KAS per execution cycle
 export const TREASURY_SPLIT = Number(env.VITE_TREASURY_SPLIT || 0.30); // 30% of fees to treasury
 export const AGENT_SPLIT = Number((1 - TREASURY_SPLIT).toFixed(2));    // remaining % to agent pool
+export const TREASURY_FEE_ONCHAIN_ENABLED =
+  String(env.VITE_TREASURY_FEE_ONCHAIN_ENABLED || "true").toLowerCase() !== "false";
 export const RESERVE  = 0.50;
 export const NET_FEE  = 0.0002;
 export const CONF_THRESHOLD = 0.75;
@@ -134,6 +144,8 @@ if (!Number.isFinite(FEE_RATE) || FEE_RATE < 0) {
 if (!Number.isFinite(TREASURY_SPLIT) || TREASURY_SPLIT < 0 || TREASURY_SPLIT > 1) {
   throw new Error("Invalid VITE_TREASURY_SPLIT. Expected a value between 0 and 1.");
 }
+
+export const TREASURY_FEE_KAS = Number((FEE_RATE * TREASURY_SPLIT).toFixed(6));
 
 if (!Number.isFinite(FREE_CYCLES_PER_DAY) || FREE_CYCLES_PER_DAY < 1) {
   throw new Error("Invalid VITE_FREE_CYCLES_PER_DAY. Expected an integer >= 1.");

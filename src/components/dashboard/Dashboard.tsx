@@ -16,15 +16,26 @@ import {
   NET_FEE,
   RESERVE,
   TREASURY_SPLIT,
+  TREASURY,
+  TREASURY_FEE_KAS,
+  TREASURY_FEE_ONCHAIN_ENABLED,
 } from "../../constants";
-import { kasBalance, kasNetworkInfo } from "../../api/kaspaApi";
 import { fmtT, shortAddr, uid } from "../../helpers";
-import { runQuantEngine } from "../../quant/runQuantEngine";
+import { runQuantEngineClient, getQuantEngineClientMode } from "../../quant/runQuantEngineClient";
 import { LOG_COL, seedLog } from "../../log/seedLog";
 import { C, mono } from "../../tokens";
-import { WalletAdapter } from "../../wallet/WalletAdapter";
 import { consumeUsageCycle, getUsageState } from "../../runtime/usageQuota";
 import { readPersistedDashboardState, writePersistedDashboardState } from "../../runtime/persistentState";
+import { derivePnlAttribution } from "../../analytics/pnlAttribution";
+import { formatForgeError, normalizeError } from "../../runtime/errorTaxonomy";
+import { buildQueueTxItem } from "../../tx/queueTx";
+import { WalletAdapter } from "../../wallet/WalletAdapter";
+import { useAgentLifecycle } from "./hooks/useAgentLifecycle";
+import { useAlerts } from "./hooks/useAlerts";
+import { useExecutionQueue } from "./hooks/useExecutionQueue";
+import { useKaspaFeed } from "./hooks/useKaspaFeed";
+import { usePortfolioAllocator } from "./hooks/usePortfolioAllocator";
+import { useTreasuryPayout } from "./hooks/useTreasuryPayout";
 import { SigningModal } from "../SigningModal";
 import { Badge, Btn, Card, ExtLink, Label } from "../ui";
 import { EXEC_OPTS } from "../wizard/constants";
@@ -37,59 +48,111 @@ const IntelligencePanel = lazy(() =>
   import("./IntelligencePanel").then((m) => ({ default: m.IntelligencePanel }))
 );
 const TreasuryPanel = lazy(() => import("./TreasuryPanel").then((m) => ({ default: m.TreasuryPanel })));
+const PortfolioPanel = lazy(() => import("./PortfolioPanel").then((m) => ({ default: m.PortfolioPanel })));
+const PnlAttributionPanel = lazy(() =>
+  import("./PnlAttributionPanel").then((m) => ({ default: m.PnlAttributionPanel }))
+);
+const AlertsPanel = lazy(() => import("./AlertsPanel").then((m) => ({ default: m.AlertsPanel })));
 
-export function Dashboard({agent, wallet}: any) {
+export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAgent}: any) {
   const LIVE_POLL_MS = 5000;
   const STREAM_RECONNECT_MAX_DELAY_MS = 12000;
+  const RECEIPT_RETRY_BASE_MS = 2000;
+  const RECEIPT_RETRY_MAX_MS = 30000;
+  const RECEIPT_TIMEOUT_MS = 8 * 60 * 1000;
+  const RECEIPT_MAX_ATTEMPTS = 18;
+  const RECEIPT_POLL_INTERVAL_MS = 1200;
+  const RECEIPT_POLL_BATCH_SIZE = 2;
   const MAX_QUEUE_ENTRIES = 160;
   const MAX_LOG_ENTRIES = 320;
   const MAX_DECISION_ENTRIES = 120;
+  const MAX_MARKET_SNAPSHOTS = 240;
   const cycleIntervalMs = AUTO_CYCLE_SECONDS * 1000;
   const usageScope = `${DEFAULT_NETWORK}:${String(wallet?.address || "unknown").toLowerCase()}`;
+  const portfolioScope = usageScope;
+  const alertScope = usageScope;
   const runtimeScope = `${DEFAULT_NETWORK}:${String(wallet?.address || "unknown").toLowerCase()}:${String(agent?.agentId || agent?.name || "default").toLowerCase()}`;
   const cycleLockRef = useRef(false);
+  const lastRegimeRef = useRef("");
   const [runtimeHydrated, setRuntimeHydrated] = useState(false);
   const [tab, setTab] = useState("overview");
-  const [status, setStatus] = useState("RUNNING");
+  const { status, setStatus, transitionAgentStatus } = useAgentLifecycle("RUNNING");
   const [log, setLog] = useState(()=>seedLog(agent.name));
   const [decisions, setDecisions] = useState([] as any[]);
   const [loading, setLoading] = useState(false);
   const [execMode, setExecMode] = useState(agent.execMode || "manual");
   const [autoThresh] = useState(parseFloat(agent.autoApproveThreshold) || 50);
-  const [queue, setQueue] = useState([] as any[]);
-  const [signingItem, setSigningItem] = useState(null as any);
-  const [kasData, setKasData] = useState(null as any);
-  const [kasDataLoading, setKasDataLoading] = useState(true);
-  const [kasDataError, setKasDataError] = useState(null as any);
-  const [liveConnected, setLiveConnected] = useState(false);
-  const [streamConnected, setStreamConnected] = useState(false);
-  const [streamRetryCount, setStreamRetryCount] = useState(0);
   const [usage, setUsage] = useState(() => getUsageState(FREE_CYCLES_PER_DAY, usageScope));
   const [liveExecutionArmed, setLiveExecutionArmed] = useState(LIVE_EXECUTION_DEFAULT);
   const [nextAutoCycleAt, setNextAutoCycleAt] = useState(() => Date.now() + cycleIntervalMs);
   const [viewportWidth, setViewportWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1200
   );
+  const quantClientMode = useMemo(() => getQuantEngineClientMode(), []);
+
+  const {
+    kasData,
+    marketHistory,
+    setMarketHistory,
+    kasDataLoading,
+    kasDataError,
+    liveConnected,
+    streamConnected,
+    streamRetryCount,
+    refreshKasData,
+  } = useKaspaFeed({
+    walletAddress: wallet?.address,
+    wsUrl: KAS_WS_URL,
+    livePollMs: LIVE_POLL_MS,
+    streamReconnectMaxDelayMs: STREAM_RECONNECT_MAX_DELAY_MS,
+    maxMarketSnapshots: MAX_MARKET_SNAPSHOTS,
+  });
 
   const addLog = useCallback(
     (e: any) => setLog((p: any) => [{ ts: Date.now(), ...e }, ...p].slice(0, MAX_LOG_ENTRIES)),
     [MAX_LOG_ENTRIES]
   );
+  const {
+    queue,
+    setQueue,
+    signingItem,
+    pendingCount,
+    sendWalletTransfer,
+    receiptBackoffMs,
+    prependQueueItem,
+    prependSignedBroadcastedQueueItem,
+    handleQueueSign,
+    handleQueueReject,
+    handleSigningReject,
+    handleSigned: handleSignedBase,
+    rejectAllPending,
+  } = useExecutionQueue({
+    wallet,
+    maxQueueEntries: MAX_QUEUE_ENTRIES,
+    addLog,
+    kasPriceUsd: Number(kasData?.priceUsd || 0),
+    setTab,
+    receiptRetryBaseMs: RECEIPT_RETRY_BASE_MS,
+    receiptRetryMaxMs: RECEIPT_RETRY_MAX_MS,
+    receiptTimeoutMs: RECEIPT_TIMEOUT_MS,
+    receiptMaxAttempts: RECEIPT_MAX_ATTEMPTS,
+    receiptPollIntervalMs: RECEIPT_POLL_INTERVAL_MS,
+    receiptPollBatchSize: RECEIPT_POLL_BATCH_SIZE,
+  });
 
-  // Fetch Kaspa on-chain data (no external APIs)
-  const refreshKasData = useCallback(async()=>{
-    setKasDataLoading(true);
-    setKasDataError(null);
-    try{
-      const [dag, bal] = await Promise.all([kasNetworkInfo(), kasBalance(wallet?.address)]);
-      setKasData({ dag, walletKas: bal.kas, address: wallet?.address, fetched: Date.now() });
-      setLiveConnected(true);
-    }catch(e){
-      setLiveConnected(false);
-      setKasDataError((e as any)?.message || "Kaspa live feed disconnected");
-    }
-    setKasDataLoading(false);
-  },[wallet]);
+  const { settleTreasuryFeePayout, attachCombinedTreasuryOutput } = useTreasuryPayout({
+    enabled: TREASURY_FEE_ONCHAIN_ENABLED,
+    treasuryFeeKas: TREASURY_FEE_KAS,
+    treasuryAddress: TREASURY,
+    walletAddress: wallet?.address,
+    walletProvider: wallet?.provider,
+    kasPriceUsd: Number(kasData?.priceUsd || 0),
+    maxQueueEntries: MAX_QUEUE_ENTRIES,
+    addLog,
+    setQueue,
+    sendWalletTransfer,
+    receiptBackoffMs,
+  });
 
   useEffect(() => {
     setUsage(getUsageState(FREE_CYCLES_PER_DAY, usageScope));
@@ -118,6 +181,7 @@ export function Dashboard({agent, wallet}: any) {
           : seedLog(agent.name)
       );
       setDecisions(Array.isArray(persisted.decisions) ? persisted.decisions.slice(0, MAX_DECISION_ENTRIES) : []);
+      setMarketHistory(Array.isArray((persisted as any).marketHistory) ? (persisted as any).marketHistory.slice(-MAX_MARKET_SNAPSHOTS) : []);
       setNextAutoCycleAt(
         Number.isFinite(persisted.nextAutoCycleAt)
           ? Math.max(Date.now() + 1000, Number(persisted.nextAutoCycleAt))
@@ -129,6 +193,7 @@ export function Dashboard({agent, wallet}: any) {
       setLiveExecutionArmed(LIVE_EXECUTION_DEFAULT);
       setQueue([]);
       setDecisions([]);
+      setMarketHistory([]);
       setLog(seedLog(agent.name));
       setNextAutoCycleAt(Date.now() + cycleIntervalMs);
     }
@@ -138,88 +203,20 @@ export function Dashboard({agent, wallet}: any) {
 
   useEffect(() => {
     if (!runtimeHydrated) return;
-    writePersistedDashboardState(runtimeScope, {
-      status: status as "RUNNING" | "PAUSED" | "SUSPENDED",
-      execMode: execMode as "autonomous" | "manual" | "notify",
-      liveExecutionArmed,
-      queue,
-      log,
-      decisions,
-      nextAutoCycleAt,
-    });
-  }, [decisions, execMode, liveExecutionArmed, log, nextAutoCycleAt, queue, runtimeHydrated, runtimeScope, status]);
-
-  useEffect(()=>{
-    refreshKasData();
-
-    const id = setInterval(refreshKasData, LIVE_POLL_MS);
-
-    let ws: WebSocket | null = null;
-    let wsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let closedByApp = false;
-    let attempts = 0;
-
-    const scheduleReconnect = () => {
-      if (closedByApp || !KAS_WS_URL) return;
-      const delay = Math.min(STREAM_RECONNECT_MAX_DELAY_MS, 1200 * 2 ** attempts);
-      attempts += 1;
-      setStreamRetryCount(attempts);
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        connectStream();
-      }, delay);
-    };
-
-    const connectStream = () => {
-      if (!KAS_WS_URL || closedByApp) return;
-      ws = new WebSocket(KAS_WS_URL);
-
-      ws.onopen = () => {
-        attempts = 0;
-        setStreamRetryCount(0);
-        setStreamConnected(true);
-      };
-
-      ws.onmessage = () => {
-        // Keep websocket-triggered refreshes bounded to avoid API flood under bursty feeds.
-        if (wsRefreshTimer) return;
-        wsRefreshTimer = setTimeout(() => {
-          wsRefreshTimer = null;
-          refreshKasData();
-        }, 1200);
-      };
-
-      ws.onerror = () => {
-        if (!closedByApp) {
-          setStreamConnected(false);
-        }
-      };
-
-      ws.onclose = () => {
-        setStreamConnected(false);
-        if (!closedByApp) scheduleReconnect();
-      };
-    };
-
-    if (KAS_WS_URL) connectStream();
-
-    return ()=>{
-      closedByApp = true;
-      clearInterval(id);
-      if (wsRefreshTimer) {
-        clearTimeout(wsRefreshTimer);
-        wsRefreshTimer = null;
-      }
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-      if(ws){
-        ws.close();
-      }
-    };
-  },[refreshKasData]);
+    const persistTimer = setTimeout(() => {
+      writePersistedDashboardState(runtimeScope, {
+        status: status as "RUNNING" | "PAUSED" | "SUSPENDED",
+        execMode: execMode as "autonomous" | "manual" | "notify",
+        liveExecutionArmed,
+        queue,
+        log,
+        decisions,
+        marketHistory,
+        nextAutoCycleAt,
+      });
+    }, 250);
+    return () => clearTimeout(persistTimer);
+  }, [decisions, execMode, liveExecutionArmed, log, marketHistory, nextAutoCycleAt, queue, runtimeHydrated, runtimeScope, status]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -247,8 +244,57 @@ export function Dashboard({agent, wallet}: any) {
   const controlsGridCols = isTablet ? "1fr" : "1fr 1fr";
 
   const riskThresh = agent.risk==="low"?0.4:agent.risk==="medium"?0.65:0.85;
+  const allAgents = useMemo(() => {
+    const source = Array.isArray(agents) && agents.length > 0 ? agents : [agent];
+    const deduped = new Map<string, any>();
+    for (const row of source) {
+      const id = String(row?.agentId || row?.name || "").trim();
+      if (!id) continue;
+      deduped.set(id, row);
+    }
+    return Array.from(deduped.values());
+  }, [agent, agents]);
 
-  const runCycle = async()=>{
+  const {
+    portfolioConfig,
+    portfolioSummary,
+    activePortfolioRow,
+    patchPortfolioConfig,
+    patchPortfolioAgentOverride,
+    refreshPortfolioPeers,
+  } = usePortfolioAllocator({
+    portfolioScope,
+    allAgents,
+    activeAgentId: agent?.agentId,
+    walletAddress: wallet?.address,
+    walletKas: Number(kasData?.walletKas || 0),
+    activeDecisions: decisions,
+    activeQueue: queue,
+  });
+
+  const pnlAttribution = useMemo(
+    () => derivePnlAttribution({ decisions, queue, log, marketHistory }),
+    [decisions, queue, log, marketHistory]
+  );
+
+  const activeStrategyLabel = String(agent?.strategyLabel || agent?.strategyTemplate || "Custom");
+  const {
+    alertConfig,
+    alertSaveBusy,
+    lastAlertResult,
+    sendAlertEvent,
+    patchAlertConfig,
+    toggleAlertType,
+    saveAlertConfig,
+    sendTestAlert,
+  } = useAlerts({
+    alertScope,
+    agentName: agent?.name,
+    agentId: agent?.agentId,
+    activeStrategyLabel,
+  });
+
+  const runCycle = useCallback(async()=>{
     if (cycleLockRef.current || status!=="RUNNING" || !runtimeHydrated) return;
     cycleLockRef.current = true;
     setLoading(true);
@@ -272,47 +318,88 @@ export function Dashboard({agent, wallet}: any) {
         return;
       }
 
-      const dec = await runQuantEngine(agent, kasData||{});
-      const decSource = dec?.decision_source === "fallback" ? "fallback" : "ai";
+      const dec = await runQuantEngineClient(agent, kasData||{}, { history: marketHistory });
+      const decSource = String(dec?.decision_source || "ai");
+      const quantRegime = String(dec?.quant_metrics?.regime || "NA");
       if (ACCUMULATE_ONLY && !["ACCUMULATE", "HOLD"].includes(dec.action)) {
         dec.action = "HOLD";
         dec.rationale = `${String(dec.rationale || "")} Execution constrained by accumulate-only mode.`.trim();
       }
+      const decisionTs = Date.now();
+      setDecisions((p: any)=>[{ts:decisionTs, dec, kasData, source:decSource}, ...p].slice(0, MAX_DECISION_ENTRIES));
 
       addLog({
         type:"AI",
-        msg:`${dec.action} · Conf ${dec.confidence_score} · Kelly ${(dec.kelly_fraction*100).toFixed(1)}% · Monte Carlo ${dec.monte_carlo_win_pct}% win · source:${decSource}`,
+        msg:`${dec.action} · Conf ${dec.confidence_score} · Kelly ${(dec.kelly_fraction*100).toFixed(1)}% · Monte Carlo ${dec.monte_carlo_win_pct}% win · regime:${quantRegime} · source:${decSource} · ${dec?.engine_latency_ms || 0}ms`,
         fee:0.12,
       });
-      if (decSource === "fallback") {
+      if (dec?.quant_metrics) {
         addLog({
-          type:"SYSTEM",
-          msg:`Fallback decision source active (${dec?.decision_source_detail || "ai endpoint unavailable"}). Auto-approve disabled for this cycle.`,
+          type:"DATA",
+          msg:`Quant core → samples ${dec.quant_metrics.sample_count ?? "—"} · edge ${dec.quant_metrics.edge_score ?? "—"} · vol ${dec.quant_metrics.ewma_volatility ?? "—"} · dataQ ${dec.quant_metrics.data_quality_score ?? "—"}`,
           fee:null,
         });
+      }
+      if (decSource === "fallback" || decSource === "quant-core") {
+        addLog({
+          type:"SYSTEM",
+          msg:`Local quant decision active (${dec?.decision_source_detail || "ai endpoint unavailable"}). Auto-approve uses same guardrails; AI overlay unavailable or bypassed.`,
+          fee:null,
+        });
+        if (/ai_|timeout|endpoint|transport|request/i.test(String(dec?.decision_source_detail || ""))) {
+          void sendAlertEvent({
+            type: "ai_outage",
+            key: `ai_outage:${String(agent?.agentId || agent?.name || "agent")}`,
+            title: `${agent?.name || "Agent"} AI overlay unavailable`,
+            message: `Quant core fallback active. detail=${String(dec?.decision_source_detail || "n/a")}`,
+            severity: "warn",
+            meta: { decision_source: decSource, regime: quantRegime },
+          });
+        }
       }
 
       const confOk = dec.confidence_score>=CONF_THRESHOLD;
       const riskOk = dec.risk_score<=riskThresh;
       const liveKas = Number(kasData?.walletKas || 0);
-      const availableToSpend = Math.max(0, liveKas - RESERVE - NET_FEE);
+      const walletSupportsCombinedTreasury =
+        TREASURY_FEE_ONCHAIN_ENABLED &&
+        wallet?.provider !== "demo" &&
+        TREASURY_FEE_KAS > 0 &&
+        WalletAdapter.supportsNativeMultiOutput(String(wallet?.provider || ""));
+      const treasuryPayoutReserveKas =
+        TREASURY_FEE_ONCHAIN_ENABLED && wallet?.provider !== "demo" && TREASURY_FEE_KAS > 0
+          ? (walletSupportsCombinedTreasury ? TREASURY_FEE_KAS : (TREASURY_FEE_KAS + NET_FEE))
+          : 0;
+      const availableToSpend = Math.max(0, liveKas - RESERVE - NET_FEE - treasuryPayoutReserveKas);
+      const executionReady = liveConnected && !kasDataError && wallet?.provider !== "demo";
 
       if(!riskOk){
         addLog({type:"VALID", msg:`Risk gate FAILED — score ${dec.risk_score} > ${riskThresh} ceiling`, fee:null});
         addLog({type:"EXEC", msg:"BLOCKED by risk gate", fee:0.03});
+        void sendAlertEvent({
+          type: "risk_event",
+          key: `risk_gate:${String(agent?.agentId || agent?.name || "agent")}`,
+          title: `${agent?.name || "Agent"} risk gate blocked cycle`,
+          message: `Risk score ${dec.risk_score} exceeded ceiling ${riskThresh}. action=${dec.action} regime=${quantRegime}`,
+          severity: "warn",
+          meta: { risk_score: dec.risk_score, risk_ceiling: riskThresh, regime: quantRegime },
+        });
       } else if(!confOk){
         addLog({type:"VALID", msg:`Confidence ${dec.confidence_score} < ${CONF_THRESHOLD} threshold`, fee:null});
         addLog({type:"EXEC", msg:"HOLD — confidence gate enforced", fee:0.08});
       } else if (dec.action === "ACCUMULATE" && availableToSpend <= 0) {
-        addLog({type:"VALID", msg:`Insufficient spendable balance after reserve (${RESERVE} KAS + ${NET_FEE} KAS network fee).`, fee:null});
+        addLog({
+          type:"VALID",
+          msg:`Insufficient spendable balance after reserve (${RESERVE} KAS), network fee (${NET_FEE} KAS), and treasury payout reserve (${treasuryPayoutReserveKas.toFixed(4)} KAS).`,
+          fee:null
+        });
         addLog({type:"EXEC", msg:"HOLD — waiting for available balance", fee:0.03});
       } else {
         addLog({type:"VALID", msg:`Risk OK (${dec.risk_score}) · Conf OK (${dec.confidence_score}) · Kelly ${(dec.kelly_fraction*100).toFixed(1)}%`, fee:null});
-        setDecisions((p: any)=>[{ts:Date.now(), dec, kasData, source:decSource}, ...p].slice(0, MAX_DECISION_ENTRIES));
 
         if (execMode === "notify") {
           addLog({type:"EXEC", msg:`NOTIFY mode active — ${dec.action} signal recorded, no transaction broadcast.`, fee:0.01});
-        } else if (!liveExecutionArmed || !liveExecutionReady) {
+        } else if (!liveExecutionArmed || !executionReady) {
           const reason = !liveExecutionArmed
             ? "live execution is disarmed"
             : "network feed or wallet provider is not execution-ready";
@@ -323,7 +410,17 @@ export function Dashboard({agent, wallet}: any) {
           });
         } else if(dec.action!=="HOLD"){
           const requested = Number(dec.capital_allocation_kas || 0);
-          const amountKas = dec.action === "ACCUMULATE" ? Math.min(requested, availableToSpend) : requested;
+          const sharedCapKas = Number(activePortfolioRow?.cycleCapKas || 0);
+          const portfolioCapped =
+            dec.action === "ACCUMULATE" && sharedCapKas > 0 ? Math.min(requested, sharedCapKas) : requested;
+          const amountKas = dec.action === "ACCUMULATE" ? Math.min(portfolioCapped, availableToSpend) : requested;
+          if (dec.action === "ACCUMULATE" && sharedCapKas > 0 && requested > portfolioCapped) {
+            addLog({
+              type:"SYSTEM",
+              msg:`Shared portfolio allocator capped ${agent.name} cycle from ${requested} to ${portfolioCapped.toFixed(4)} KAS.`,
+              fee:null
+            });
+          }
           if (requested > amountKas) {
             addLog({type:"SYSTEM", msg:`Clamped execution amount from ${requested} to ${amountKas.toFixed(4)} KAS (available balance guardrail).`, fee:null});
           }
@@ -331,9 +428,10 @@ export function Dashboard({agent, wallet}: any) {
             addLog({type:"EXEC", msg:"HOLD — computed execution amount is zero", fee:0.03});
             return;
           }
-          const txItem = {
+          const baseTxItem = buildQueueTxItem({
             id:uid(),
             type:dec.action,
+            metaKind: "action",
             from:wallet?.address,
             to:ACCUMULATION_VAULT,
             amount_kas:Number(amountKas.toFixed(6)),
@@ -341,45 +439,76 @@ export function Dashboard({agent, wallet}: any) {
             status:"pending",
             ts:Date.now(),
             dec
-          };
+          });
+          const txItem = attachCombinedTreasuryOutput(baseTxItem);
+          if (txItem?.treasuryCombined) {
+            addLog({
+              type:"TREASURY",
+              msg:`Using combined treasury routing in primary transaction (${String(wallet?.provider || "wallet")}) · treasury ${Number(txItem?.treasuryCombinedFeeKas || TREASURY_FEE_KAS).toFixed(6)} KAS`,
+              fee:null,
+            });
+          }
           const isAutoApprove =
             execMode==="autonomous" &&
             txItem.amount_kas <= autoThresh &&
-            decSource === "ai";
+            (decSource === "ai" || decSource === "hybrid-ai");
           if(isAutoApprove){
             try {
-              let txid = "";
-              if(wallet?.provider === "kasware") {
-                txid = await WalletAdapter.sendKasware(txItem.to, txItem.amount_kas);
-              } else if(wallet?.provider === "kaspium") {
-                txid = await WalletAdapter.sendKaspium(txItem.to, txItem.amount_kas, txItem.purpose);
-              } else {
-                // Demo mode fallback only.
-                await new Promise(r=>setTimeout(r,400));
-                txid = Array.from({length:64},()=>"0123456789abcdef"[Math.floor(Math.random()*16)]).join("");
-              }
+              const txid = await sendWalletTransfer(txItem);
 
               addLog({type:"EXEC", msg:`AUTO-APPROVED: ${dec.action} · ${txItem.amount_kas} KAS · txid: ${txid.slice(0,16)}...`, fee:0.08});
               addLog({type:"TREASURY", msg:`Fee split → Pool: ${(FEE_RATE*AGENT_SPLIT).toFixed(4)} KAS / Treasury: ${(FEE_RATE*TREASURY_SPLIT).toFixed(4)} KAS`, fee:FEE_RATE});
-              setQueue((p: any)=>[{...txItem, status:"signed", txid}, ...p].slice(0, MAX_QUEUE_ENTRIES));
+              const signedItem = prependSignedBroadcastedQueueItem(txItem, txid);
+              await settleTreasuryFeePayout(signedItem, "auto");
             } catch (e: any) {
-              setQueue((p: any)=>[txItem, ...p].slice(0, MAX_QUEUE_ENTRIES));
+              prependQueueItem(txItem);
               addLog({type:"SIGN", msg:`Auto-approve fallback to manual queue: ${e?.message || "wallet broadcast failed"}`, fee:null});
             }
           } else {
             addLog({type:"SIGN", msg:`Action queued for wallet signature: ${dec.action} · ${txItem.amount_kas} KAS`, fee:null});
-            setQueue((p: any)=>[txItem, ...p].slice(0, MAX_QUEUE_ENTRIES));
+            prependQueueItem(txItem);
           }
         } else {
           addLog({type:"EXEC", msg:"HOLD — no action taken", fee:0.08});
         }
       }
-    }catch(e: any){addLog({type:"ERROR", msg:e.message, fee:null});}
+    }catch(e: any){
+      const fx = normalizeError(e, { domain: "system" });
+      addLog({type:"ERROR", msg:formatForgeError(fx), fee:null});
+      if (fx.domain === "tx" && fx.code === "TX_BROADCAST_FAILED") {
+        transitionAgentStatus({ type: "FAIL", reason: fx.message });
+      }
+    }
     finally {
       setLoading(false);
       cycleLockRef.current = false;
     }
-  };
+  }, [
+    ACCUMULATE_ONLY,
+    MAX_DECISION_ENTRIES,
+    activePortfolioRow,
+    addLog,
+    agent,
+    autoThresh,
+    cycleIntervalMs,
+    execMode,
+    kasData,
+    liveExecutionArmed,
+    liveConnected,
+    marketHistory,
+    kasDataError,
+    prependQueueItem,
+    prependSignedBroadcastedQueueItem,
+    riskThresh,
+    runtimeHydrated,
+    sendWalletTransfer,
+    settleTreasuryFeePayout,
+    sendAlertEvent,
+    status,
+    transitionAgentStatus,
+    usageScope,
+    wallet,
+  ]);
 
   useEffect(() => {
     if (status !== "RUNNING" || !runtimeHydrated) return;
@@ -394,30 +523,59 @@ export function Dashboard({agent, wallet}: any) {
     return () => clearInterval(tickId);
   }, [status, loading, liveConnected, kasDataError, nextAutoCycleAt, cycleIntervalMs, runCycle, runtimeHydrated]);
 
-  const handleQueueSign = (item: any) => { setSigningItem(item); };
-  const handleQueueReject = (id: string) => { setQueue((p: any)=>p.map((q: any)=>q.id===id?{...q,status:"rejected"}:q)); addLog({type:"SIGN", msg:`Transaction rejected by operator: ${id}`, fee:null}); };
-  const handleSigningReject = () => {
-    if (signingItem?.id) handleQueueReject(signingItem.id);
-    setSigningItem(null);
-  };
-  const handleSigned = (tx: any) => {
-    setQueue((p: any)=>p.map((q: any)=>q.id===signingItem?.id?{...q,status:"signed",txid:tx.txid}:q));
-    addLog({type:"EXEC", msg:`SIGNED: ${signingItem?.type} · ${signingItem?.amount_kas} KAS · txid: ${tx.txid?.slice(0,16)}...`, fee:0.08});
-    addLog({type:"TREASURY", msg:`Fee split → Pool: ${(FEE_RATE*AGENT_SPLIT).toFixed(4)} KAS / Treasury: ${(FEE_RATE*TREASURY_SPLIT).toFixed(4)} KAS`, fee:FEE_RATE});
-    setSigningItem(null);
-  };
+  useEffect(() => {
+    const latestRegime = String(decisions[0]?.dec?.quant_metrics?.regime || "");
+    if (!latestRegime) return;
+    if (!lastRegimeRef.current) {
+      lastRegimeRef.current = latestRegime;
+      return;
+    }
+    if (lastRegimeRef.current === latestRegime) return;
+    const previousRegime = lastRegimeRef.current;
+    lastRegimeRef.current = latestRegime;
+    void sendAlertEvent({
+      type: "regime_shift",
+      key: `regime_shift:${String(agent?.agentId || agent?.name || "agent")}:${previousRegime}->${latestRegime}`,
+      title: `${agent?.name || "Agent"} regime shift`,
+      message: `Regime changed from ${previousRegime} to ${latestRegime}.`,
+      severity: latestRegime === "RISK_OFF" ? "warn" : "info",
+      meta: { previous_regime: previousRegime, regime: latestRegime },
+    });
+  }, [agent?.agentId, agent?.name, decisions, sendAlertEvent]);
+
+  const handleSigned = useCallback(async (tx: any) => {
+    const currentSigningItem = signingItem ? { ...signingItem } : null;
+    await handleSignedBase(tx);
+    if (!currentSigningItem || currentSigningItem?.metaKind === "treasury_fee") return;
+    const signedQueueItem = { ...currentSigningItem, status: "signed", txid: tx?.txid };
+    await settleTreasuryFeePayout(signedQueueItem, "post-sign");
+  }, [handleSignedBase, settleTreasuryFeePayout, signingItem]);
 
   const killSwitch = () => {
-    setStatus("SUSPENDED");
+    transitionAgentStatus({ type: "KILL" });
     addLog({type:"SYSTEM", msg:"KILL-SWITCH activated — agent suspended. All pending actions cancelled.", fee:null});
-    setQueue((p: any)=>p.map((q: any)=>q.status==="pending"?{...q,status:"rejected"}:q));
-    setSigningItem(null);
+    void sendAlertEvent({
+      type: "risk_event",
+      key: `kill_switch:${String(agent?.agentId || agent?.name || "agent")}`,
+      title: `${agent?.name || "Agent"} kill-switch activated`,
+      message: "Agent suspended and pending queue rejected.",
+      severity: "danger",
+      meta: { pending_rejected: queue.filter((q: any) => q.status === "pending").length },
+    });
+    rejectAllPending();
   };
-
-  const pendingCount = queue.filter((q: any)=>q.status==="pending").length;
   const totalFees = parseFloat(log.filter((l: any)=>l.fee).reduce((s: number, l: any)=>s+(l.fee||0),0).toFixed(4));
   const liveKasNum = Number(kasData?.walletKas || 0);
-  const spendableKas = Math.max(0, liveKasNum - RESERVE - NET_FEE);
+  const walletSupportsCombinedTreasuryUi =
+    TREASURY_FEE_ONCHAIN_ENABLED &&
+    wallet?.provider !== "demo" &&
+    TREASURY_FEE_KAS > 0 &&
+    WalletAdapter.supportsNativeMultiOutput(String(wallet?.provider || ""));
+  const treasuryPayoutReserveKasUi =
+    TREASURY_FEE_ONCHAIN_ENABLED && wallet?.provider !== "demo" && TREASURY_FEE_KAS > 0
+      ? (walletSupportsCombinedTreasuryUi ? TREASURY_FEE_KAS : (TREASURY_FEE_KAS + NET_FEE))
+      : 0;
+  const spendableKas = Math.max(0, liveKasNum - RESERVE - NET_FEE - treasuryPayoutReserveKasUi);
   const liveExecutionReady = liveConnected && !kasDataError && wallet?.provider !== "demo";
   const autoCycleCountdown = Math.max(0, Math.ceil((nextAutoCycleAt - Date.now()) / 1000));
   const autoCycleCountdownLabel = `${Math.floor(autoCycleCountdown / 60)
@@ -433,7 +591,31 @@ export function Dashboard({agent, wallet}: any) {
         : "STREAM DOWN"
     : "STREAM OFF";
   const streamBadgeColor = KAS_WS_URL ? (streamConnected ? C.ok : C.warn) : C.dim;
-  const TABS = [{k:"overview",l:"OVERVIEW"},{k:"intelligence",l:"INTELLIGENCE"},{k:"queue",l:`QUEUE${pendingCount>0?` (${pendingCount})`:""}`},{k:"treasury",l:"TREASURY"},{k:"wallet",l:"WALLET"},{k:"billing",l:"BILLING"},{k:"log",l:"LOG"},{k:"controls",l:"CONTROLS"}];
+  const TABS = [
+    {k:"overview",l:"OVERVIEW"},
+    {k:"portfolio",l:"PORTFOLIO"},
+    {k:"intelligence",l:"INTELLIGENCE"},
+    {k:"attribution",l:"ATTRIBUTION"},
+    {k:"alerts",l:"ALERTS"},
+    {k:"queue",l:`QUEUE${pendingCount>0?` (${pendingCount})`:""}`},
+    {k:"treasury",l:"TREASURY"},
+    {k:"wallet",l:"WALLET"},
+    {k:"billing",l:"BILLING"},
+    {k:"log",l:"LOG"},
+    {k:"controls",l:"CONTROLS"},
+  ];
+
+  useEffect(() => {
+    if (pendingCount <= 0) return;
+    void sendAlertEvent({
+      type: "queue_pending",
+      key: `queue_pending_count:${String(agent?.agentId || agent?.name || "agent")}`,
+      title: `${agent?.name || "Agent"} has pending signatures`,
+      message: `${pendingCount} transaction${pendingCount > 1 ? "s" : ""} awaiting wallet approval.`,
+      severity: pendingCount >= 3 ? "warn" : "info",
+      meta: { pending_count: pendingCount },
+    });
+  }, [agent?.agentId, agent?.name, pendingCount, sendAlertEvent]);
 
   return(
     <div style={{maxWidth:1460, margin:"0 auto", padding:isMobile ? "14px 14px 22px" : "22px 24px 34px"}}>
@@ -442,15 +624,17 @@ export function Dashboard({agent, wallet}: any) {
       {/* Header */}
       <div style={{display:"flex", flexDirection:isMobile ? "column" : "row", justifyContent:"space-between", alignItems:isMobile ? "stretch" : "flex-start", marginBottom:16, gap:isMobile ? 10 : 0}}>
         <div>
-          <div style={{fontSize:11, color:C.dim, letterSpacing:"0.1em", ...mono, marginBottom:2}}>FORGEOS / AGENT / {agent.name}</div>
+          <div style={{fontSize:11, color:C.dim, letterSpacing:"0.1em", ...mono, marginBottom:2}}>FORGE.OS / AGENT / {agent.name}</div>
           <div style={{fontSize:18, color:C.text, fontWeight:700, ...mono}}>{agent.name}</div>
         </div>
         <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", justifyContent:isMobile ? "flex-start" : "flex-end"}}>
           <Badge text={status} color={status==="RUNNING"?C.ok:status==="PAUSED"?C.warn:C.danger} dot/>
           <Badge text={execMode.toUpperCase()} color={C.accent}/>
+          <Badge text={String(activeStrategyLabel).toUpperCase()} color={C.text}/>
           <Badge text={liveExecutionArmed ? "LIVE EXEC ON" : "LIVE EXEC OFF"} color={liveExecutionArmed ? C.ok : C.warn} dot/>
           <Badge text={ACCUMULATE_ONLY ? "ACCUMULATE-ONLY" : "MULTI-ACTION"} color={ACCUMULATE_ONLY ? C.ok : C.warn}/>
           <Badge text={wallet?.provider?.toUpperCase()||"WALLET"} color={C.purple} dot/>
+          <Badge text={`ENGINE ${String(quantClientMode).toUpperCase()}`} color={quantClientMode === "worker" ? C.ok : C.warn}/>
           <Badge text={liveConnected?"DAG LIVE":"DAG OFFLINE"} color={liveConnected?C.ok:C.danger} dot/>
           <Badge text={streamBadgeText} color={streamBadgeColor} dot/>
         </div>
@@ -466,7 +650,7 @@ export function Dashboard({agent, wallet}: any) {
       {liveExecutionArmed && !liveExecutionReady && (
         <div style={{background:C.wLow, border:`1px solid ${C.warn}40`, borderRadius:6, padding:"11px 16px", marginBottom:14}}>
           <span style={{fontSize:12, color:C.warn, ...mono}}>
-            Live execution is armed but not ready. Require DAG live feed and a real wallet provider (Kasware or Kaspium).
+            Live execution is armed but not ready. Require DAG live feed and a real wallet provider session (Kasware, Kaspium, Kastle, Ghost, Tangem bridge, or OneKey bridge).
           </span>
         </div>
       )}
@@ -482,7 +666,12 @@ export function Dashboard({agent, wallet}: any) {
       {/* Tabs */}
       <div style={{display:"flex", borderBottom:`1px solid ${C.border}`, marginBottom:18, overflowX:"auto"}}>
         {TABS.map(t=> (
-          <button key={t.k} onClick={()=>setTab(t.k)} style={{background:"none", border:"none", borderBottom:`2px solid ${tab===t.k?C.accent:"transparent"}`, color:tab===t.k?C.accent:C.dim, padding:"7px 14px", fontSize:11, cursor:"pointer", letterSpacing:"0.08em", ...mono, marginBottom:-1, whiteSpace:"nowrap", transition:"color 0.15s"}}>
+          <button
+            key={t.k}
+            data-testid={`dashboard-tab-${t.k}`}
+            onClick={()=>setTab(t.k)}
+            style={{background:"none", border:"none", borderBottom:`2px solid ${tab===t.k?C.accent:"transparent"}`, color:tab===t.k?C.accent:C.dim, padding:"7px 14px", fontSize:11, cursor:"pointer", letterSpacing:"0.08em", ...mono, marginBottom:-1, whiteSpace:"nowrap", transition:"color 0.15s"}}
+          >
             {t.l}
           </button>
         ))}
@@ -510,7 +699,7 @@ export function Dashboard({agent, wallet}: any) {
                 <Badge text={execMode.toUpperCase()} color={C.accent} />
                 <Badge text={liveExecutionArmed ? "EXEC ARMED" : "EXEC SAFE"} color={liveExecutionArmed ? C.ok : C.warn} dot />
                 <Badge text={`AUTO ${autoCycleCountdownLabel}`} color={status==="RUNNING" ? C.ok : C.dim} />
-                <Badge text={`SOURCE ${lastDecisionSource.toUpperCase()}`} color={lastDecisionSource === "fallback" ? C.warn : C.ok} />
+                <Badge text={`SOURCE ${lastDecisionSource.toUpperCase()}`} color={DECISION_SOURCE_BADGE_COLOR(lastDecisionSource)} />
                 <Badge text={`QUOTA ${usage.used}/${usage.limit}`} color={usage.locked ? C.danger : C.dim} />
               </div>
             </div>
@@ -528,9 +717,27 @@ export function Dashboard({agent, wallet}: any) {
                 <div style={{fontSize:13, color:C.text, fontWeight:700, ...mono}}>{agent.capitalLimit} KAS</div>
               </div>
               <div style={{background:C.s2, border:`1px solid ${C.border}`, borderRadius:6, padding:"10px 12px"}}>
+                <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>Portfolio Cycle Cap</div>
+                <div style={{fontSize:13, color:activePortfolioRow?.cycleCapKas ? C.ok : C.dim, fontWeight:700, ...mono}}>
+                  {activePortfolioRow?.cycleCapKas ? `${activePortfolioRow.cycleCapKas} KAS` : "—"}
+                </div>
+              </div>
+              <div style={{background:C.s2, border:`1px solid ${C.border}`, borderRadius:6, padding:"10px 12px"}}>
                 <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>Execution Readiness</div>
                 <div style={{fontSize:13, color:liveExecutionReady ? C.ok : C.warn, fontWeight:700, ...mono}}>
                   {liveExecutionReady ? "READY" : "NOT READY"}
+                </div>
+              </div>
+              <div style={{background:C.s2, border:`1px solid ${C.border}`, borderRadius:6, padding:"10px 12px"}}>
+                <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>KAS Price (USD)</div>
+                <div style={{fontSize:13, color:C.text, fontWeight:700, ...mono}}>
+                  {Number(kasData?.priceUsd || 0) > 0 ? `$${Number(kasData.priceUsd).toFixed(6)}` : "—"}
+                </div>
+              </div>
+              <div style={{background:C.s2, border:`1px solid ${C.border}`, borderRadius:6, padding:"10px 12px"}}>
+                <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>Quant Samples</div>
+                <div style={{fontSize:13, color:C.text, fontWeight:700, ...mono}}>
+                  {lastDecision?.quant_metrics?.sample_count ?? marketHistory.length ?? 0}
                 </div>
               </div>
             </div>
@@ -547,7 +754,7 @@ export function Dashboard({agent, wallet}: any) {
           <div style={{display:"grid", gridTemplateColumns:splitGridCols, gap:12}}>
             <Card p={18}>
               <Label>Agent Configuration</Label>
-              {[["Strategy","Momentum / On-Chain Flow"],["Risk",agent.risk.toUpperCase()],["Capital / Cycle",`${agent.capitalLimit} KAS`],["Exec Mode",execMode.toUpperCase()],["Auto-Approve ≤",`${autoThresh} KAS`],["Horizon",`${agent.horizon} days`],["KPI Target",`${agent.kpiTarget}% ROI`]].map(([k,v])=> (
+              {[["Strategy",activeStrategyLabel],["Strategy Class",String(agent?.strategyClass || "custom").toUpperCase()],["Risk",agent.risk.toUpperCase()],["Capital / Cycle",`${agent.capitalLimit} KAS`],["Portfolio Target",`${agent?.portfolioAllocationPct || "—"}%`],["Risk Budget Weight",String(agent?.riskBudgetWeight || "1.0")],["Exec Mode",execMode.toUpperCase()],["Auto-Approve ≤",`${autoThresh} KAS`],["Horizon",`${agent.horizon} days`],["KPI Target",`${agent.kpiTarget}% ROI`]].map(([k,v])=> (
                 <div key={k as any} style={{display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:`1px solid ${C.border}`}}>
                   <span style={{fontSize:12, color:C.dim, ...mono}}>{k}</span>
                   <span style={{fontSize:12, color:C.text, ...mono}}>{v}</span>
@@ -582,7 +789,7 @@ export function Dashboard({agent, wallet}: any) {
                     UPGRADE TO CONTINUE
                   </Btn>
                 )}
-                <Btn onClick={()=>setStatus((s: string)=>s==="RUNNING"?"PAUSED":"RUNNING")} variant="ghost" style={{padding:"9px 0"}}>{status==="RUNNING"?"PAUSE":"RESUME"}</Btn>
+                <Btn onClick={()=>transitionAgentStatus({ type: status==="RUNNING" ? "PAUSE" : "RESUME" })} variant="ghost" style={{padding:"9px 0"}}>{status==="RUNNING"?"PAUSE":"RESUME"}</Btn>
                 <Btn onClick={killSwitch} variant="danger" style={{padding:"9px 0"}}>KILL-SWITCH</Btn>
               </div>
             </Card>
@@ -590,9 +797,43 @@ export function Dashboard({agent, wallet}: any) {
         </div>
       )}
 
+      {tab==="portfolio" && (
+        <Suspense fallback={<Card p={18}><Label>Portfolio</Label><div style={{fontSize:12,color:C.dim}}>Loading portfolio allocator...</div></Card>}>
+          <PortfolioPanel
+            agents={allAgents}
+            activeAgentId={activeAgentId || agent?.agentId}
+            walletKas={kasData?.walletKas || 0}
+            summary={portfolioSummary}
+            config={portfolioConfig}
+            onConfigPatch={patchPortfolioConfig}
+            onAgentOverridePatch={patchPortfolioAgentOverride}
+            onSelectAgent={onSelectAgent}
+            onRefresh={refreshPortfolioPeers}
+          />
+        </Suspense>
+      )}
+
       {tab==="intelligence" && (
         <Suspense fallback={<Card p={18}><Label>Intelligence</Label><div style={{fontSize:12,color:C.dim}}>Loading intelligence panel...</div></Card>}>
           <IntelligencePanel decisions={decisions} loading={loading} onRun={runCycle}/>
+        </Suspense>
+      )}
+      {tab==="attribution" && (
+        <Suspense fallback={<Card p={18}><Label>Attribution</Label><div style={{fontSize:12,color:C.dim}}>Loading attribution panel...</div></Card>}>
+          <PnlAttributionPanel summary={pnlAttribution} />
+        </Suspense>
+      )}
+      {tab==="alerts" && (
+        <Suspense fallback={<Card p={18}><Label>Alerts</Label><div style={{fontSize:12,color:C.dim}}>Loading alerts panel...</div></Card>}>
+          <AlertsPanel
+            config={alertConfig}
+            onPatch={patchAlertConfig}
+            onToggleType={toggleAlertType}
+            onSave={saveAlertConfig}
+            onTest={sendTestAlert}
+            saving={alertSaveBusy}
+            lastResult={lastAlertResult}
+          />
         </Suspense>
       )}
       {tab==="queue" && <ActionQueue queue={queue} wallet={wallet} onSign={handleQueueSign} onReject={handleQueueReject}/>}
@@ -646,7 +887,7 @@ export function Dashboard({agent, wallet}: any) {
                 Auto cycle cadence: every {AUTO_CYCLE_SECONDS}s · Next cycle in {autoCycleCountdownLabel}
               </div>
               <div style={{display:"flex", flexDirection:"column", gap:8}}>
-                <Btn onClick={()=>setStatus((s: string)=>s==="RUNNING"?"PAUSED":"RUNNING")} variant="ghost" style={{padding:"10px 0"}}>{status==="RUNNING"?"PAUSE AGENT":"RESUME AGENT"}</Btn>
+                <Btn onClick={()=>transitionAgentStatus({ type: status==="RUNNING" ? "PAUSE" : "RESUME" })} variant="ghost" style={{padding:"10px 0"}}>{status==="RUNNING"?"PAUSE AGENT":"RESUME AGENT"}</Btn>
                 <Btn onClick={()=>setLiveExecutionArmed((v: boolean)=>!v)} variant={liveExecutionArmed ? "warn" : "primary"} style={{padding:"10px 0"}}>
                   {liveExecutionArmed ? "DISARM LIVE EXECUTION" : "ARM LIVE EXECUTION"}
                 </Btn>
@@ -672,4 +913,12 @@ export function Dashboard({agent, wallet}: any) {
 
 function DEFAULT_BADGE_COLOR(networkLabel: string) {
   return String(networkLabel || "").toLowerCase().includes("mainnet") ? C.warn : C.ok;
+}
+
+function DECISION_SOURCE_BADGE_COLOR(source: string) {
+  const normalized = String(source || "").toLowerCase();
+  if (normalized === "hybrid-ai") return C.accent;
+  if (normalized === "quant-core") return C.text;
+  if (normalized === "fallback") return C.warn;
+  return C.ok;
 }

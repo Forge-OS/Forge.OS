@@ -75,7 +75,11 @@ export function WalletPanel({agent, wallet}: any) {
             </div>
           </div>
           <div style={{display:"flex", gap:6, alignItems:"center", flexShrink:0, marginLeft:14}}>
-            <Badge text={wallet?.provider==="demo"?"DEMO":wallet?.provider?.toUpperCase()||"—"} color={wallet?.provider==="kasware"?C.ok:C.warn} dot/>
+            <Badge
+              text={wallet?.provider==="demo"?"DEMO":wallet?.provider?.toUpperCase()||"—"}
+              color={["kasware","kastle","ghost"].includes(String(wallet?.provider || "")) ? C.ok : C.warn}
+              dot
+            />
             <Btn onClick={refresh} disabled={loading} size="sm" variant="ghost">{loading?"...":"REFRESH"}</Btn>
           </div>
         </div>

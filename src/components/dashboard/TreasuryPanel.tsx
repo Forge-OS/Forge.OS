@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { BarChart, Bar, CartesianGrid, Tooltip, ResponsiveContainer, XAxis, YAxis } from "recharts";
-import { AGENT_SPLIT, EXPLORER, TREASURY, TREASURY_SPLIT } from "../../constants";
+import { AGENT_SPLIT, EXPLORER, TREASURY, TREASURY_FEE_KAS, TREASURY_FEE_ONCHAIN_ENABLED, TREASURY_SPLIT } from "../../constants";
 import { fmtT } from "../../helpers";
 import { LOG_COL } from "../../log/seedLog";
 import { C, mono } from "../../tokens";
@@ -52,6 +52,9 @@ export function TreasuryPanel({log, agentCapital}: any) {
       <Card p={18} style={{marginBottom:12}}>
         <Label>Treasury Address</Label>
         <div style={{fontSize:12, color:C.accent, ...mono, wordBreak:"break-all", marginBottom:10}}>{TREASURY}</div>
+        <div style={{fontSize:11, color:C.dim, marginBottom:10, ...mono}}>
+          Treasury payout mode: {TREASURY_FEE_ONCHAIN_ENABLED ? "ON-CHAIN ENABLED" : "LEDGER-ONLY"} · per execution payout {TREASURY_FEE_KAS} KAS
+        </div>
         <div style={{display:"flex", gap:8}}>
           <Btn onClick={()=>navigator.clipboard?.writeText(TREASURY)} variant="ghost" size="sm">COPY</Btn>
           <ExtLink href={`${EXPLORER}/addresses/${TREASURY}`} label="VERIFY ON-CHAIN ↗"/>

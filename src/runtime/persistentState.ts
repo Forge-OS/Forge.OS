@@ -5,6 +5,7 @@ type PersistedDashboardState = {
   queue?: any[];
   log?: any[];
   decisions?: any[];
+  marketHistory?: any[];
   nextAutoCycleAt?: number;
   updatedAt?: number;
   version?: number;
@@ -14,6 +15,7 @@ const STORAGE_PREFIX = "forgeos.dashboard.v1";
 const MAX_QUEUE_ENTRIES = 160;
 const MAX_LOG_ENTRIES = 320;
 const MAX_DECISION_ENTRIES = 120;
+const MAX_MARKET_HISTORY_ENTRIES = 240;
 
 function normalizeScope(scope: string) {
   return String(scope || "default")
@@ -31,6 +33,11 @@ function storageKey(scope: string) {
 function truncateList<T>(value: unknown, maxItems: number): T[] {
   if (!Array.isArray(value)) return [];
   return value.slice(0, maxItems);
+}
+
+function truncateTail<T>(value: unknown, maxItems: number): T[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(Math.max(0, value.length - maxItems));
 }
 
 function sanitize(state: PersistedDashboardState): PersistedDashboardState {
@@ -53,6 +60,8 @@ function sanitize(state: PersistedDashboardState): PersistedDashboardState {
     queue: truncateList(state.queue, MAX_QUEUE_ENTRIES),
     log: truncateList(state.log, MAX_LOG_ENTRIES),
     decisions: truncateList(state.decisions, MAX_DECISION_ENTRIES),
+    // marketHistory is append-ordered (oldest -> newest), so keep the tail to preserve the latest samples.
+    marketHistory: truncateTail(state.marketHistory, MAX_MARKET_HISTORY_ENTRIES),
   };
 }
 

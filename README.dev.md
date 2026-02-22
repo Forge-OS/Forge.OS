@@ -3,9 +3,12 @@
 ForgeOS is a wallet-native Kaspa dashboard for running an AI-assisted trading agent simulation.
 
 It includes:
-- Wallet connection (Kasware + Kaspium + demo mode)
+- Wallet connection (Kasware + Kaspium + Kastle + Ghost Wallet + demo mode)
 - Agent creation wizard
+- Strategy templates (accumulation-first presets)
+- Multi-agent portfolio panel with shared risk budget allocator
 - Decision engine panel (Kelly, Monte Carlo, risk/confidence gating)
+- PnL attribution panel and alert routing panel
 - Runtime network selector in topbar (mainnet/testnet profiles with session reset guard)
 - Action queue with manual/auto signing flows
 - Treasury fee split and logs
@@ -36,7 +39,8 @@ It includes:
 - `src/components/wizard/*`: agent setup/deploy flow
 - `src/components/dashboard/*`: dashboard panels and core runtime UI
 - `src/api/kaspaApi.ts`: Kaspa API calls
-- `src/wallet/WalletAdapter.ts`: wallet mechanics (Kasware + Kaspium)
+- `src/wallet/WalletAdapter.ts`: wallet mechanics (Kasware + Kaspium + Kastle + Ghost Wallet)
+- `src/wallet/walletCapabilityRegistry.ts`: wallet capability registry + UI metadata (classes/capabilities/multi-output hints)
 - `src/quant/runQuantEngine.ts`: AI decision call + strict JSON parse
 - `src/log/seedLog.ts`: seeded log data + log colors
 - `src/constants.ts`, `src/tokens.ts`, `src/helpers.ts`: constants/design/helpers
@@ -105,12 +109,36 @@ Kaspa network:
 - `VITE_ACCUMULATION_ADDRESS_TESTNET`
 - `VITE_FEE_RATE`
 - `VITE_TREASURY_SPLIT`
+- `SCHEDULER_AUTH_TOKEN` / `SCHEDULER_AUTH_TOKENS` (scheduler backend token auth)
+- `SCHEDULER_AUTH_READS` (scheduler backend read protection toggle)
+- `SCHEDULER_REDIS_URL` (scheduler Redis persistence + due-schedule backing)
+- `SCHEDULER_REDIS_PREFIX`
+- `SCHEDULER_SERVICE_TOKENS_JSON` (scoped service-token auth registry JSON)
+- `SCHEDULER_JWT_HS256_SECRET` / `SCHEDULER_JWT_ISSUER` / `SCHEDULER_JWT_AUDIENCE` (HS256 JWT auth + claim checks)
+- `SCHEDULER_OIDC_ISSUER` / `SCHEDULER_OIDC_DISCOVERY_TTL_MS` (OIDC discovery -> `jwks_uri`)
+- `SCHEDULER_JWKS_URL` / `SCHEDULER_JWKS_CACHE_TTL_MS` (OIDC/JWKS JWT validation cache)
+- `SCHEDULER_JWKS_ALLOWED_KIDS` / `SCHEDULER_JWKS_REQUIRE_PINNED_KID` (JWKS key pinning / rotation policy)
+- `SCHEDULER_QUOTA_WINDOW_MS`, `SCHEDULER_QUOTA_READ_MAX`, `SCHEDULER_QUOTA_WRITE_MAX`, `SCHEDULER_QUOTA_TICK_MAX`
+- `SCHEDULER_REDIS_AUTHORITATIVE_QUEUE` (Redis due-schedule + leader-lock mode)
+- `SCHEDULER_REDIS_RESET_EXEC_QUEUE_ON_BOOT` (legacy reset behavior; defaults false for cold-start recovery)
+- `SCHEDULER_REDIS_EXEC_LEASE_TTL_MS`, `SCHEDULER_REDIS_EXEC_REQUEUE_BATCH` (Redis execution queue lease/requeue tuning)
+- `SCHEDULER_CALLBACK_IDEMPOTENCY_TTL_MS` (callback dedupe/idempotency retention)
+- `SCHEDULER_LEADER_LOCK_RENEW_JITTER_MS`, `SCHEDULER_LEADER_ACQUIRE_BACKOFF_MIN_MS`, `SCHEDULER_LEADER_ACQUIRE_BACKOFF_MAX_MS` (leader fencing lock behavior)
+- `VITE_KASTLE_TX_BUILDER_URL` / `VITE_KASTLE_TX_BUILDER_TOKEN` / `VITE_KASTLE_TX_BUILDER_TIMEOUT_MS` (automatic Kastle txJson builder endpoint)
+- `VITE_KASTLE_TX_BUILDER_STRICT` (fail instead of fallback on builder error)
 
 AI engine:
 - `VITE_AI_API_URL` (default: Anthropic Messages API)
 - `VITE_AI_MODEL`
 - `VITE_ANTHROPIC_API_KEY` (required when calling Anthropic directly)
 - `VITE_AI_FALLBACK_ENABLED` (`true` by default; deterministic conservative fallback if upstream AI is unavailable)
+- `VITE_AI_OVERLAY_MODE` (`always` default; `adaptive` for scale/cost control, `off` disables overlay)
+- `VITE_AI_OVERLAY_MIN_INTERVAL_MS` (AI overlay throttle per agent/state)
+- `VITE_AI_OVERLAY_CACHE_TTL_MS` (cache reuse TTL for AI overlay)
+- `VITE_AI_SOFT_TIMEOUT_MS` (soft AI timeout to protect cycle latency)
+- `VITE_AI_MAX_ATTEMPTS` (retry attempts for transient AI transport/API failures)
+- `VITE_QUANT_WORKER_ENABLED` (run quant+AI engine off main thread)
+- `VITE_QUANT_WORKER_SOFT_TIMEOUT_MS` (worker timeout before fallback)
 
 Monetization / quota:
 - `VITE_FREE_CYCLES_PER_DAY` (free cycle limit, default `30`)
@@ -127,6 +155,10 @@ Runtime override:
 1. Launch app with `npm run dev`.
 2. Connect wallet:
 - `Kasware` for extension flow
+- `Kastle` for extension flow
+- `Ghost Wallet` for custom provider bridge flow
+- `Tangem` for hardware bridge/manual txid flow
+- `OneKey` for hardware bridge/manual txid flow
 - `Kaspium` for mobile deep-link flow
 - `Demo Mode` for UI simulation without extension
 3. Create agent in Wizard:
@@ -144,6 +176,10 @@ Runtime override:
 ## Wallet Mechanics
 - `WalletAdapter.detect()` reports wallet support:
 - `kasware` (extension)
+- `kastle` (extension)
+- `ghost` (provider bridge probe on connect)
+- `tangem` (hardware bridge/manual txid)
+- `onekey` (hardware bridge/manual txid)
 - `kaspium` (deep-link flow)
 - Kasware connect path:
 - `requestAccounts()`
@@ -151,6 +187,15 @@ Runtime override:
 - strict network/profile match when `VITE_KAS_ENFORCE_WALLET_NETWORK=true`
 - Kasware send path:
 - `sendKaspa(toAddress, sompi)`
+- Kastle send path:
+- `sendKaspa(toAddress, sompi)`
+- Kastle raw multi-output path (feature-flagged):
+- `signAndBroadcastTx(networkId, txJson)` via adapter capability detection
+- txJson comes from an injected builder bridge (`window.__FORGEOS_KASTLE_BUILD_TX_JSON__`) or manual operator paste prompt
+- Ghost Wallet send path:
+- provider `transact(outputs, fee?, inputs?)` bridge call (Forge.OS uses multi-output when treasury-combined send is supported/eligible)
+- Tangem / OneKey send path:
+- external sign/broadcast in hardware app/device with manual txid handoff back into Forge.OS
 - Kaspium connect path:
 - user enters address matching configured network prefixes
 - adapter stores session with provider `kaspium`
@@ -178,7 +223,11 @@ Defined in `src/constants.ts`:
 Dashboard logs and treasury panel display split accounting each cycle.
 
 ## AI Engine Notes
-`src/quant/runQuantEngine.ts` supports two patterns:
+`src/quant/runQuantEngine.ts` supports a hybrid pattern:
+- Deterministic local quant core (primary decision engine: features/regime/risk/Kelly)
+- Optional real AI overlay (bounded by quant-core risk envelope; adaptive or always-on)
+
+AI transport supports two patterns:
 - Direct Anthropic call (`VITE_AI_API_URL` points to `api.anthropic.com`):
 - requires `x-api-key` (`VITE_ANTHROPIC_API_KEY`)
 - requires `anthropic-version` header
@@ -189,7 +238,12 @@ Dashboard logs and treasury panel display split accounting each cycle.
 Recommendation for production:
 - Keep AI keys server-side.
 - Route AI requests through backend proxy.
+- Starter queue/rate-limit proxy example: `server/ai-proxy/index.mjs`
+- Scheduler shared-cache + auth/JWT/JWKS/quotas/Redis-authoritative (due + execution queue) starter example: `server/scheduler/index.mjs`
+- Kastle tx-builder starter example: `server/tx-builder/index.mjs`
 - Keep decision sanitization enabled (default) and enforce wallet-side signing.
+- For maximum AI involvement use `VITE_AI_OVERLAY_MODE=always`; for scale/cost control use `adaptive`.
+- For strict real-AI-only operation, also set `VITE_AI_FALLBACK_ENABLED=false` (engine will error if AI transport is unavailable).
 
 ## Kaspa Data Sources
 `src/api/kaspaApi.ts` uses:

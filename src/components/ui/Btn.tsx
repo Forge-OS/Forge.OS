@@ -1,6 +1,6 @@
 import { C, mono } from "../../tokens";
 
-export const Btn = ({children, onClick, variant = "primary", disabled, style = {}, size = "md"}: any) => {
+export const Btn = ({children, onClick, variant = "primary", disabled, style = {}, size = "md", ...rest}: any) => {
   const s = {
     primary:{bg:`linear-gradient(90deg, ${C.accent} 0%, #7BE9CF 100%)`,color:"#04110E",border:`1px solid ${C.accent}55`,shadow:"0 10px 24px rgba(57,221,182,0.26)"},
     ghost:{bg:"transparent",color:C.text,border:`1px solid ${C.border}`,shadow:"none"},
@@ -10,6 +10,7 @@ export const Btn = ({children, onClick, variant = "primary", disabled, style = {
 
   return (
     <button
+      {...rest}
       onClick={onClick}
       disabled={disabled}
       onMouseEnter={(e)=>{if(!disabled){e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.filter="brightness(1.06)";}}

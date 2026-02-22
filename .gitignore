@@ -19,3 +19,7 @@ yarn-error.log*
 
 # TypeScript cache
 tsconfig.tsbuildinfo
+
+# Playwright
+playwright-report/
+test-results/

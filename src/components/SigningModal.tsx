@@ -3,6 +3,7 @@ import { NET_FEE } from "../constants";
 import { shortAddr } from "../helpers";
 import { C, mono } from "../tokens";
 import { WalletAdapter } from "../wallet/WalletAdapter";
+import { formatForgeError } from "../runtime/errorTaxonomy";
 import { Btn, Card } from "./ui";
 
 export function SigningModal({tx, wallet, onSign, onReject}: any) {
@@ -15,6 +16,12 @@ export function SigningModal({tx, wallet, onSign, onReject}: any) {
       let txid;
       if(wallet?.provider === "kasware") {
         txid = await WalletAdapter.sendKasware(tx.to, tx.amount_kas);
+      } else if(wallet?.provider === "kastle") {
+        txid = await WalletAdapter.sendKastle(tx.to, tx.amount_kas);
+      } else if(wallet?.provider === "ghost") {
+        txid = await WalletAdapter.sendGhost(tx.to, tx.amount_kas);
+      } else if(wallet?.provider === "tangem" || wallet?.provider === "onekey") {
+        txid = await WalletAdapter.sendHardwareBridge(wallet.provider, tx.to, tx.amount_kas, tx.purpose, tx.outputs);
       } else if(wallet?.provider === "kaspium") {
         txid = await WalletAdapter.sendKaspium(tx.to, tx.amount_kas, tx.purpose);
       } else {
@@ -23,7 +30,7 @@ export function SigningModal({tx, wallet, onSign, onReject}: any) {
         txid = Array.from({length:64},()=>"0123456789abcdef"[Math.floor(Math.random()*16)]).join("");
       }
       onSign({ ...tx, txid, signed_at: Date.now() });
-    } catch(e: any) { setErr(e.message); }
+    } catch(e: any) { setErr(formatForgeError(e)); }
     setBusy(false);
   };
 
@@ -32,8 +39,28 @@ export function SigningModal({tx, wallet, onSign, onReject}: any) {
       <Card p={28} style={{maxWidth:480, width:"100%", border:`1px solid ${C.warn}40`}}>
         <div style={{fontSize:14, color:C.warn, fontWeight:700, ...mono, marginBottom:4}}>⚠ TRANSACTION SIGNING REQUIRED</div>
         <div style={{fontSize:12, color:C.dim, marginBottom:18}}>
-          {wallet?.provider==="kasware" ? "Kasware will prompt you to sign." : wallet?.provider==="kaspium" ? "Kaspium deep-link will open; paste txid after broadcast." : "Confirm this transaction to proceed."}
+          {wallet?.provider==="kasware"
+            ? "Kasware will prompt you to sign."
+            : wallet?.provider==="kastle"
+              ? "Kastle will prompt you to sign."
+              : wallet?.provider==="ghost"
+                ? "Ghost Wallet will prompt you to approve the provider transaction."
+                : wallet?.provider==="tangem" || wallet?.provider==="onekey"
+                  ? `${String(wallet?.provider || "hardware").toUpperCase()} bridge flow will prompt for txid after external wallet/device broadcast.`
+                : wallet?.provider==="kaspium"
+                  ? "Kaspium deep-link will open; paste txid after broadcast."
+                  : "Confirm this transaction to proceed."}
         </div>
+        {Array.isArray(tx?.outputs) && tx.outputs.length > 1 && (
+          <div style={{fontSize:11, color:C.accent, marginBottom:12, ...mono}}>
+            Multi-output transaction · {tx.outputs.length} recipients (treasury-combined path)
+          </div>
+        )}
+        {tx?.metaKind === "treasury_fee" && (
+          <div style={{fontSize:12, color:C.warn, marginBottom:12, ...mono}}>
+            Protocol treasury fee payout transfer (separate on-chain micro-transaction)
+          </div>
+        )}
         <Card p={0} style={{marginBottom:16}}>
           {[
             ["Type",      tx.type],

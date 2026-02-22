@@ -8,6 +8,7 @@ import { WStep1 } from "./WStep1";
 import { WStep2 } from "./WStep2";
 import { WStep3 } from "./WStep3";
 import { ACCUMULATION_VAULT } from "../../constants";
+import { buildQueueTxItem } from "../../tx/queueTx";
 
 export function Wizard({wallet, onComplete}: any) {
   const [step, setStep] = useState(0);
@@ -23,19 +24,21 @@ export function Wizard({wallet, onComplete}: any) {
     onComplete({...d, wallet, deployTx:tx, deployedAt:Date.now(), agentId:`forge_${uid()}`});
   };
 
-  const deployTx = {
+  const deployTx = buildQueueTxItem({
+    id: `deploy_${uid()}`,
     type:"AGENT_DEPLOY",
+    metaKind: "deploy",
     from:wallet?.address,
     to:ACCUMULATION_VAULT,
     amount_kas:parseFloat(d.capitalLimit) || 5000,
     purpose:"Agent vault provisioning + initial capital"
-  };
+  });
 
   return(
     <div style={{maxWidth:1040, margin:"0 auto", padding:"clamp(18px, 2.2vw, 34px)"}}>
       {pendingSign && <SigningModal tx={deployTx} wallet={wallet} onSign={handleSigned} onReject={()=>setPendingSign(false)}/>}
       <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:22}}>
-        <span style={{fontSize:10, color:C.dim, letterSpacing:"0.12em", ...mono}}>FORGEOS / NEW AGENT</span>
+        <span style={{fontSize:10, color:C.dim, letterSpacing:"0.12em", ...mono}}>FORGE.OS / NEW AGENT</span>
         <span style={{width:1, height:12, background:C.border, display:"inline-block"}}/>
         <Badge text={wallet?.provider?.toUpperCase() || "CONNECTED"} color={C.ok} dot/>
       </div>

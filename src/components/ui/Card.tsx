@@ -1,7 +1,8 @@
 import { C } from "../../tokens";
 
-export const Card = ({children, p = 16, style = {}}: any) => (
+export const Card = ({children, p = 16, style = {}, ...rest}: any) => (
   <div
+    {...rest}
     style={{
       background:`linear-gradient(165deg, ${C.s2} 0%, #0a1725 52%, ${C.s1} 100%)`,
       border:`1px solid ${C.border}cc`,
