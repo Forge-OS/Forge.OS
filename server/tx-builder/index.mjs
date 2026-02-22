@@ -37,6 +37,17 @@ const TELEMETRY_SUMMARY_SCHEDULER_URL = String(process.env.TX_BUILDER_SCHEDULER_
 const TELEMETRY_SUMMARY_SCHEDULER_TOKEN = String(process.env.TX_BUILDER_SCHEDULER_SUMMARY_TOKEN || "").trim();
 const TELEMETRY_SUMMARY_TIMEOUT_MS = Math.max(250, Number(process.env.TX_BUILDER_TELEMETRY_SUMMARY_TIMEOUT_MS || 3000));
 const TELEMETRY_SUMMARY_TTL_MS = Math.max(250, Number(process.env.TX_BUILDER_TELEMETRY_SUMMARY_TTL_MS || 5000));
+const TELEMETRY_SUMMARY_STALE_SOFT_MS = Math.max(
+  TELEMETRY_SUMMARY_TTL_MS,
+  Number(process.env.TX_BUILDER_TELEMETRY_SUMMARY_STALE_SOFT_MS || Math.max(15000, TELEMETRY_SUMMARY_TTL_MS * 3))
+);
+const TELEMETRY_SUMMARY_STALE_HARD_MS = Math.max(
+  TELEMETRY_SUMMARY_STALE_SOFT_MS + 1,
+  Number(process.env.TX_BUILDER_TELEMETRY_SUMMARY_STALE_HARD_MS || Math.max(60000, TELEMETRY_SUMMARY_TTL_MS * 12))
+);
+const TELEMETRY_SUMMARY_REQUIRE_FRESH = /^(1|true|yes)$/i.test(
+  String(process.env.TX_BUILDER_TELEMETRY_SUMMARY_REQUIRE_FRESH || "false")
+);
 
 const metrics = {
   startedAtMs: Date.now(),
@@ -68,6 +79,11 @@ const metrics = {
   telemetrySummaryCallbackReceiptLagP95Ms: 0,
   telemetrySummarySchedulerSaturationProxyPct: 0,
   telemetrySummarySchedulerCallbackP95BucketMs: 0,
+  telemetrySummaryFreshnessStateCode: 0,
+  telemetrySummaryFreshnessMaxAgeMs: 0,
+  telemetrySummaryStaleSoftTotal: 0,
+  telemetrySummaryStaleHardTotal: 0,
+  telemetrySummaryStaleDropsTotal: 0,
 };
 
 let kaspaWasmPromise = null;
@@ -288,6 +304,35 @@ async function getTelemetrySummaryCached(kind) {
   return slot.inFlight;
 }
 
+function telemetryCacheAgeMs(kind) {
+  const slot = telemetrySummaryCache[kind];
+  if (!slot?.ts) return null;
+  return Math.max(0, nowMs() - slot.ts);
+}
+
+function telemetryFreshnessState({ needsConfirm, needsCongestion }) {
+  const callbackAgeMs = needsConfirm ? telemetryCacheAgeMs("callback") : null;
+  const schedulerAgeMs = needsCongestion ? telemetryCacheAgeMs("scheduler") : null;
+  const requiredAges = [callbackAgeMs, schedulerAgeMs].filter((v) => v !== null);
+  if (requiredAges.some((v) => !Number.isFinite(v))) {
+    return { state: "missing", maxAgeMs: 0, callbackAgeMs, schedulerAgeMs };
+  }
+  const ages = requiredAges.map((v) => Number(v));
+  const maxAgeMs = ages.length ? Math.max(...ages) : 0;
+  if (!ages.length) return { state: "not_required", maxAgeMs: 0, callbackAgeMs, schedulerAgeMs };
+  if (maxAgeMs > TELEMETRY_SUMMARY_STALE_HARD_MS) return { state: "stale_hard", maxAgeMs, callbackAgeMs, schedulerAgeMs };
+  if (maxAgeMs > TELEMETRY_SUMMARY_STALE_SOFT_MS) return { state: "stale_soft", maxAgeMs, callbackAgeMs, schedulerAgeMs };
+  return { state: "fresh", maxAgeMs, callbackAgeMs, schedulerAgeMs };
+}
+
+function freshnessStateCode(state) {
+  if (state === "fresh") return 1;
+  if (state === "stale_soft") return 2;
+  if (state === "stale_hard") return 3;
+  if (state === "missing") return 4;
+  return 0;
+}
+
 function mergeLiveTelemetry(inputTelemetry, callbackSummary, schedulerSummary) {
   const base = inputTelemetry && typeof inputTelemetry === "object" ? { ...inputTelemetry } : {};
   const confirmP95Ms = Number(
@@ -329,7 +374,34 @@ async function getAdaptiveTelemetry(inputTelemetry) {
     needsConfirm ? getTelemetrySummaryCached("callback") : Promise.resolve(null),
     needsCongestion ? getTelemetrySummaryCached("scheduler") : Promise.resolve(null),
   ]);
-  return mergeLiveTelemetry(inputTelemetry, callbackSummary, schedulerSummary);
+  const freshness = telemetryFreshnessState({ needsConfirm, needsCongestion });
+  metrics.telemetrySummaryFreshnessStateCode = freshnessStateCode(freshness.state);
+  metrics.telemetrySummaryFreshnessMaxAgeMs = Math.max(0, Math.round(Number(freshness.maxAgeMs || 0)));
+  if (freshness.state === "stale_soft") metrics.telemetrySummaryStaleSoftTotal += 1;
+  if (freshness.state === "stale_hard") metrics.telemetrySummaryStaleHardTotal += 1;
+
+  if (freshness.state === "missing" && TELEMETRY_SUMMARY_REQUIRE_FRESH) {
+    throw new Error("telemetry_summary_missing_required");
+  }
+  if (freshness.state === "stale_hard" && TELEMETRY_SUMMARY_REQUIRE_FRESH) {
+    throw new Error(`telemetry_summary_stale_hard_${freshness.maxAgeMs}ms`);
+  }
+
+  if (freshness.state === "stale_hard") {
+    metrics.telemetrySummaryStaleDropsTotal += 1;
+    return {
+      ...(inputTelemetry && typeof inputTelemetry === "object" ? { ...inputTelemetry } : {}),
+      summaryFreshnessState: "stale_hard",
+      summaryFreshnessMaxAgeMs: Math.max(0, Math.round(Number(freshness.maxAgeMs || 0))),
+    };
+  }
+
+  const merged = mergeLiveTelemetry(inputTelemetry, callbackSummary, schedulerSummary);
+  return {
+    ...merged,
+    summaryFreshnessState: freshness.state,
+    summaryFreshnessMaxAgeMs: Math.max(0, Math.round(Number(freshness.maxAgeMs || 0))),
+  };
 }
 
 async function loadKaspaWasm() {
@@ -657,6 +729,21 @@ function exportPrometheus() {
   push("# HELP forgeos_tx_builder_telemetry_summary_scheduler_callback_p95_bucket_ms Latest scheduler callback latency p95 bucket from summary cache.");
   push("# TYPE forgeos_tx_builder_telemetry_summary_scheduler_callback_p95_bucket_ms gauge");
   push(`forgeos_tx_builder_telemetry_summary_scheduler_callback_p95_bucket_ms ${metrics.telemetrySummarySchedulerCallbackP95BucketMs}`);
+  push("# HELP forgeos_tx_builder_telemetry_summary_freshness_state_code Telemetry summary freshness state (0=unknown,1=fresh,2=stale_soft,3=stale_hard,4=missing).");
+  push("# TYPE forgeos_tx_builder_telemetry_summary_freshness_state_code gauge");
+  push(`forgeos_tx_builder_telemetry_summary_freshness_state_code ${metrics.telemetrySummaryFreshnessStateCode}`);
+  push("# HELP forgeos_tx_builder_telemetry_summary_freshness_max_age_ms Maximum cache age used for adaptive telemetry summaries.");
+  push("# TYPE forgeos_tx_builder_telemetry_summary_freshness_max_age_ms gauge");
+  push(`forgeos_tx_builder_telemetry_summary_freshness_max_age_ms ${metrics.telemetrySummaryFreshnessMaxAgeMs}`);
+  push("# HELP forgeos_tx_builder_telemetry_summary_stale_soft_total Adaptive telemetry requests that used stale-soft summaries.");
+  push("# TYPE forgeos_tx_builder_telemetry_summary_stale_soft_total counter");
+  push(`forgeos_tx_builder_telemetry_summary_stale_soft_total ${metrics.telemetrySummaryStaleSoftTotal}`);
+  push("# HELP forgeos_tx_builder_telemetry_summary_stale_hard_total Adaptive telemetry requests that detected stale-hard summaries.");
+  push("# TYPE forgeos_tx_builder_telemetry_summary_stale_hard_total counter");
+  push(`forgeos_tx_builder_telemetry_summary_stale_hard_total ${metrics.telemetrySummaryStaleHardTotal}`);
+  push("# HELP forgeos_tx_builder_telemetry_summary_stale_drops_total Adaptive telemetry requests that dropped summary-derived signals due to stale-hard summaries.");
+  push("# TYPE forgeos_tx_builder_telemetry_summary_stale_drops_total counter");
+  push(`forgeos_tx_builder_telemetry_summary_stale_drops_total ${metrics.telemetrySummaryStaleDropsTotal}`);
   push("# HELP forgeos_tx_builder_uptime_seconds Service uptime.");
   push("# TYPE forgeos_tx_builder_uptime_seconds gauge");
   push(`forgeos_tx_builder_uptime_seconds ${((nowMs() - metrics.startedAtMs) / 1000).toFixed(3)}`);
@@ -709,10 +796,15 @@ const server = http.createServer(async (req, res) => {
           schedulerUrlConfigured: Boolean(TELEMETRY_SUMMARY_SCHEDULER_URL),
           ttlMs: TELEMETRY_SUMMARY_TTL_MS,
           timeoutMs: TELEMETRY_SUMMARY_TIMEOUT_MS,
+          staleSoftMs: TELEMETRY_SUMMARY_STALE_SOFT_MS,
+          staleHardMs: TELEMETRY_SUMMARY_STALE_HARD_MS,
+          requireFresh: TELEMETRY_SUMMARY_REQUIRE_FRESH,
           callbackCacheAgeMs: telemetrySummaryCache.callback.ts ? nowMs() - telemetrySummaryCache.callback.ts : null,
           schedulerCacheAgeMs: telemetrySummaryCache.scheduler.ts ? nowMs() - telemetrySummaryCache.scheduler.ts : null,
           callbackLastError: telemetrySummaryCache.callback.lastError || null,
           schedulerLastError: telemetrySummaryCache.scheduler.lastError || null,
+          freshnessStateCode: metrics.telemetrySummaryFreshnessStateCode,
+          freshnessMaxAgeMs: metrics.telemetrySummaryFreshnessMaxAgeMs || null,
         },
       },
       ts: nowMs(),

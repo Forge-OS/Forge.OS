@@ -4,7 +4,7 @@ export const DEFS = {
   kpiMetric:"ROI %", horizon:30, revenueSource:"momentum",
   dataSources:["KAS On-Chain","Kaspa DAG"], frequency:"1h",
   strategyTemplate:"dca_accumulator",
-  strategyLabel:"DCA Accumulator",
+  strategyLabel:"Steady DCA Builder",
   strategyClass:"accumulation",
   riskBudgetWeight:"1.0",
   portfolioAllocationPct:"25",
@@ -13,9 +13,11 @@ export const DEFS = {
 export const STRATEGY_TEMPLATES = [
   {
     id: "dca_accumulator",
-    name: "DCA Accumulator",
+    name: "Steady DCA Builder",
     class: "accumulation",
-    desc: "Accumulation-first sizing, frequent small entries, strict downside control.",
+    purpose: "Core accumulation engine for steady inventory growth with low drawdown behavior.",
+    bestFor: "Range-to-neutral regimes, long accumulation windows, disciplined compounding.",
+    desc: "Frequent small entries, strict downside control, and conservative auto-execution thresholds.",
     defaults: {
       risk: "low",
       kpiTarget: "10",
@@ -28,9 +30,11 @@ export const STRATEGY_TEMPLATES = [
   },
   {
     id: "trend",
-    name: "Trend",
+    name: "Trend Rider",
     class: "accumulation",
-    desc: "Ride persistent trend regimes with scaling entries and tighter risk on reversals.",
+    purpose: "Compound into persistent directional moves while protecting against reversals.",
+    bestFor: "Clear momentum regimes with stable liquidity and improving edge score.",
+    desc: "Scales entries with trend persistence and tightens risk when momentum degrades.",
     defaults: {
       risk: "medium",
       kpiTarget: "18",
@@ -43,9 +47,11 @@ export const STRATEGY_TEMPLATES = [
   },
   {
     id: "mean_reversion",
-    name: "Mean Reversion",
+    name: "Dip Harvester",
     class: "accumulation",
-    desc: "Accumulate on weakness with quant-regime gating and reduced chase behavior.",
+    purpose: "Accumulate discounted KAS during temporary weakness without chasing breakouts.",
+    bestFor: "Range regimes, oversold snaps, and volatility normalization after spikes.",
+    desc: "Buys weakness with quant-regime gating and reduced chase behavior.",
     defaults: {
       risk: "low",
       kpiTarget: "14",
@@ -58,9 +64,11 @@ export const STRATEGY_TEMPLATES = [
   },
   {
     id: "vol_breakout",
-    name: "Volatility Breakout",
+    name: "Volatility Expansion Hunter",
     class: "accumulation",
-    desc: "Respond to volatility expansion but keep accumulation-only execution discipline.",
+    purpose: "Exploit expansion regimes with tighter automation controls and rapid reviews.",
+    bestFor: "Breakout conditions, elevated DAA activity, and strong regime transitions.",
+    desc: "Responds to volatility expansion while preserving accumulation-only discipline.",
     defaults: {
       risk: "medium",
       kpiTarget: "22",

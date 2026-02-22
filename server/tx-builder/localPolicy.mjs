@@ -137,9 +137,16 @@ export function computePriorityFeeSompi({ requestPriorityFeeSompi, outputsTotalS
   if (cfg.priorityFeeMode === "adaptive") {
     const selectedInputCount = Math.max(0, Math.round(Number(selectionStats?.selectedInputCount || 0)));
     const truncatedByMaxInputs = Boolean(selectionStats?.truncatedByMaxInputs);
-    const confirmP95Ms = Math.max(0, Math.round(Number(telemetry?.observedConfirmP95Ms || telemetry?.confirmP95Ms || 0)));
-    const daaCongestionPct = clamp(Number(telemetry?.daaCongestionPct || 0), 0, 100);
-    const latencyMultiplier = adaptiveLatencyMultiplier(confirmP95Ms, cfg);
+    const summaryFreshnessState = String(telemetry?.summaryFreshnessState || "").toLowerCase();
+    const staleHard = summaryFreshnessState === "stale_hard";
+    const staleSoft = summaryFreshnessState === "stale_soft";
+    const confirmP95Ms = staleHard
+      ? 0
+      : Math.max(0, Math.round(Number(telemetry?.observedConfirmP95Ms || telemetry?.confirmP95Ms || 0)));
+    const daaCongestionPct = staleHard ? 0 : clamp(Number(telemetry?.daaCongestionPct || 0), 0, 100);
+    const rawLatencyMultiplier = adaptiveLatencyMultiplier(confirmP95Ms, cfg);
+    const freshnessDampen = staleSoft ? 0.45 : 1;
+    const latencyMultiplier = 1 + ((rawLatencyMultiplier - 1) * freshnessDampen);
     const adaptiveBase = requestFee > 0 ? requestFee : baseFees.defaultAdaptiveBaseFee;
     let fee = Math.round(adaptiveBase * latencyMultiplier);
     fee += selectedInputCount * Math.max(0, Math.round(cfg.priorityFeeAdaptivePerInputSompi || 0));
@@ -150,7 +157,7 @@ export function computePriorityFeeSompi({ requestPriorityFeeSompi, outputsTotalS
       fee += Math.max(0, Math.round(cfg.priorityFeeAdaptiveTruncationBumpSompi || 0));
     }
     if (daaCongestionPct >= Number(cfg.priorityFeeAdaptiveDaaCongestionThresholdPct || 70)) {
-      fee += Math.max(0, Math.round(cfg.priorityFeeAdaptiveDaaCongestionBumpSompi || 0));
+      fee += Math.round(Math.max(0, Math.round(cfg.priorityFeeAdaptiveDaaCongestionBumpSompi || 0)) * freshnessDampen);
     }
     return clampPriorityFeeSompi(fee, cfg);
   }
@@ -240,6 +247,7 @@ export function selectUtxoEntriesForLocalBuild({ entries, outputsTotalSompi, out
       config: cfg,
     });
     adaptiveSignals = {
+      summaryFreshnessState: String(telemetry?.summaryFreshnessState || "fresh"),
       observedConfirmP95Ms: Math.max(0, Math.round(Number(telemetry?.observedConfirmP95Ms || telemetry?.confirmP95Ms || 0))),
       daaCongestionPct: clamp(Number(telemetry?.daaCongestionPct || 0), 0, 100),
       selectedInputCount: selectedEntries.length,

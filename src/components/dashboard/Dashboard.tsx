@@ -776,12 +776,15 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
           <div style={{display:"grid", gridTemplateColumns:splitGridCols, gap:12}}>
             <Card p={18}>
               <Label>Agent Configuration</Label>
-              {[["Strategy",activeStrategyLabel],["Strategy Class",String(agent?.strategyClass || "custom").toUpperCase()],["Risk",agent.risk.toUpperCase()],["Capital / Cycle",`${agent.capitalLimit} KAS`],["Portfolio Target",`${agent?.portfolioAllocationPct || "—"}%`],["Risk Budget Weight",String(agent?.riskBudgetWeight || "1.0")],["Exec Mode",execMode.toUpperCase()],["Auto-Approve ≤",`${autoThresh} KAS`],["Horizon",`${agent.horizon} days`],["KPI Target",`${agent.kpiTarget}% ROI`]].map(([k,v])=> (
+              {[["Strategy",activeStrategyLabel],["Strategy Class",String(agent?.strategyClass || "custom").toUpperCase()],["Risk",agent.risk.toUpperCase()],["Capital / Cycle",`${agent.capitalLimit} KAS`],["Portfolio Allocator","AUTO"],["Exec Mode",execMode.toUpperCase()],["Auto-Approve ≤",`${autoThresh} KAS`],["Horizon",`${agent.horizon} days`],["KPI Target",`${agent.kpiTarget}% ROI`]].map(([k,v])=> (
                 <div key={k as any} style={{display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:`1px solid ${C.border}`}}>
                   <span style={{fontSize:12, color:C.dim, ...mono}}>{k}</span>
                   <span style={{fontSize:12, color:C.text, ...mono}}>{v}</span>
                 </div>
               ))}
+              <div style={{fontSize:11, color:C.dim, marginTop:8}}>
+                Shared portfolio weighting and allocator caps are managed automatically. Operator funding is set with <span style={{color:C.text, ...mono}}>Capital / Cycle</span>.
+              </div>
             </Card>
             <Card p={18}>
               <Label>Actions</Label>

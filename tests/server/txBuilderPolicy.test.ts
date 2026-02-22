@@ -116,4 +116,35 @@ describe("tx-builder local policy", () => {
     expect(plan.adaptiveSignals.recomputedPriorityFeeSompi).toBe(plan.priorityFeeSompi);
     expect(plan.selectedEntries.length).toBeGreaterThanOrEqual(3);
   });
+
+  it("degrades adaptive summary influence when telemetry freshness is stale", async () => {
+    process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_MODE = "adaptive";
+    process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_SOMPI = "2000";
+    process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_DAA_CONGESTION_BUMP_SOMPI = "20000";
+    process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_PER_INPUT_SOMPI = "0";
+
+    const policy = await import("../../server/tx-builder/localPolicy.mjs");
+    const baseParams = {
+      requestPriorityFeeSompi: 0,
+      outputsTotalSompi: 200_000_000n,
+      outputCount: 2,
+      config: policy.readLocalTxPolicyConfig(),
+      selectionStats: { selectedInputCount: 2, truncatedByMaxInputs: false },
+    };
+    const freshFee = policy.computePriorityFeeSompi({
+      ...baseParams,
+      telemetry: { observedConfirmP95Ms: 60_000, daaCongestionPct: 90, summaryFreshnessState: "fresh" },
+    });
+    const staleSoftFee = policy.computePriorityFeeSompi({
+      ...baseParams,
+      telemetry: { observedConfirmP95Ms: 60_000, daaCongestionPct: 90, summaryFreshnessState: "stale_soft" },
+    });
+    const staleHardFee = policy.computePriorityFeeSompi({
+      ...baseParams,
+      telemetry: { observedConfirmP95Ms: 60_000, daaCongestionPct: 90, summaryFreshnessState: "stale_hard" },
+    });
+
+    expect(freshFee).toBeGreaterThan(staleSoftFee);
+    expect(staleSoftFee).toBeGreaterThanOrEqual(staleHardFee);
+  });
 });

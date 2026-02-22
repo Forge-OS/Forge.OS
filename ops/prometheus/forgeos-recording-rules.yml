@@ -37,3 +37,14 @@ groups:
           clamp_min(rate(forgeos_tx_builder_local_wasm_requests_total[5m]), 0.000001)
       - record: forgeos:tx_builder:fallback_all_inputs_spike
         expr: forgeos:tx_builder:fallback_all_inputs_ratio5m > 0.05
+      - record: forgeos:tx_builder:telemetry_summary_fetch_error_ratio5m
+        expr: |
+          rate(forgeos_tx_builder_telemetry_summary_fetch_errors_total[5m])
+          /
+          clamp_min(rate(forgeos_tx_builder_telemetry_summary_fetch_total[5m]), 0.000001)
+      - record: forgeos:tx_builder:telemetry_summary_stale_soft_rate5m
+        expr: rate(forgeos_tx_builder_telemetry_summary_stale_soft_total[5m])
+      - record: forgeos:tx_builder:telemetry_summary_stale_hard_rate5m
+        expr: rate(forgeos_tx_builder_telemetry_summary_stale_hard_total[5m])
+      - record: forgeos:tx_builder:telemetry_summary_stale_drop_rate5m
+        expr: rate(forgeos_tx_builder_telemetry_summary_stale_drops_total[5m])

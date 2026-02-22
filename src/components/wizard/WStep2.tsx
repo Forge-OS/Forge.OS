@@ -15,9 +15,12 @@ export const WStep2 = ({d, set}: any) => (
         <div style={{fontSize:12, color:C.dim, marginLeft:21}}>{m.desc}</div>
       </div>
     );})}
-    <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
-      <Inp label="Portfolio Allocation %" value={d.portfolioAllocationPct} onChange={(v: string)=>set("portfolioAllocationPct", v)} type="number" suffix="%" hint="Default allocation share inside shared portfolio budget."/>
-      <Inp label="Risk Budget Weight" value={d.riskBudgetWeight} onChange={(v: string)=>set("riskBudgetWeight", v)} type="number" hint="Relative weight for shared risk allocator (e.g. 0.5, 1.0, 2.0)."/>
+    <div style={{padding:"10px 12px", borderRadius:6, border:`1px solid ${C.border}`, background:C.s2, marginBottom:6}}>
+      <div style={{fontSize:11, color:C.dim, ...mono, marginBottom:4}}>PORTFOLIO ALLOCATOR</div>
+      <div style={{fontSize:12, color:C.text}}>Automatic</div>
+      <div style={{fontSize:11, color:C.dim, marginTop:2}}>
+        Forge.OS manages shared portfolio allocation and risk budget weighting automatically. You fund in KAS and the bot handles routing.
+      </div>
     </div>
     <Divider/>
     <Inp label="Auto-Approve Threshold" value={d.autoApproveThreshold} onChange={(v: string)=>set("autoApproveThreshold", v)} type="number" suffix="KAS" hint="Transactions under this amount sign automatically in autonomous mode. Above threshold always requires manual wallet signing."/>

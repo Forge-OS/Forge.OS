@@ -84,9 +84,9 @@
       "id": 6,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
-        { "expr": "sum(rate(forgeos_tx_builder_local_wasm_policy_selected_inputs_total[5m]))", "legendFormat": "selected inputs/s", "refId": "A" },
-        { "expr": "sum(rate(forgeos_tx_builder_local_wasm_policy_priority_fee_sompi_total[5m]))", "legendFormat": "priority fee sompi/s", "refId": "B" },
-        { "expr": "sum(rate(forgeos_tx_builder_local_wasm_policy_fallback_all_inputs_total[5m]))", "legendFormat": "fallback all inputs/s", "refId": "C" }
+        { "expr": "forgeos:tx_builder:avg_selected_inputs5m", "legendFormat": "avg selected inputs", "refId": "A" },
+        { "expr": "forgeos:tx_builder:avg_priority_fee_sompi5m", "legendFormat": "avg priority fee sompi", "refId": "B" },
+        { "expr": "forgeos:tx_builder:fallback_all_inputs_ratio5m", "legendFormat": "fallback-all-inputs ratio", "refId": "C" }
       ],
       "title": "Tx-Builder Policy Efficiency",
       "type": "timeseries"
@@ -96,8 +96,36 @@
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "id": 7,
-      "options": { "content": "Use Forge.OS UI PnL Attribution panel for calibration metrics (`Brier`, `EV calibration error`, `Regime hit-rate`) until they are exported to Prometheus. This dashboard focuses on backend truth/control/execution metrics.", "mode": "markdown" },
-      "title": "Calibration Metrics Note",
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "forgeos:tx_builder:telemetry_summary_fetch_error_ratio5m", "legendFormat": "summary fetch error ratio", "refId": "A" },
+        { "expr": "forgeos:tx_builder:telemetry_summary_stale_soft_rate5m", "legendFormat": "stale-soft/s", "refId": "B" },
+        { "expr": "forgeos:tx_builder:telemetry_summary_stale_hard_rate5m", "legendFormat": "stale-hard/s", "refId": "C" }
+      ],
+      "title": "Tx-Builder Telemetry Freshness",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(forgeos_tx_builder_telemetry_summary_freshness_state_code)", "legendFormat": "freshness state code", "refId": "A" },
+        { "expr": "sum(forgeos_tx_builder_telemetry_summary_freshness_max_age_ms)", "legendFormat": "freshness max age ms", "refId": "B" },
+        { "expr": "sum(forgeos_tx_builder_telemetry_summary_stale_drops_total)", "legendFormat": "stale drops total", "refId": "C" }
+      ],
+      "title": "Tx-Builder Telemetry Freshness State",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 9,
+      "options": { "content": "Use Forge.OS UI PnL Attribution panel for calibration metrics (`Brier`, `EV calibration error`, `Regime hit-rate`). This Grafana board is the backend truth/control/execution surface. Tune alert thresholds from production baselines, not local smoke runs.", "mode": "markdown" },
+      "title": "Calibration / Ops Guidance",
       "type": "text"
     }
   ],
@@ -111,6 +139,6 @@
   "timezone": "",
   "title": "Forge.OS Operator Overview",
   "uid": "forgeos-operator-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

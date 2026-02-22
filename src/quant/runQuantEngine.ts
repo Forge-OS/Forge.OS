@@ -3,8 +3,6 @@ import { clamp, round, toFinite } from "./math";
 import {
   agentOverlayCacheKey,
   createOverlayDecisionCache,
-  decisionSignature,
-  type CachedOverlayDecision,
 } from "./runQuantEngineOverlayCache";
 import {
   AUDIT_HASH_ALGO,
@@ -13,56 +11,34 @@ import {
 } from "./runQuantEngineAudit";
 import { requestAiOverlayDecision } from "./runQuantEngineAiTransport";
 import { fuseWithQuantCore, resolveAiOverlayPlan } from "./runQuantEngineFusion";
+import { RUN_QUANT_ENGINE_CONFIG as CFG } from "./runQuantEngineConfig";
+import {
+  appendSourceDetail,
+  localQuantDecisionFromCore,
+  sanitizeCachedOverlayDecision,
+} from "./runQuantEngineFallback";
 
-const env = import.meta.env;
-
-const AI_API_URL = env.VITE_AI_API_URL || "https://api.anthropic.com/v1/messages";
-const AI_MODEL = env.VITE_AI_MODEL || "claude-sonnet-4-20250514";
-const ANTHROPIC_API_KEY = env.VITE_ANTHROPIC_API_KEY || "";
-const AI_TIMEOUT_MS = Math.max(800, Number(env.VITE_AI_SOFT_TIMEOUT_MS || 2200));
-const AI_FALLBACK_ENABLED = String(env.VITE_AI_FALLBACK_ENABLED || "true").toLowerCase() !== "false";
-const AI_OVERLAY_MODE_RAW = String(env.VITE_AI_OVERLAY_MODE || "always").trim().toLowerCase();
-const AI_OVERLAY_MODE = ["off", "always", "adaptive"].includes(AI_OVERLAY_MODE_RAW)
-  ? (AI_OVERLAY_MODE_RAW as "off" | "always" | "adaptive")
-  : "adaptive";
-const AI_OVERLAY_MIN_INTERVAL_MS = Math.max(0, Number(env.VITE_AI_OVERLAY_MIN_INTERVAL_MS || 15000));
-const AI_OVERLAY_CACHE_TTL_MS = Math.max(
-  AI_OVERLAY_MIN_INTERVAL_MS,
-  Number(env.VITE_AI_OVERLAY_CACHE_TTL_MS || 45000)
-);
-const AI_OVERLAY_CACHE_MAX_ENTRIES = 512;
-const AI_TRANSPORT_READY = Boolean(AI_API_URL) && (!AI_API_URL.includes("api.anthropic.com") || Boolean(ANTHROPIC_API_KEY));
-const AI_MAX_ATTEMPTS = Math.max(1, Math.min(3, Number(env.VITE_AI_MAX_ATTEMPTS || 2)));
-const AI_RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
-const DECISION_AUDIT_RECORD_VERSION = "forgeos.decision.audit.v1";
-const AI_PROMPT_VERSION = "forgeos.quant.overlay.prompt.v1";
-const AI_RESPONSE_SCHEMA_VERSION = "forgeos.ai.decision.schema.v1";
-const AUDIT_SIGNER_URL = String(env.VITE_DECISION_AUDIT_SIGNER_URL || "").trim();
-const AUDIT_SIGNER_TOKEN = String(env.VITE_DECISION_AUDIT_SIGNER_TOKEN || "").trim();
-const AUDIT_SIGNER_TIMEOUT_MS = Math.max(500, Number(env.VITE_DECISION_AUDIT_SIGNER_TIMEOUT_MS || 1500));
-const AUDIT_SIGNER_REQUIRED = /^(1|true|yes)$/i.test(String(env.VITE_DECISION_AUDIT_SIGNER_REQUIRED || "false"));
-
-const AI_OVERLAY_CACHE = createOverlayDecisionCache(AI_OVERLAY_CACHE_MAX_ENTRIES);
+const AI_OVERLAY_CACHE = createOverlayDecisionCache(CFG.aiOverlayCacheMaxEntries);
 
 function auditSignerHeaders() {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (AUDIT_SIGNER_TOKEN) headers.Authorization = `Bearer ${AUDIT_SIGNER_TOKEN}`;
+  if (CFG.auditSignerToken) headers.Authorization = `Bearer ${CFG.auditSignerToken}`;
   return headers;
 }
 
 async function maybeAttachCryptographicAuditSignature(decision: any) {
   const auditRecord = decision?.audit_record;
-  if (!auditRecord || !AUDIT_SIGNER_URL) return decision;
+  if (!auditRecord || !CFG.auditSignerUrl) return decision;
   const signingPayload = buildAuditSigningPayloadFromRecord(auditRecord, {
-    decisionAuditRecordVersion: DECISION_AUDIT_RECORD_VERSION,
+    decisionAuditRecordVersion: CFG.decisionAuditRecordVersion,
     auditHashAlgo: AUDIT_HASH_ALGO,
-    aiPromptVersion: AI_PROMPT_VERSION,
-    aiResponseSchemaVersion: AI_RESPONSE_SCHEMA_VERSION,
+    aiPromptVersion: CFG.aiPromptVersion,
+    aiResponseSchemaVersion: CFG.aiResponseSchemaVersion,
   });
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), AUDIT_SIGNER_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), CFG.auditSignerTimeoutMs);
   try {
-    const res = await fetch(AUDIT_SIGNER_URL, {
+    const res = await fetch(CFG.auditSignerUrl, {
       method: "POST",
       headers: auditSignerHeaders(),
       body: JSON.stringify({ signingPayload }),
@@ -97,9 +73,9 @@ async function maybeAttachCryptographicAuditSignature(decision: any) {
   } catch (err: any) {
     const message =
       err?.name === "AbortError"
-        ? `audit_signer_timeout_${AUDIT_SIGNER_TIMEOUT_MS}ms`
+        ? `audit_signer_timeout_${CFG.auditSignerTimeoutMs}ms`
         : String(err?.message || "audit_signer_failed");
-    if (AUDIT_SIGNER_REQUIRED) {
+    if (CFG.auditSignerRequired) {
       throw new Error(message);
     }
     return {
@@ -179,10 +155,10 @@ function sanitizeDecision(raw: any, agent: any) {
     : null;
   const auditRecord = rawAudit
     ? {
-        audit_record_version: String(rawAudit.audit_record_version || DECISION_AUDIT_RECORD_VERSION).slice(0, 80),
+        audit_record_version: String(rawAudit.audit_record_version || CFG.decisionAuditRecordVersion).slice(0, 80),
         hash_algo: String(rawAudit.hash_algo || AUDIT_HASH_ALGO).slice(0, 64),
-        prompt_version: String(rawAudit.prompt_version || AI_PROMPT_VERSION).slice(0, 80),
-        ai_response_schema_version: String(rawAudit.ai_response_schema_version || AI_RESPONSE_SCHEMA_VERSION).slice(0, 80),
+        prompt_version: String(rawAudit.prompt_version || CFG.aiPromptVersion).slice(0, 80),
+        ai_response_schema_version: String(rawAudit.ai_response_schema_version || CFG.aiResponseSchemaVersion).slice(0, 80),
         quant_feature_snapshot_hash: String(rawAudit.quant_feature_snapshot_hash || "").slice(0, 120),
         decision_hash: String(rawAudit.decision_hash || "").slice(0, 120),
         audit_sig: String(rawAudit.audit_sig || "").slice(0, 140),
@@ -249,11 +225,6 @@ function sanitizeDecision(raw: any, agent: any) {
   };
 }
 
-function appendSourceDetail(rawDetail: any, extra: string) {
-  const base = String(rawDetail || "").trim();
-  return [base, extra].filter(Boolean).join(";").slice(0, 220);
-}
-
 function buildQuantFeatureSnapshot(agent: any, kasData: any, quantCoreDecision: any) {
   const qm = quantCoreDecision?.quant_metrics || {};
   return {
@@ -310,8 +281,8 @@ async function attachDecisionAuditRecord(params: {
   const auditSig = await hashCanonical({
     decision_hash: decisionHash,
     quant_feature_snapshot_hash: quantFeatureSnapshotHash,
-    prompt_version: AI_PROMPT_VERSION,
-    ai_response_schema_version: AI_RESPONSE_SCHEMA_VERSION,
+    prompt_version: CFG.aiPromptVersion,
+    ai_response_schema_version: CFG.aiResponseSchemaVersion,
     overlay_plan_reason: params.overlayPlanReason,
     engine_path: params.enginePath,
   });
@@ -319,17 +290,17 @@ async function attachDecisionAuditRecord(params: {
     {
       ...decision,
       audit_record: {
-        audit_record_version: DECISION_AUDIT_RECORD_VERSION,
+        audit_record_version: CFG.decisionAuditRecordVersion,
         hash_algo: AUDIT_HASH_ALGO,
-        prompt_version: AI_PROMPT_VERSION,
-        ai_response_schema_version: AI_RESPONSE_SCHEMA_VERSION,
+        prompt_version: CFG.aiPromptVersion,
+        ai_response_schema_version: CFG.aiResponseSchemaVersion,
         quant_feature_snapshot_hash: quantFeatureSnapshotHash,
         decision_hash: decisionHash,
         audit_sig: auditSig,
         overlay_plan_reason: params.overlayPlanReason,
         engine_path: params.enginePath,
         prompt_used: params.enginePath === "hybrid-ai" || params.enginePath === "ai",
-        ai_transport_ready: AI_TRANSPORT_READY,
+        ai_transport_ready: CFG.aiTransportReady,
         created_ts: Date.now(),
         quant_feature_snapshot_excerpt: {
           regime: String(params.quantCoreDecision?.quant_metrics?.regime || ""),
@@ -358,41 +329,12 @@ async function finalizeDecisionAuditRecord(params: {
   return maybeAttachCryptographicAuditSignature(withAudit);
 }
 
-function localQuantDecisionFromCore(agent: any, coreDecision: any, reason: string, startedAt: number) {
-  return sanitizeDecision(
-    {
-      ...coreDecision,
-      decision_source: "quant-core",
-      decision_source_detail: appendSourceDetail(coreDecision?.decision_source_detail, `fallback_reason:${reason}`),
-      engine_latency_ms: Date.now() - startedAt,
-    },
-    agent
-  );
-}
-
-function localQuantDecision(agent: any, kasData: any, context: QuantContext | undefined, reason: string, startedAt: number) {
-  const core = buildQuantCoreDecision(agent, kasData, context);
-  return localQuantDecisionFromCore(agent, core, reason, startedAt);
-}
-
 function getCachedOverlay(cacheKey: string) {
   return AI_OVERLAY_CACHE.get(cacheKey);
 }
 
 function setCachedOverlay(cacheKey: string, signature: string, decision: any) {
   AI_OVERLAY_CACHE.set(cacheKey, signature, decision);
-}
-
-function sanitizeCachedOverlayDecision(agent: any, cached: CachedOverlayDecision, startedAt: number, reason: string) {
-  return sanitizeDecision(
-    {
-      ...(cached.decision || {}),
-      decision_source: "hybrid-ai",
-      decision_source_detail: appendSourceDetail(cached?.decision?.decision_source_detail, reason),
-      engine_latency_ms: Date.now() - startedAt,
-    },
-    agent
-  );
 }
 
 export async function runQuantEngine(agent: any, kasData: any, context?: QuantContext) {
@@ -410,18 +352,18 @@ export async function runQuantEngine(agent: any, kasData: any, context?: QuantCo
     coreDecision: quantCoreDecision,
     cached: cachedOverlay,
     config: {
-      aiTransportReady: AI_TRANSPORT_READY,
-      aiOverlayMode: AI_OVERLAY_MODE,
-      minIntervalMs: AI_OVERLAY_MIN_INTERVAL_MS,
-      cacheTtlMs: AI_OVERLAY_CACHE_TTL_MS,
+      aiTransportReady: CFG.aiTransportReady,
+      aiOverlayMode: CFG.aiOverlayMode,
+      minIntervalMs: CFG.aiOverlayMinIntervalMs,
+      cacheTtlMs: CFG.aiOverlayCacheTtlMs,
     },
   });
 
   if (
     overlayPlan.kind === "skip" &&
     overlayPlan.reason === "ai_transport_not_configured" &&
-    !AI_FALLBACK_ENABLED &&
-    AI_OVERLAY_MODE !== "off"
+    !CFG.aiFallbackEnabled &&
+    CFG.aiOverlayMode !== "off"
   ) {
     throw new Error("Real AI overlay is required but AI transport is not configured (set VITE_AI_API_URL and credentials/proxy).");
   }
@@ -429,7 +371,7 @@ export async function runQuantEngine(agent: any, kasData: any, context?: QuantCo
   // Local quant core is the primary engine. AI acts only as a bounded overlay.
   if (overlayPlan.kind === "skip") {
     return finalizeDecisionAuditRecord({
-      decision: localQuantDecisionFromCore(agent, quantCoreDecision, overlayPlan.reason, startedAt),
+      decision: localQuantDecisionFromCore({ agent, coreDecision: quantCoreDecision, reason: overlayPlan.reason, startedAt, sanitizeDecision }),
       agent,
       kasData,
       quantCoreDecision,
@@ -440,7 +382,7 @@ export async function runQuantEngine(agent: any, kasData: any, context?: QuantCo
 
   if (overlayPlan.kind === "reuse" && cachedOverlay) {
     return finalizeDecisionAuditRecord({
-      decision: sanitizeCachedOverlayDecision(agent, cachedOverlay, startedAt, overlayPlan.reason),
+      decision: sanitizeCachedOverlayDecision({ agent, cached: cachedOverlay, startedAt, reason: overlayPlan.reason, sanitizeDecision }),
       agent,
       kasData,
       quantCoreDecision,
@@ -456,12 +398,12 @@ export async function runQuantEngine(agent: any, kasData: any, context?: QuantCo
       kasData,
       quantCoreDecision,
       config: {
-        apiUrl: AI_API_URL,
-        model: AI_MODEL,
-        anthropicApiKey: ANTHROPIC_API_KEY,
-        timeoutMs: AI_TIMEOUT_MS,
-        maxAttempts: AI_MAX_ATTEMPTS,
-        retryableStatuses: AI_RETRYABLE_STATUSES,
+        apiUrl: CFG.aiApiUrl,
+        model: CFG.aiModel,
+        anthropicApiKey: CFG.anthropicApiKey,
+        timeoutMs: CFG.aiTimeoutMs,
+        maxAttempts: CFG.aiMaxAttempts,
+        retryableStatuses: CFG.aiRetryableStatuses,
       },
       sanitizeDecision,
     });
@@ -487,14 +429,15 @@ export async function runQuantEngine(agent: any, kasData: any, context?: QuantCo
   } catch (err: any) {
     if (cachedOverlay) {
       const cacheAgeMs = Math.max(0, Date.now() - cachedOverlay.ts);
-      if (cacheAgeMs <= AI_OVERLAY_CACHE_TTL_MS) {
+      if (cacheAgeMs <= CFG.aiOverlayCacheTtlMs) {
         return finalizeDecisionAuditRecord({
-          decision: sanitizeCachedOverlayDecision(
+          decision: sanitizeCachedOverlayDecision({
             agent,
-            cachedOverlay,
+            cached: cachedOverlay,
             startedAt,
-            `ai_error_cache_reuse_${cacheAgeMs}ms`
-          ),
+            reason: `ai_error_cache_reuse_${cacheAgeMs}ms`,
+            sanitizeDecision,
+          }),
           agent,
           kasData,
           quantCoreDecision,
@@ -503,10 +446,10 @@ export async function runQuantEngine(agent: any, kasData: any, context?: QuantCo
         });
       }
     }
-    if (AI_FALLBACK_ENABLED) {
-      const reason = err?.name === "AbortError" ? `ai_timeout_${AI_TIMEOUT_MS}ms` : (err?.message || "request failure");
+    if (CFG.aiFallbackEnabled) {
+      const reason = err?.name === "AbortError" ? `ai_timeout_${CFG.aiTimeoutMs}ms` : (err?.message || "request failure");
       return finalizeDecisionAuditRecord({
-        decision: localQuantDecisionFromCore(agent, quantCoreDecision, reason, startedAt),
+        decision: localQuantDecisionFromCore({ agent, coreDecision: quantCoreDecision, reason, startedAt, sanitizeDecision }),
         agent,
         kasData,
         quantCoreDecision,
@@ -514,7 +457,7 @@ export async function runQuantEngine(agent: any, kasData: any, context?: QuantCo
         enginePath: "quant-core",
       });
     }
-    if (err?.name === "AbortError") throw new Error(`AI request timeout (${AI_TIMEOUT_MS}ms)`);
+    if (err?.name === "AbortError") throw new Error(`AI request timeout (${CFG.aiTimeoutMs}ms)`);
     throw err;
   }
 }

@@ -23,17 +23,17 @@ groups:
           description: "Callback POST failures exceed 5% over 5m. Check callback-consumer availability/auth/network."
 
       - alert: ForgeOSSchedulerSaturationEvents
-        expr: forgeos:scheduler:saturation_events_rate5m > 0
-        for: 3m
+        expr: forgeos:scheduler:saturation_events_rate5m > 0.02
+        for: 5m
         labels:
           severity: warning
           service: scheduler
         annotations:
           summary: "Scheduler saturation events detected"
-          description: "Scheduler queue/inflight saturation crossed threshold. Inspect queue depth, concurrency, and callback latency."
+          description: "Scheduler saturation rate is elevated. Inspect queue depth, callback latency, and scheduler concurrency."
 
       - alert: ForgeOSTxBuilderFallbackAllInputsSpike
-        expr: forgeos:tx_builder:fallback_all_inputs_ratio5m > 0.05 and rate(forgeos_tx_builder_local_wasm_requests_total[5m]) > 0.02
+        expr: forgeos:tx_builder:fallback_all_inputs_ratio5m > 0.08 and rate(forgeos_tx_builder_local_wasm_requests_total[5m]) > 0.05
         for: 10m
         labels:
           severity: warning
@@ -41,6 +41,26 @@ groups:
         annotations:
           summary: "Tx-builder fallback-to-all-inputs rate is elevated"
           description: "Local WASM policy is frequently falling back to all inputs. Review coin selection, fee policy, and UTXO fragmentation."
+
+      - alert: ForgeOSTxBuilderTelemetrySummaryFetchErrorsHigh
+        expr: forgeos:tx_builder:telemetry_summary_fetch_error_ratio5m > 0.2 and rate(forgeos_tx_builder_telemetry_summary_fetch_total[5m]) > 0.02
+        for: 10m
+        labels:
+          severity: warning
+          service: tx-builder
+        annotations:
+          summary: "Tx-builder telemetry summary fetch errors elevated"
+          description: "Tx-builder adaptive fee mode is losing backend telemetry summary reads. Check callback-consumer/scheduler summary endpoints and auth."
+
+      - alert: ForgeOSTxBuilderTelemetrySummaryStaleHard
+        expr: forgeos:tx_builder:telemetry_summary_stale_hard_rate5m > 0.02
+        for: 5m
+        labels:
+          severity: warning
+          service: tx-builder
+        annotations:
+          summary: "Tx-builder adaptive telemetry summaries are stale-hard"
+          description: "Adaptive fee mode is degrading/dropping summary-derived signals due to stale telemetry cache. Review backend summary freshness and connectivity."
 
       - alert: ForgeOSDuplicateOrStaleFenceCallbacks
         expr: rate(forgeos_callback_consumer_cycle_duplicate_total[5m]) > 0 or rate(forgeos_callback_consumer_cycle_stale_fence_total[5m]) > 0

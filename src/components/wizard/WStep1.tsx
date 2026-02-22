@@ -7,7 +7,7 @@ export const WStep1 = ({d, set, wallet}: any) => (
   <div>
     <div style={{fontSize:17, color:C.text, fontWeight:700, marginBottom:3, ...mono}}>Configure Agent</div>
     <div style={{fontSize:12, color:C.dim, marginBottom:20}}>Connected: <span style={{color:C.accent, ...mono}}>{shortAddr(wallet?.address)}</span></div>
-    <Label>Strategy Template (Accumulation-First)</Label>
+    <Label>Strategy Profile (Self-Trading Bot, Accumulation-First)</Label>
     <div style={{display:"grid", gridTemplateColumns:"1fr", gap:8, marginBottom:16}}>
       {STRATEGY_TEMPLATES.map((tpl) => {
         const on = d.strategyTemplate === tpl.id;
@@ -33,7 +33,9 @@ export const WStep1 = ({d, set, wallet}: any) => (
               <div style={{fontSize:12, color:on?C.accent:C.text, fontWeight:700, ...mono}}>{tpl.name}</div>
               <Badge text={tpl.class.toUpperCase()} color={tpl.class === "accumulation" ? C.ok : C.warn}/>
             </div>
-            <div style={{fontSize:11, color:C.dim}}>{tpl.desc}</div>
+            <div style={{fontSize:11, color:C.text, marginBottom:3}}>{tpl.purpose || tpl.desc}</div>
+            {tpl.bestFor && <div style={{fontSize:10, color:C.dim}}>Best for: {tpl.bestFor}</div>}
+            {tpl.desc && tpl.purpose && <div style={{fontSize:10, color:C.dim, marginTop:3}}>{tpl.desc}</div>}
           </div>
         );
       })}
