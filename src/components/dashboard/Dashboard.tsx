@@ -185,35 +185,6 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
     setUsage(getUsageState(FREE_CYCLES_PER_DAY, usageScope));
   }, [usageScope]);
 
-  useDashboardRuntimePersistence({
-    agent,
-    cycleIntervalMs,
-    runtimeScope,
-    maxDecisionEntries: MAX_DECISION_ENTRIES,
-    maxLogEntries: MAX_LOG_ENTRIES,
-    maxQueueEntries: MAX_QUEUE_ENTRIES,
-    maxMarketSnapshots: MAX_MARKET_SNAPSHOTS,
-    runtimeHydrated,
-    setRuntimeHydrated,
-    status,
-    execMode,
-    liveExecutionArmed,
-    queue,
-    log,
-    decisions,
-    marketHistory,
-    nextAutoCycleAt,
-    setStatus,
-    setExecMode,
-    setLiveExecutionArmed,
-    setQueue,
-    setLog,
-    setDecisions,
-    setMarketHistory,
-    setNextAutoCycleAt,
-    liveExecutionDefault: LIVE_EXECUTION_DEFAULT,
-  });
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onResize = () => setViewportWidth(window.innerWidth);
@@ -238,23 +209,6 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
     }
     return Array.from(deduped.values());
   }, [agent, agents]);
-
-  const {
-    portfolioConfig,
-    portfolioSummary,
-    activePortfolioRow,
-    patchPortfolioConfig,
-    patchPortfolioAgentOverride,
-    refreshPortfolioPeers,
-  } = usePortfolioAllocator({
-    portfolioScope,
-    allAgents,
-    activeAgentId: agent?.agentId,
-    walletAddress: wallet?.address,
-    walletKas: Number(kasData?.walletKas || 0),
-    activeDecisions: decisions,
-    activeQueue: queue,
-  });
 
   const pnlAttributionBase = useMemo(
     () =>
@@ -289,6 +243,54 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
       truthMismatchSignals: truth.mismatches,
     };
   }, [executionGuardrails.truth, pnlAttributionBase]);
+
+  useDashboardRuntimePersistence({
+    agent,
+    cycleIntervalMs,
+    runtimeScope,
+    maxDecisionEntries: MAX_DECISION_ENTRIES,
+    maxLogEntries: MAX_LOG_ENTRIES,
+    maxQueueEntries: MAX_QUEUE_ENTRIES,
+    maxMarketSnapshots: MAX_MARKET_SNAPSHOTS,
+    runtimeHydrated,
+    setRuntimeHydrated,
+    status,
+    execMode,
+    liveExecutionArmed,
+    queue,
+    log,
+    decisions,
+    marketHistory,
+    attributionSummary: pnlAttribution,
+    nextAutoCycleAt,
+    setStatus,
+    setExecMode,
+    setLiveExecutionArmed,
+    setQueue,
+    setLog,
+    setDecisions,
+    setMarketHistory,
+    setNextAutoCycleAt,
+    liveExecutionDefault: LIVE_EXECUTION_DEFAULT,
+  });
+
+  const {
+    portfolioConfig,
+    portfolioSummary,
+    activePortfolioRow,
+    patchPortfolioConfig,
+    patchPortfolioAgentOverride,
+    refreshPortfolioPeers,
+  } = usePortfolioAllocator({
+    portfolioScope,
+    allAgents,
+    activeAgentId: agent?.agentId,
+    walletAddress: wallet?.address,
+    walletKas: Number(kasData?.walletKas || 0),
+    activeDecisions: decisions,
+    activeQueue: queue,
+    activeAttributionSummary: pnlAttribution,
+  });
 
   const runCycle = useCallback(async()=>{
     if (cycleLockRef.current || status!=="RUNNING" || !runtimeHydrated) return;

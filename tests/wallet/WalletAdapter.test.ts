@@ -24,9 +24,69 @@ function setWindowKastle(kastle: any) {
   };
 }
 
+function setWindowGhostBridge(opts?: {
+  accountAddress?: string;
+  networkId?: string;
+  txid?: string;
+}) {
+  const listeners = new Map<string, Set<(event: any) => void>>();
+  const add = (type: string, fn: any) => {
+    if (!listeners.has(type)) listeners.set(type, new Set());
+    listeners.get(type)!.add(fn);
+  };
+  const remove = (type: string, fn: any) => {
+    listeners.get(type)?.delete(fn);
+  };
+  const emit = (type: string, detail?: any) => {
+    const fns = listeners.get(type);
+    if (!fns) return;
+    for (const fn of [...fns]) fn({ type, detail });
+  };
+  const txid = opts?.txid || "e".repeat(64);
+  const accountAddress = opts?.accountAddress || "kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85";
+  const networkId = opts?.networkId || "mainnet";
+  class MockCustomEvent {
+    type: string;
+    detail: any;
+    constructor(type: string, init?: any) {
+      this.type = type;
+      this.detail = init?.detail;
+    }
+  }
+  (globalThis as any).CustomEvent = MockCustomEvent as any;
+  (globalThis as any).window = {
+    kasware: undefined,
+    kastle: undefined,
+    location: { href: "" },
+    prompt: vi.fn(),
+    addEventListener: vi.fn((type: string, fn: any) => add(type, fn)),
+    removeEventListener: vi.fn((type: string, fn: any) => remove(type, fn)),
+    dispatchEvent: vi.fn((event: any) => {
+      const type = String(event?.type || "");
+      if (type === "kaspa:requestProviders") {
+        emit("kaspa:provider", { id: "ghost", name: "Ghost Wallet" });
+        return true;
+      }
+      if (type === "kaspa:invoke") {
+        const req = event?.detail || {};
+        if (req.method === "account") {
+          emit("kaspa:event", { id: req.id, data: { addresses: [accountAddress], networkId } });
+          return true;
+        }
+        if (req.method === "transact") {
+          emit("kaspa:event", { id: req.id, data: { txid } });
+          return true;
+        }
+      }
+      return true;
+    }),
+  };
+}
+
 describe('WalletAdapter', () => {
   const originalEnv = { ...(import.meta as any).env };
   const originalFetch = (globalThis as any).fetch;
+  const originalCustomEvent = (globalThis as any).CustomEvent;
 
   beforeEach(() => {
     vi.resetModules();
@@ -38,6 +98,8 @@ describe('WalletAdapter', () => {
     (import.meta as any).env = { ...originalEnv };
     if (originalFetch) (globalThis as any).fetch = originalFetch;
     else delete (globalThis as any).fetch;
+    if (typeof originalCustomEvent !== "undefined") (globalThis as any).CustomEvent = originalCustomEvent;
+    else delete (globalThis as any).CustomEvent;
   });
 
   it('connects kasware when requestAccounts and getNetwork succeed', async () => {
@@ -121,5 +183,91 @@ describe('WalletAdapter', () => {
     expect(txid).toBe('d'.repeat(64));
     expect((globalThis as any).fetch).toHaveBeenCalledOnce();
     expect(signAndBroadcastTx).toHaveBeenCalledWith('mainnet', '{"mock":"txjson"}');
+  });
+
+  it('reuses cached kastle account address for tx-builder backend after connect', async () => {
+    vi.stubEnv('VITE_KASTLE_RAW_TX_ENABLED', 'true');
+    vi.stubEnv('VITE_KASTLE_RAW_TX_MANUAL_JSON_PROMPT_ENABLED', 'false');
+    vi.stubEnv('VITE_KASTLE_TX_BUILDER_URL', 'http://127.0.0.1:9999/v1/kastle/build-tx-json');
+    const getAccount = vi.fn().mockResolvedValue({
+      address: 'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85',
+      publicKey: '02abc',
+    });
+    setWindowKastle({
+      connect: vi.fn().mockResolvedValue(true),
+      getAccount,
+      request: vi.fn().mockImplementation((method: string) => {
+        if (method === 'kas:get_network') return Promise.resolve('mainnet');
+        return Promise.resolve(null);
+      }),
+      signAndBroadcastTx: vi.fn().mockResolvedValue('f'.repeat(64)),
+    });
+    (globalThis as any).fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ txJson: '{"mock":"txjson"}' }),
+    });
+    const { WalletAdapter } = await import('../../src/wallet/WalletAdapter');
+    await WalletAdapter.connectKastle();
+    await WalletAdapter.sendKastleRawTx([
+      { to: 'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85', amount_kas: 1.0 },
+      { to: 'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85', amount_kas: 0.05 },
+    ]);
+    expect(getAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it('connects and sends with ghost wallet bridge', async () => {
+    setWindowGhostBridge();
+    const { WalletAdapter } = await import('../../src/wallet/WalletAdapter');
+    const session = await WalletAdapter.connectGhost();
+    expect(session.provider).toBe('ghost');
+    expect(session.address).toMatch(/^kaspa:/);
+    const txid = await WalletAdapter.sendGhostOutputs([
+      { to: 'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85', amount_kas: 1 },
+      { to: 'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85', amount_kas: 0.1 },
+    ]);
+    expect(txid).toBe('e'.repeat(64));
+  });
+
+  it('opens kaspium deep-link and accepts manual txid', async () => {
+    const prompt = vi.fn().mockReturnValue('a'.repeat(64));
+    (globalThis as any).window = {
+      kasware: undefined,
+      kastle: undefined,
+      location: { href: '' },
+      prompt,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    };
+    const { WalletAdapter } = await import('../../src/wallet/WalletAdapter');
+    const txid = await WalletAdapter.sendKaspium(
+      'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85',
+      0.5,
+      'test'
+    );
+    expect(txid).toBe('a'.repeat(64));
+    expect((globalThis as any).window.location.href).toMatch(/kaspium:\/\/send|kaspa:/);
+    expect(decodeURIComponent((globalThis as any).window.location.href)).toContain('kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85');
+    expect(prompt).toHaveBeenCalled();
+  });
+
+  it('supports hardware bridge manual txid flow', async () => {
+    const prompt = vi.fn().mockReturnValue('b'.repeat(64));
+    (globalThis as any).window = {
+      prompt,
+      location: { href: '' },
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    };
+    const { WalletAdapter } = await import('../../src/wallet/WalletAdapter');
+    const txid = await WalletAdapter.sendHardwareBridge(
+      'tangem',
+      'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85',
+      0.25,
+      'hardware test'
+    );
+    expect(txid).toBe('b'.repeat(64));
+    expect(prompt).toHaveBeenCalled();
   });
 });

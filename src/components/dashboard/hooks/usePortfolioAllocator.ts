@@ -12,6 +12,7 @@ type UsePortfolioAllocatorParams = {
   walletKas?: number;
   activeDecisions: any[];
   activeQueue: any[];
+  activeAttributionSummary?: any;
 };
 
 export function usePortfolioAllocator(params: UsePortfolioAllocatorParams) {
@@ -23,6 +24,7 @@ export function usePortfolioAllocator(params: UsePortfolioAllocatorParams) {
     walletKas,
     activeDecisions,
     activeQueue,
+    activeAttributionSummary,
   } = params;
 
   const [portfolioConfig, setPortfolioConfig] = useState(() => readPortfolioAllocatorConfig(portfolioScope));
@@ -62,7 +64,7 @@ export function usePortfolioAllocator(params: UsePortfolioAllocatorParams) {
       const rowId = String(row?.agentId || row?.name || "");
       const isActive = rowId === String(activeAgentId || "");
       const persisted = isActive
-        ? { queue: activeQueue, decisions: activeDecisions }
+        ? { queue: activeQueue, decisions: activeDecisions, attributionSummary: activeAttributionSummary }
         : (peerRuntimeCache[rowId] || {}) as any;
       const lastDecision = Array.isArray((persisted as any).decisions) ? (persisted as any).decisions[0]?.dec : undefined;
       const pendingKas = Array.isArray((persisted as any).queue)
@@ -85,6 +87,9 @@ export function usePortfolioAllocator(params: UsePortfolioAllocatorParams) {
             Math.round(100 / Math.max(1, allAgents.length))
         ),
         riskBudgetWeight: Number(override.riskWeight ?? row?.riskBudgetWeight ?? 1),
+        strategyTemplate: String(row?.strategyTemplate || row?.strategyLabel || row?.strategyClass || "custom"),
+        strategyClass: String(row?.strategyClass || ""),
+        attributionSummary: (persisted as any).attributionSummary || undefined,
         pendingKas,
         lastDecision,
       };
@@ -95,7 +100,7 @@ export function usePortfolioAllocator(params: UsePortfolioAllocatorParams) {
       agents: inputs,
       config: portfolioConfig,
     });
-  }, [activeAgentId, activeDecisions, activeQueue, allAgents, peerRuntimeCache, portfolioConfig, walletKas]);
+  }, [activeAgentId, activeAttributionSummary, activeDecisions, activeQueue, allAgents, peerRuntimeCache, portfolioConfig, walletKas]);
 
   const activePortfolioRow = useMemo(
     () => portfolioSummary?.rows?.find((row: any) => String(row?.agentId) === String(activeAgentId)) || null,

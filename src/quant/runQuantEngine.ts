@@ -6,6 +6,11 @@ import {
   decisionSignature,
   type CachedOverlayDecision,
 } from "./runQuantEngineOverlayCache";
+import {
+  AUDIT_HASH_ALGO,
+  buildAuditSigningPayloadFromRecord,
+  hashCanonical,
+} from "./runQuantEngineAudit";
 
 const env = import.meta.env;
 
@@ -30,7 +35,6 @@ const AI_RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const DECISION_AUDIT_RECORD_VERSION = "forgeos.decision.audit.v1";
 const AI_PROMPT_VERSION = "forgeos.quant.overlay.prompt.v1";
 const AI_RESPONSE_SCHEMA_VERSION = "forgeos.ai.decision.schema.v1";
-const AUDIT_HASH_ALGO = "fnv1a32/canonical-json";
 const AUDIT_SIGNER_URL = String(env.VITE_DECISION_AUDIT_SIGNER_URL || "").trim();
 const AUDIT_SIGNER_TOKEN = String(env.VITE_DECISION_AUDIT_SIGNER_TOKEN || "").trim();
 const AUDIT_SIGNER_TIMEOUT_MS = Math.max(500, Number(env.VITE_DECISION_AUDIT_SIGNER_TIMEOUT_MS || 1500));
@@ -72,61 +76,21 @@ function safeJsonParse(text: string) {
   }
 }
 
-function stableStringify(value: any): string {
-  if (value == null) return "null";
-  const t = typeof value;
-  if (t === "number") {
-    return Number.isFinite(value) ? JSON.stringify(value) : "null";
-  }
-  if (t === "boolean") return value ? "true" : "false";
-  if (t === "string") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((v) => stableStringify(v)).join(",")}]`;
-  if (t === "object") {
-    const entries = Object.entries(value)
-      .filter(([_, v]) => typeof v !== "undefined")
-      .sort(([a], [b]) => a.localeCompare(b));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
-  }
-  return "null";
-}
-
-function fnv1a32Hex(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function hashCanonical(value: any): string {
-  return `${AUDIT_HASH_ALGO}:${fnv1a32Hex(stableStringify(value))}`;
-}
-
 function auditSignerHeaders() {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (AUDIT_SIGNER_TOKEN) headers.Authorization = `Bearer ${AUDIT_SIGNER_TOKEN}`;
   return headers;
 }
 
-function buildAuditSigningPayloadFromRecord(auditRecord: any) {
-  return {
-    audit_record_version: String(auditRecord?.audit_record_version || DECISION_AUDIT_RECORD_VERSION),
-    hash_algo: String(auditRecord?.hash_algo || AUDIT_HASH_ALGO),
-    prompt_version: String(auditRecord?.prompt_version || AI_PROMPT_VERSION),
-    ai_response_schema_version: String(auditRecord?.ai_response_schema_version || AI_RESPONSE_SCHEMA_VERSION),
-    quant_feature_snapshot_hash: String(auditRecord?.quant_feature_snapshot_hash || ""),
-    decision_hash: String(auditRecord?.decision_hash || ""),
-    overlay_plan_reason: String(auditRecord?.overlay_plan_reason || ""),
-    engine_path: String(auditRecord?.engine_path || ""),
-    created_ts: Math.max(0, Math.round(toFinite(auditRecord?.created_ts, Date.now()))),
-  };
-}
-
 async function maybeAttachCryptographicAuditSignature(decision: any) {
   const auditRecord = decision?.audit_record;
   if (!auditRecord || !AUDIT_SIGNER_URL) return decision;
-  const signingPayload = buildAuditSigningPayloadFromRecord(auditRecord);
+  const signingPayload = buildAuditSigningPayloadFromRecord(auditRecord, {
+    decisionAuditRecordVersion: DECISION_AUDIT_RECORD_VERSION,
+    auditHashAlgo: AUDIT_HASH_ALGO,
+    aiPromptVersion: AI_PROMPT_VERSION,
+    aiResponseSchemaVersion: AI_RESPONSE_SCHEMA_VERSION,
+  });
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), AUDIT_SIGNER_TIMEOUT_MS);
   try {
@@ -359,7 +323,7 @@ function buildQuantFeatureSnapshot(agent: any, kasData: any, quantCoreDecision: 
   };
 }
 
-function attachDecisionAuditRecord(params: {
+async function attachDecisionAuditRecord(params: {
   decision: any;
   agent: any;
   kasData: any;
@@ -369,13 +333,13 @@ function attachDecisionAuditRecord(params: {
 }) {
   const decision = params.decision || {};
   const quantSnapshot = buildQuantFeatureSnapshot(params.agent, params.kasData, params.quantCoreDecision);
-  const quantFeatureSnapshotHash = hashCanonical(quantSnapshot);
+  const quantFeatureSnapshotHash = await hashCanonical(quantSnapshot);
   const decisionForHash = {
     ...decision,
     audit_record: undefined,
   };
-  const decisionHash = hashCanonical(decisionForHash);
-  const auditSig = hashCanonical({
+  const decisionHash = await hashCanonical(decisionForHash);
+  const auditSig = await hashCanonical({
     decision_hash: decisionHash,
     quant_feature_snapshot_hash: quantFeatureSnapshotHash,
     prompt_version: AI_PROMPT_VERSION,
@@ -422,7 +386,7 @@ async function finalizeDecisionAuditRecord(params: {
   overlayPlanReason: string;
   enginePath: string;
 }) {
-  const withAudit = attachDecisionAuditRecord(params);
+  const withAudit = await attachDecisionAuditRecord(params);
   return maybeAttachCryptographicAuditSignature(withAudit);
 }
 

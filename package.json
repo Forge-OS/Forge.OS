@@ -22,6 +22,7 @@
     "test:scheduler:redis": "vitest run tests/server/scheduler*.redis.integration.test.ts",
     "test:perf": "vitest run tests/perf --reporter=verbose",
     "load:pipeline": "node scripts/load-pipeline.mjs",
+    "bench:tx-policy": "node scripts/benchmark-tx-builder-policy.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "ai:proxy": "node server/ai-proxy/index.mjs",

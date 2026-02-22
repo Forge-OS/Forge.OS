@@ -117,9 +117,20 @@ export function PortfolioPanel({
                     {row.name}
                   </button>
                   <Badge text={row.enabled ? "ENABLED" : "DISABLED"} color={row.enabled ? C.ok : C.dim} />
+                  <Badge text={`TPL ${String(row.strategyTemplate || "custom").toUpperCase()}`} color={C.dim} />
                   <Badge text={row.action} color={actionColor} />
                   <Badge text={String(row.regime).replace(/_/g, " ")} color={C.accent} />
                   <Badge text={`RISK ${row.risk}`} color={riskColor} />
+                  <Badge
+                    text={`CAL ${String(row.calibrationTier || "healthy").toUpperCase()} ${Number(row.calibrationHealth || 0).toFixed(2)}`}
+                    color={
+                      row.calibrationTier === "critical"
+                        ? C.danger
+                        : row.calibrationTier === "degraded" || row.calibrationTier === "watch"
+                        ? C.warn
+                        : C.ok
+                    }
+                  />
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <Badge text={`BUDGET ${row.budgetKas} KAS`} color={C.text} />
@@ -150,6 +161,10 @@ export function PortfolioPanel({
                 <div style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
                   <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 2 }}>Confidence / DataQ</div>
                   <div style={{ fontSize: 12, color: C.text, ...mono }}>{row.confidence} / {row.dataQuality}</div>
+                </div>
+                <div style={{ background: C.s2, borderRadius: 6, padding: "8px 10px" }}>
+                  <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 2 }}>Truth Quality / Cal</div>
+                  <div style={{ fontSize: 12, color: C.text, ...mono }}>{row.truthQualityScore} / {row.calibrationHealth}</div>
                 </div>
               </div>
 

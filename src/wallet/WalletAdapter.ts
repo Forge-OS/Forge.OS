@@ -25,6 +25,7 @@ const KASTLE_TX_BUILDER_TIMEOUT_MS = Math.max(
 );
 const KASTLE_TX_BUILDER_STRICT =
   String((import.meta as any)?.env?.VITE_KASTLE_TX_BUILDER_STRICT || "false").toLowerCase() === "true";
+const KASTLE_ACCOUNT_CACHE_TTL_MS = 60_000;
 
 type GhostProviderInfo = {
   id: string;
@@ -49,6 +50,7 @@ type GhostBridgeState = {
 
 let ghostBridgeState: GhostBridgeState | null = null;
 let ghostProviderProbeCache: { ts: number; providers: GhostProviderInfo[] } = { ts: 0, providers: [] };
+let kastleAccountCache: { address: string; ts: number } = { address: "", ts: 0 };
 
 function toSompi(amountKas: number) {
   return Math.floor(Number(amountKas || 0) * 1e8);
@@ -87,11 +89,15 @@ function getKastleRawTxJsonBuilderBridge() {
 
 async function buildKastleRawTxJsonViaBackend(
   outputs: Array<{ to: string; amount_kas: number }>,
-  purpose?: string
+  purpose?: string,
+  fromAddressHint?: string
 ) {
   if (!KASTLE_TX_BUILDER_URL) return "";
   if (typeof fetch !== "function") throw new Error("Kastle tx builder requires fetch()");
-  const fromAddress = await getKastleAccountAddress();
+  const hinted = String(fromAddressHint || "").trim();
+  const fromAddress = hinted
+    ? normalizeKaspaAddress(hinted, ALL_KASPA_ADDRESS_PREFIXES)
+    : await getKastleAccountAddress();
   const networkId = kastleNetworkIdForCurrentProfile();
 
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -128,7 +134,8 @@ async function buildKastleRawTxJsonViaBackend(
 
 async function buildKastleRawTxJson(
   outputs: Array<{ to: string; amount_kas: number }>,
-  purpose?: string
+  purpose?: string,
+  fromAddressHint?: string
 ) {
   const normalizedOutputs = normalizeOutputList(outputs);
   if (!normalizedOutputs.length) throw new Error("Kastle raw tx requires outputs");
@@ -136,7 +143,7 @@ async function buildKastleRawTxJson(
 
   if (KASTLE_TX_BUILDER_URL) {
     try {
-      const txJson = await buildKastleRawTxJsonViaBackend(normalizedOutputs, purpose);
+      const txJson = await buildKastleRawTxJsonViaBackend(normalizedOutputs, purpose, fromAddressHint);
       if (txJson) return txJson;
     } catch (e: any) {
       backendError = e;
@@ -279,6 +286,9 @@ function getKastleProvider() {
 }
 
 async function getKastleAccountAddress() {
+  if (kastleAccountCache.address && Date.now() - kastleAccountCache.ts <= KASTLE_ACCOUNT_CACHE_TTL_MS) {
+    return kastleAccountCache.address;
+  }
   const w = getKastleProvider();
   let account = null as any;
   if (typeof w.getAccount === "function") {
@@ -292,7 +302,9 @@ async function getKastleAccountAddress() {
   } else {
     throw new Error("Kastle provider missing getAccount()/request()");
   }
-  return normalizeKaspaAddress(String(account?.address || account?.addresses?.[0] || ""), ALL_KASPA_ADDRESS_PREFIXES);
+  const normalized = normalizeKaspaAddress(String(account?.address || account?.addresses?.[0] || ""), ALL_KASPA_ADDRESS_PREFIXES);
+  kastleAccountCache = { address: normalized, ts: Date.now() };
+  return normalized;
 }
 
 function isGhostProviderInfo(value: any): value is GhostProviderInfo {
@@ -571,6 +583,7 @@ export const WalletAdapter = {
         String(account?.address || account?.addresses?.[0] || ""),
         ALL_KASPA_ADDRESS_PREFIXES
       );
+      kastleAccountCache = { address, ts: Date.now() };
       const expectedNetwork = resolveKaspaNetwork(DEFAULT_NETWORK);
 
       let walletNetwork = expectedNetwork;
@@ -740,7 +753,7 @@ export const WalletAdapter = {
     const w = getKastleProvider();
     const networkId = kastleNetworkIdForCurrentProfile();
     try {
-      const txJson = await buildKastleRawTxJson(normalizedOutputs, purpose);
+      const txJson = await buildKastleRawTxJson(normalizedOutputs, purpose, kastleAccountCache.address);
       const payload = await withTimeout(
         Promise.resolve(w.signAndBroadcastTx(networkId, txJson)),
         WALLET_SEND_TIMEOUT_MS,

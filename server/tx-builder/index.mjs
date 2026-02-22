@@ -43,6 +43,13 @@ const metrics = {
   localWasmRequestsTotal: 0,
   localWasmErrorsTotal: 0,
   localWasmUtxoFetchErrorsTotal: 0,
+  localWasmPolicySelectedInputsTotal: 0,
+  localWasmPolicyTotalInputsSeen: 0,
+  localWasmPolicyPriorityFeeSompiTotal: 0,
+  localWasmPolicyTruncatedSelectionsTotal: 0,
+  localWasmPolicyFallbackAllInputsTotal: 0,
+  localWasmPolicySelectionModeTotal: new Map(),
+  localWasmPolicyPriorityFeeModeTotal: new Map(),
   upstreamRequestsTotal: 0,
   upstreamErrorsTotal: 0,
   commandRequestsTotal: 0,
@@ -157,7 +164,18 @@ function normalizeBuildRequest(body) {
   const purpose = String(body?.purpose || "").slice(0, 140);
   const manualTxJson = String(body?.txJson || "").trim();
   const priorityFeeSompi = body?.priorityFeeSompi == null ? undefined : Math.max(0, Math.round(Number(body.priorityFeeSompi || 0)));
-  return { wallet, networkId, fromAddress, outputs, purpose, txJson: manualTxJson, priorityFeeSompi };
+  const telemetryRaw = body?.telemetry && typeof body.telemetry === "object" ? body.telemetry : {};
+  const telemetry = {
+    observedConfirmP95Ms:
+      telemetryRaw?.observedConfirmP95Ms == null
+        ? undefined
+        : Math.max(0, Math.round(Number(telemetryRaw.observedConfirmP95Ms || 0))),
+    daaCongestionPct:
+      telemetryRaw?.daaCongestionPct == null
+        ? undefined
+        : Math.max(0, Math.min(100, Number(telemetryRaw.daaCongestionPct || 0))),
+  };
+  return { wallet, networkId, fromAddress, outputs, purpose, txJson: manualTxJson, priorityFeeSompi, telemetry };
 }
 
 function amountKasToSompiBigInt(amountKas) {
@@ -280,6 +298,7 @@ async function buildTxJsonLocalWasm(payload) {
       outputsTotalSompi,
       outputCount: outputs.length,
       requestPriorityFeeSompi: payload.priorityFeeSompi,
+      telemetry: payload.telemetry,
       config: localTxPolicyConfig,
     });
     if (!policyPlan.selectedEntries.length) throw new Error("tx_builder_no_selected_utxos");
@@ -316,6 +335,7 @@ async function buildTxJsonLocalWasm(payload) {
 
     const policyMeta = {
       selectionMode: String(policyPlan.selectionMode || "auto"),
+      priorityFeeMode: String(policyPlan.priorityFeeMode || localTxPolicyConfig.priorityFeeMode || "request_or_fixed"),
       selectedInputs: fallbackUsedAllInputs ? entries.length : policyPlan.selectedEntries.length,
       totalInputs: entries.length,
       truncatedByMaxInputs: Boolean(policyPlan.truncatedByMaxInputs),
@@ -326,9 +346,19 @@ async function buildTxJsonLocalWasm(payload) {
       requiredTargetSompi: String(policyPlan.requiredTargetSompi || 0n),
       priorityFeeSompi: String(priorityFeeSompi),
       fallbackUsedAllInputs,
+      ...(payload?.telemetry ? { telemetry: payload.telemetry } : {}),
+      ...(policyPlan?.adaptiveSignals ? { adaptiveSignals: policyPlan.adaptiveSignals } : {}),
       ...(selectedBuildError ? { selectedBuildError: String(selectedBuildError?.message || selectedBuildError).slice(0, 200) } : {}),
       config: describeLocalTxPolicyConfig(localTxPolicyConfig),
     };
+
+    metrics.localWasmPolicySelectedInputsTotal += Number(policyMeta.selectedInputs || 0);
+    metrics.localWasmPolicyTotalInputsSeen += Number(policyMeta.totalInputs || 0);
+    metrics.localWasmPolicyPriorityFeeSompiTotal += Number(policyMeta.priorityFeeSompi || 0);
+    if (policyMeta.truncatedByMaxInputs) metrics.localWasmPolicyTruncatedSelectionsTotal += 1;
+    if (policyMeta.fallbackUsedAllInputs) metrics.localWasmPolicyFallbackAllInputsTotal += 1;
+    inc(metrics.localWasmPolicySelectionModeTotal, String(policyMeta.selectionMode || "auto"));
+    inc(metrics.localWasmPolicyPriorityFeeModeTotal, String(policyMeta.priorityFeeMode || "request_or_fixed"));
 
 
     let jsonObject;
@@ -458,6 +488,31 @@ function exportPrometheus() {
   push("# HELP forgeos_tx_builder_local_wasm_utxo_fetch_errors_total Local WASM UTXO fetch errors.");
   push("# TYPE forgeos_tx_builder_local_wasm_utxo_fetch_errors_total counter");
   push(`forgeos_tx_builder_local_wasm_utxo_fetch_errors_total ${metrics.localWasmUtxoFetchErrorsTotal}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_selected_inputs_total Sum of selected inputs across local WASM builds.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_selected_inputs_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_selected_inputs_total ${metrics.localWasmPolicySelectedInputsTotal}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_total_inputs_seen_total Sum of candidate UTXOs seen across local WASM builds.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_total_inputs_seen_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_total_inputs_seen_total ${metrics.localWasmPolicyTotalInputsSeen}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_priority_fee_sompi_total Sum of priority fee sompi selected by local policy.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_priority_fee_sompi_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_priority_fee_sompi_total ${metrics.localWasmPolicyPriorityFeeSompiTotal}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_truncated_selections_total Policy selections that hit max input cap.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_truncated_selections_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_truncated_selections_total ${metrics.localWasmPolicyTruncatedSelectionsTotal}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_fallback_all_inputs_total Local WASM builds that fell back to all inputs.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_fallback_all_inputs_total counter");
+  push(`forgeos_tx_builder_local_wasm_policy_fallback_all_inputs_total ${metrics.localWasmPolicyFallbackAllInputsTotal}`);
+  push("# HELP forgeos_tx_builder_local_wasm_policy_selection_mode_total Local WASM builds by coin selection mode.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_selection_mode_total counter");
+  for (const [mode, value] of metrics.localWasmPolicySelectionModeTotal.entries()) {
+    push(`forgeos_tx_builder_local_wasm_policy_selection_mode_total{mode=${JSON.stringify(String(mode))}} ${value}`);
+  }
+  push("# HELP forgeos_tx_builder_local_wasm_policy_priority_fee_mode_total Local WASM builds by priority fee mode.");
+  push("# TYPE forgeos_tx_builder_local_wasm_policy_priority_fee_mode_total counter");
+  for (const [mode, value] of metrics.localWasmPolicyPriorityFeeModeTotal.entries()) {
+    push(`forgeos_tx_builder_local_wasm_policy_priority_fee_mode_total{mode=${JSON.stringify(String(mode))}} ${value}`);
+  }
   push("# HELP forgeos_tx_builder_auth_failures_total Auth failures.");
   push("# TYPE forgeos_tx_builder_auth_failures_total counter");
   push(`forgeos_tx_builder_auth_failures_total ${metrics.authFailuresTotal}`);

@@ -12,6 +12,9 @@ export type PortfolioAgentInput = {
   targetAllocationPct?: number;
   riskBudgetWeight?: number;
   pendingKas?: number;
+  strategyTemplate?: string;
+  strategyClass?: string;
+  attributionSummary?: any;
   lastDecision?: any;
 };
 
@@ -33,6 +36,10 @@ export type PortfolioAllocationRow = {
   budgetKas: number;
   cycleCapKas: number;
   queuePressurePct: number;
+  strategyTemplate: string;
+  calibrationHealth: number;
+  calibrationTier: "healthy" | "watch" | "degraded" | "critical";
+  truthQualityScore: number;
   regime: string;
   action: string;
   confidence: number;
@@ -70,14 +77,93 @@ function regimeMultiplier(regime: string) {
   return 0.85;
 }
 
+function strategyTemplateRegimeMultiplier(strategyTemplate: string, strategyClass: string, regime: string) {
+  const template = String(strategyTemplate || strategyClass || "custom").toLowerCase();
+  const r = String(regime || "NEUTRAL").toUpperCase();
+  const isTrend = /trend|momentum/.test(template);
+  const isMeanReversion = /mean[_ -]?reversion|reversion|range/.test(template);
+  const isBreakout = /breakout|volatility/.test(template);
+  const isDca = /\bdca\b|accumulator|accumulation/.test(template);
+  if (isTrend) {
+    if (r === "TREND_UP" || r === "FLOW_ACCUMULATION") return 1.16;
+    if (r === "RISK_OFF") return 0.72;
+    if (r === "RANGE_VOL") return 0.9;
+    return 1;
+  }
+  if (isMeanReversion) {
+    if (r === "RANGE_VOL") return 1.14;
+    if (r === "TREND_UP") return 0.86;
+    if (r === "RISK_OFF") return 0.76;
+    return 1;
+  }
+  if (isBreakout) {
+    if (r === "TREND_UP") return 1.08;
+    if (r === "RANGE_VOL") return 1.05;
+    if (r === "RISK_OFF") return 0.74;
+    return 1;
+  }
+  if (isDca) {
+    if (r === "RISK_OFF") return 0.92;
+    if (r === "FLOW_ACCUMULATION" || r === "TREND_UP") return 1.08;
+    return 1.02;
+  }
+  return 1;
+}
+
+function deriveCalibrationRouting(attribution: any) {
+  const brier = clamp(n(attribution?.confidenceBrierScore, 0), 0, 1);
+  const evCalErr = clamp(n(attribution?.evCalibrationErrorPct, 0), 0, 100);
+  const regimeHitRatePct = clamp(n(attribution?.regimeHitRatePct, 0), 0, 100);
+  const regimeHitSamples = Math.max(0, n(attribution?.regimeHitSamples, 0));
+  const truthDegraded = Boolean(attribution?.truthDegraded);
+  const truthMismatchRatePct = clamp(n(attribution?.truthMismatchRatePct, 0), 0, 100);
+  const receiptCoveragePct = clamp(n(attribution?.realizedReceiptCoveragePct ?? attribution?.receiptCoveragePct, 0), 0, 100);
+
+  const samplesSufficient = regimeHitSamples >= 8;
+  const brierScore = clamp(1 - brier / 0.35, 0, 1.1);
+  const evScore = clamp(1 - evCalErr / 20, 0, 1.1);
+  const regimeScore = clamp(regimeHitRatePct / 100, 0, 1.1);
+  const rawHealth = samplesSufficient
+    ? (brierScore * 0.4 + evScore * 0.35 + regimeScore * 0.25)
+    : 0.88;
+  const truthPenalty = truthDegraded ? clamp(1 - truthMismatchRatePct / 120, 0.35, 0.92) : 1;
+  const receiptCoverageFactor = clamp(0.7 + receiptCoveragePct / 100 * 0.35, 0.7, 1.05);
+  const health = clamp(rawHealth * truthPenalty * receiptCoverageFactor, 0.2, 1.1);
+  const sizeMultiplier = samplesSufficient
+    ? clamp(0.35 + health * 0.85, 0.3, 1.2)
+    : 0.9;
+  const tier =
+    health < 0.42 ? "critical"
+      : health < 0.62 ? "degraded"
+      : health < 0.82 ? "watch"
+      : "healthy";
+  return {
+    samplesSufficient,
+    brier,
+    evCalErr,
+    regimeHitRatePct,
+    regimeHitSamples,
+    truthDegraded,
+    truthMismatchRatePct,
+    receiptCoveragePct,
+    health,
+    sizeMultiplier,
+    truthQualityScore: clamp((truthDegraded ? 0.5 : 0.9) * receiptCoverageFactor * truthPenalty, 0.2, 1.1),
+    tier,
+  } as const;
+}
+
 function buildNotes(params: {
   enabled: boolean;
   action: string;
   regime: string;
+  strategyTemplate?: string;
   queuePressurePct: number;
   risk: number;
   confidence: number;
   dataQuality: number;
+  calibrationTier?: string;
+  truthDegraded?: boolean;
 }) {
   const notes: string[] = [];
   if (!params.enabled) notes.push("disabled in allocator");
@@ -86,7 +172,10 @@ function buildNotes(params: {
   if (params.risk > 0.7) notes.push("elevated risk score");
   if (params.confidence < 0.7) notes.push("low confidence");
   if (params.dataQuality < 0.5) notes.push("limited data quality");
+  if (params.calibrationTier === "critical" || params.calibrationTier === "degraded") notes.push("calibration routing throttle");
+  if (params.truthDegraded) notes.push("truth quality degraded");
   if (params.action === "REDUCE") notes.push("reduce signal active");
+  if (params.strategyTemplate) notes.push(`template:${String(params.strategyTemplate).slice(0, 24)}`);
   if (!notes.length) notes.push("within shared budget guardrails");
   return notes.slice(0, 4);
 }
@@ -121,6 +210,10 @@ export function computeSharedRiskBudgetAllocation(params: {
     const riskWeight = clamp(n(agent?.riskBudgetWeight, 1), 0, 10);
     const enabled = agent?.enabled !== false;
     const queuePressurePct = capitalLimitKas > 0 ? clamp((pendingKas / capitalLimitKas) * 100, 0, 500) : 0;
+    const strategyTemplate = String(agent?.strategyTemplate || agent?.strategyClass || "custom");
+    const strategyClass = String(agent?.strategyClass || "");
+    const calibrationRouting = deriveCalibrationRouting(agent?.attributionSummary);
+    const templateRegimeBoost = strategyTemplateRegimeMultiplier(strategyTemplate, strategyClass, regime);
 
     const baseTargetWeight = targetPct > 0 ? targetPct / 100 : 0;
     const signalStrength = clamp(0.25 + confidence * 0.45 + Math.max(0, riskHeadroom) * 0.2 + dataQuality * 0.1, 0.05, 1.1);
@@ -132,6 +225,8 @@ export function computeSharedRiskBudgetAllocation(params: {
             signalStrength *
             actionMultiplier(action) *
             regimeMultiplier(regime) *
+            templateRegimeBoost *
+            calibrationRouting.sizeMultiplier *
             queuePenalty
         )
       : 0;
@@ -144,11 +239,14 @@ export function computeSharedRiskBudgetAllocation(params: {
       riskWeight,
       capitalLimitKas,
       pendingKas,
+      strategyTemplate,
+      strategyClass,
       action,
       regime,
       confidence,
       risk,
       dataQuality,
+      calibrationRouting,
       score,
       queuePressurePct,
     };
@@ -184,6 +282,10 @@ export function computeSharedRiskBudgetAllocation(params: {
       budgetKas: Number(budgetKas.toFixed(6)),
       cycleCapKas: Number(Math.max(0, cycleCapKas).toFixed(6)),
       queuePressurePct: Number(row.queuePressurePct.toFixed(2)),
+      strategyTemplate: row.strategyTemplate,
+      calibrationHealth: Number(row.calibrationRouting.health.toFixed(4)),
+      calibrationTier: row.calibrationRouting.tier,
+      truthQualityScore: Number(row.calibrationRouting.truthQualityScore.toFixed(4)),
       regime: row.regime,
       action: row.action,
       confidence: Number(row.confidence.toFixed(4)),
@@ -197,10 +299,13 @@ export function computeSharedRiskBudgetAllocation(params: {
         enabled: row.enabled,
         action: row.action,
         regime: row.regime,
+        strategyTemplate: row.strategyTemplate,
         queuePressurePct: row.queuePressurePct,
         risk: row.risk,
         confidence: row.confidence,
         dataQuality: row.dataQuality,
+        calibrationTier: row.calibrationRouting.tier,
+        truthDegraded: row.calibrationRouting.truthDegraded,
       }),
     };
   });

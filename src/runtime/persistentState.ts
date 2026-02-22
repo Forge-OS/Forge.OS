@@ -6,6 +6,7 @@ type PersistedDashboardState = {
   log?: any[];
   decisions?: any[];
   marketHistory?: any[];
+  attributionSummary?: any;
   nextAutoCycleAt?: number;
   updatedAt?: number;
   version?: number;
@@ -41,6 +42,38 @@ function truncateTail<T>(value: unknown, maxItems: number): T[] {
 }
 
 function sanitize(state: PersistedDashboardState): PersistedDashboardState {
+  const attributionSummary =
+    state.attributionSummary && typeof state.attributionSummary === "object"
+      ? {
+          netPnlMode: String((state.attributionSummary as any).netPnlMode || "").slice(0, 24) || undefined,
+          truthDegraded: Boolean((state.attributionSummary as any).truthDegraded),
+          truthMismatchRatePct: Number.isFinite(Number((state.attributionSummary as any).truthMismatchRatePct))
+            ? Number((state.attributionSummary as any).truthMismatchRatePct)
+            : undefined,
+          receiptCoveragePct: Number.isFinite(Number((state.attributionSummary as any).receiptCoveragePct))
+            ? Number((state.attributionSummary as any).receiptCoveragePct)
+            : undefined,
+          realizedReceiptCoveragePct: Number.isFinite(Number((state.attributionSummary as any).realizedReceiptCoveragePct))
+            ? Number((state.attributionSummary as any).realizedReceiptCoveragePct)
+            : undefined,
+          confidenceBrierScore: Number.isFinite(Number((state.attributionSummary as any).confidenceBrierScore))
+            ? Number((state.attributionSummary as any).confidenceBrierScore)
+            : undefined,
+          evCalibrationErrorPct: Number.isFinite(Number((state.attributionSummary as any).evCalibrationErrorPct))
+            ? Number((state.attributionSummary as any).evCalibrationErrorPct)
+            : undefined,
+          regimeHitRatePct: Number.isFinite(Number((state.attributionSummary as any).regimeHitRatePct))
+            ? Number((state.attributionSummary as any).regimeHitRatePct)
+            : undefined,
+          regimeHitSamples: Number.isFinite(Number((state.attributionSummary as any).regimeHitSamples))
+            ? Number((state.attributionSummary as any).regimeHitSamples)
+            : undefined,
+          realizedVsExpectedEdgeKas: Number.isFinite(Number((state.attributionSummary as any).realizedVsExpectedEdgeKas))
+            ? Number((state.attributionSummary as any).realizedVsExpectedEdgeKas)
+            : undefined,
+          updatedAt: Date.now(),
+        }
+      : undefined;
   return {
     version: 1,
     updatedAt: Date.now(),
@@ -62,6 +95,7 @@ function sanitize(state: PersistedDashboardState): PersistedDashboardState {
     decisions: truncateList(state.decisions, MAX_DECISION_ENTRIES),
     // marketHistory is append-ordered (oldest -> newest), so keep the tail to preserve the latest samples.
     marketHistory: truncateTail(state.marketHistory, MAX_MARKET_HISTORY_ENTRIES),
+    attributionSummary,
   };
 }
 

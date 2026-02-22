@@ -1,0 +1,116 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(rate(forgeos_callback_consumer_receipt_consistency_checks_total[5m]))", "legendFormat": "checks/s", "refId": "A" },
+        { "expr": "sum(rate(forgeos_callback_consumer_receipt_consistency_mismatch_total[5m]))", "legendFormat": "mismatch/s", "refId": "B" }
+      ],
+      "title": "Receipt Consistency Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum by (type) (increase(forgeos_callback_consumer_receipt_consistency_mismatch_by_type_total[1h]))",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Receipt Consistency Mismatch Types (1h)",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [
+        {
+          "expr": "clamp_min(sum(rate(forgeos_callback_consumer_receipt_consistency_mismatch_total[5m])) / clamp_min(sum(rate(forgeos_callback_consumer_receipt_consistency_checks_total[5m])), 0.0001), 0)",
+          "refId": "A"
+        }
+      ],
+      "title": "Receipt Mismatch Rate (5m)",
+      "type": "gauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(rate(forgeos_scheduler_callback_duplicate_total[5m]))", "legendFormat": "duplicate callbacks/s", "refId": "A" },
+        { "expr": "sum(rate(forgeos_callback_consumer_callback_stale_fence_total[5m]))", "legendFormat": "stale fence rejects/s", "refId": "B" }
+      ],
+      "title": "Control Plane Idempotency / Fence Health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(forgeos_scheduler_queue_ready)", "legendFormat": "scheduler ready", "refId": "A" },
+        { "expr": "sum(forgeos_scheduler_queue_processing)", "legendFormat": "scheduler processing", "refId": "B" },
+        { "expr": "sum(forgeos_scheduler_saturation_events_total)", "legendFormat": "saturation total", "refId": "C" }
+      ],
+      "title": "Scheduler Queue / Saturation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(rate(forgeos_tx_builder_local_wasm_policy_selected_inputs_total[5m]))", "legendFormat": "selected inputs/s", "refId": "A" },
+        { "expr": "sum(rate(forgeos_tx_builder_local_wasm_policy_priority_fee_sompi_total[5m]))", "legendFormat": "priority fee sompi/s", "refId": "B" },
+        { "expr": "sum(rate(forgeos_tx_builder_local_wasm_policy_fallback_all_inputs_total[5m]))", "legendFormat": "fallback all inputs/s", "refId": "C" }
+      ],
+      "title": "Tx-Builder Policy Efficiency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 7,
+      "options": { "content": "Use Forge.OS UI PnL Attribution panel for calibration metrics (`Brier`, `EV calibration error`, `Regime hit-rate`) until they are exported to Prometheus. This dashboard focuses on backend truth/control/execution metrics.", "mode": "markdown" },
+      "title": "Calibration Metrics Note",
+      "type": "text"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["forgeos", "kaspa", "quant-ai", "ops"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Forge.OS Operator Overview",
+  "uid": "forgeos-operator-overview",
+  "version": 1,
+  "weekStart": ""
+}

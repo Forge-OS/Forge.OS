@@ -20,6 +20,10 @@ describe("tx-builder local policy", () => {
     delete process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_MODE;
     delete process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_OUTPUT_BPS;
     delete process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_SOMPI;
+    delete process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_PER_INPUT_SOMPI;
+    delete process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_FRAGMENTATION_THRESHOLD_INPUTS;
+    delete process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_FRAGMENTATION_BUMP_SOMPI;
+    delete process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_TRUNCATION_BUMP_SOMPI;
   });
 
   it("selects oldest/smallest-first in auto consolidation mode and computes output_bps fee", async () => {
@@ -79,5 +83,37 @@ describe("tx-builder local policy", () => {
     expect(Number(plan.selectedEntries[0].utxoEntry.amount)).toBe(900_000_000);
     expect(plan.truncatedByMaxInputs).toBe(false);
   });
-});
 
+  it("raises adaptive priority fee with high latency and fragmented selections", async () => {
+    process.env.TX_BUILDER_LOCAL_WASM_COIN_SELECTION = "smallest-first";
+    process.env.TX_BUILDER_LOCAL_WASM_MAX_INPUTS = "6";
+    process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_MODE = "adaptive";
+    process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_SOMPI = "2000";
+    process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_PER_INPUT_SOMPI = "1000";
+    process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_FRAGMENTATION_THRESHOLD_INPUTS = "3";
+    process.env.TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_FRAGMENTATION_BUMP_SOMPI = "5000";
+
+    const policy = await import("../../server/tx-builder/localPolicy.mjs");
+    const entries = [
+      makeEntry(60_000_000, 100, "a"),
+      makeEntry(70_000_000, 101, "b"),
+      makeEntry(80_000_000, 102, "c"),
+      makeEntry(90_000_000, 103, "d"),
+      makeEntry(500_000_000, 104, "e"),
+    ];
+    const plan = policy.selectUtxoEntriesForLocalBuild({
+      entries,
+      outputsTotalSompi: 220_000_000n,
+      outputCount: 2,
+      requestPriorityFeeSompi: 0,
+      telemetry: { observedConfirmP95Ms: 48_000, daaCongestionPct: 82 },
+      config: policy.readLocalTxPolicyConfig(),
+    });
+
+    expect(plan.priorityFeeMode).toBe("adaptive");
+    expect(plan.priorityFeeSompi).toBeGreaterThan(2_000);
+    expect(plan.adaptiveSignals).toBeTruthy();
+    expect(plan.adaptiveSignals.recomputedPriorityFeeSompi).toBe(plan.priorityFeeSompi);
+    expect(plan.selectedEntries.length).toBeGreaterThanOrEqual(3);
+  });
+});

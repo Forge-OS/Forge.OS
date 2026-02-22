@@ -19,6 +19,7 @@ type Params = {
   log: any[];
   decisions: any[];
   marketHistory: any[];
+  attributionSummary?: any;
   nextAutoCycleAt: number;
   setStatus: (v: any) => void;
   setExecMode: (v: any) => void;
@@ -50,6 +51,7 @@ export function useDashboardRuntimePersistence(params: Params) {
     log,
     decisions,
     marketHistory,
+    attributionSummary,
     nextAutoCycleAt,
     setStatus,
     setExecMode,
@@ -140,6 +142,7 @@ export function useDashboardRuntimePersistence(params: Params) {
         log,
         decisions,
         marketHistory,
+        attributionSummary,
         nextAutoCycleAt,
       });
     }, writeDelayMs);
@@ -150,6 +153,7 @@ export function useDashboardRuntimePersistence(params: Params) {
     liveExecutionArmed,
     log,
     marketHistory,
+    attributionSummary,
     nextAutoCycleAt,
     queue,
     runtimeHydrated,
@@ -158,4 +162,3 @@ export function useDashboardRuntimePersistence(params: Params) {
     writeDelayMs,
   ]);
 }
-

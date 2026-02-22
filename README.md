@@ -27,7 +27,10 @@ It is built for operators who want:
 - [Wallet Support (Current)](#wallet-support-current)
 - [Transaction Lifecycle + Receipts](#transaction-lifecycle--receipts)
 - [Scaling Modules (Backend Starters)](#scaling-modules-backend-starters)
+- [Operator Recipes (Copy/Paste)](#operator-recipes-copypaste)
 - [Testing & Validation](#testing--validation)
+- [GitHub DIY Ops Hacks](#github-diy-ops-hacks)
+- [Troubleshooting By Symptom](#troubleshooting-by-symptom)
 - [Production Readiness Checklist](#production-readiness-checklist)
 
 </details>
@@ -166,6 +169,52 @@ npm run test:e2e
 npm run build
 npm run preview
 ```
+
+## Operator Recipes (Copy/Paste)
+
+<details>
+<summary><strong>Local Confidence Pass (Fast)</strong></summary>
+
+```bash
+npm run ci
+npm run test:e2e
+```
+
+Use this before changing runtime logic, wallet flows, or queue/receipt handling.
+
+</details>
+
+<details>
+<summary><strong>Receipt Truth / Attribution Debug Pass</strong></summary>
+
+```bash
+npm run dev
+# optional in separate shells (backend truth path)
+node server/callback-consumer/index.mjs
+node server/scheduler/index.mjs
+```
+
+Then in UI verify:
+- queue truth labels (`BROADCASTED`, `CHAIN CONFIRMED`, `BACKEND CONFIRMED`)
+- receipt provenance badges (`CHAIN`, `BACKEND`, `ESTIMATED`)
+- PnL mode (`estimated`, `hybrid`, `realized`) and confirmation floor
+
+</details>
+
+<details>
+<summary><strong>Redis Scheduler + Load Smoke (Multi-Instance)</strong></summary>
+
+```bash
+TEST_REDIS_URL=redis://127.0.0.1:6379 npm run test:scheduler:redis
+LOAD_PIPELINE_SCHEDULER_REDIS_URL=redis://127.0.0.1:6379 \
+LOAD_PIPELINE_CALLBACK_REDIS_URL=redis://127.0.0.1:6379 \
+LOAD_PIPELINE_SCHEDULER_INSTANCES=2 \
+npm run load:pipeline
+```
+
+This validates failover/idempotency safety paths, not just UI behavior.
+
+</details>
 
 ## Environment (Overview)
 
@@ -510,6 +559,13 @@ Offline verification:
 npm run audit-log:verify -- --file ./forgeos-audit.jsonl --strict-signatures
 ```
 
+### Operator Grafana Dashboard (Starter)
+- Import `ops/grafana/forgeos-operator-overview.json` into Grafana.
+- Includes backend truth/control/execution panels for:
+  - receipt consistency checks/mismatches + mismatch types (callback-consumer)
+  - scheduler queue/saturation and callback duplicate/stale-fence signals
+  - tx-builder local policy efficiency (selected inputs / fee / fallback usage)
+
 <details>
 <summary><strong>Hidden Ops Notes (GitHub-friendly collapsible)</strong></summary>
 
@@ -542,6 +598,7 @@ npm run test:e2e
 | UI flow validation | `npm run test:e2e` | Playwright flows for wallet gate / queue / treasury / controls |
 | Redis scheduler semantics | `npm run test:scheduler:redis` | Runs Redis-backed scheduler integration specs when `TEST_REDIS_URL` is set |
 | Pipeline performance smoke | `npm run load:pipeline` | Supports threshold assertions and multi-scheduler mode |
+| Tx-builder policy benchmark | `npm run bench:tx-policy` | Bench coin-selection + fee policy behavior across synthetic UTXO shapes |
 | Audit export verification | `npm run audit-log:verify -- --file ./forgeos-audit.jsonl --strict-signatures` | Offline hash-chain + signature verification |
 
 ### E2E Coverage (Playwright)
@@ -561,6 +618,50 @@ Current flows include:
 - The Playwright config uses strict port binding and CI-specific server reuse behavior for stability.
 
 </details>
+
+## GitHub DIY Ops Hacks
+
+<details>
+<summary><strong>GitHub UI Power Moves (Maintainers / Reviewers)</strong></summary>
+
+| Goal | GitHub Trick | Why It Helps |
+| --- | --- | --- |
+| Stable code references | Press <kbd>y</kbd> on a file page | Converts to a permalink tied to a commit |
+| Link exact code lines | Append `#Lx` (for example `#L120`) | Makes review comments and docs precise |
+| Quick repo editor | Press <kbd>.</kbd> on repo page | Opens GitHub web editor instantly |
+| Fast search | Use code search qualifiers (`path:src`, `lang:ts`) | Speeds hotspot audits and refactors |
+| Compare releases | `/compare/<sha1>...<sha2>` | Clean change review before deploy |
+| Blame regressions | “Blame” + line permalink | Tracks when a behavior changed |
+
+</details>
+
+<details>
+<summary><strong>Deployment Cleanup / Artifact Triage (GitHub Actions)</strong></summary>
+
+- Keep `CI`, `Deploy Pages`, and (if enabled) load jobs visible in Actions favorites.
+- Use workflow run artifacts for:
+  - Playwright failure screenshots/videos
+  - load harness metrics output
+  - build/fallback verification traces
+- When triaging a deploy issue:
+  1. open `CI`
+  2. confirm `build` and `smoke`
+  3. open `Deploy Pages`
+  4. run `npm run domain:check`
+  5. verify live `manifest.json` points to the latest `assets/index-*.js`
+
+</details>
+
+## Troubleshooting By Symptom
+
+| Symptom | First Check | Command / Action |
+| --- | --- | --- |
+| Wallet connects but send flow fails | Wallet network/address prefix mismatch | Verify `kaspa:` vs `kaspatest:` and topbar network selector |
+| Queue stays `BROADCASTED` too long | Receipt path health | Check callback-consumer `/health` and `/metrics`, then chain receipt polling |
+| PnL stays `hybrid` not `realized` | Confirmation floor / receipt consistency | Check PnL header confirmation floor + queue provenance badges |
+| Auto-approve stops firing | Calibration or truth guardrail degradation | Review `Intelligence` + runtime notices banners |
+| Scheduler duplicate callback concerns | Fence/idempotency counters | Check callback-consumer metrics + Redis scheduler tests |
+| Pages deploy looks old | Artifact / manifest drift | `npm run domain:check` and inspect live `manifest.json` |
 
 ## Deployment / Domain
 

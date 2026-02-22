@@ -26,7 +26,7 @@ function parseCoinSelectionMode(raw) {
 
 function parseFeeMode(raw) {
   const v = String(raw || "request_or_fixed").trim().toLowerCase();
-  if (v === "fixed" || v === "output_bps" || v === "per_output" || v === "request_or_fixed") return v;
+  if (v === "fixed" || v === "output_bps" || v === "per_output" || v === "request_or_fixed" || v === "adaptive") return v;
   return "request_or_fixed";
 }
 
@@ -43,6 +43,17 @@ export function readLocalTxPolicyConfig() {
     priorityFeePerOutputSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_PER_OUTPUT_SOMPI", 2_000, 0),
     priorityFeeMinSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_MIN_SOMPI", 0, 0),
     priorityFeeMaxSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_MAX_SOMPI", 2_500_000, 0),
+    priorityFeeAdaptiveTargetConfirmMs: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_TARGET_CONFIRM_MS", 8000, 100),
+    priorityFeeAdaptiveHighConfirmMs: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_HIGH_CONFIRM_MS", 20000, 100),
+    priorityFeeAdaptiveCriticalConfirmMs: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_CRITICAL_CONFIRM_MS", 45000, 100),
+    priorityFeeAdaptiveLatencyUpPct: envNum("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_LATENCY_UP_PCT", 120, 0),
+    priorityFeeAdaptiveLatencyDownPct: envNum("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_LATENCY_DOWN_PCT", 30, 0),
+    priorityFeeAdaptivePerInputSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_PER_INPUT_SOMPI", 500, 0),
+    priorityFeeAdaptiveFragmentationThresholdInputs: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_FRAGMENTATION_THRESHOLD_INPUTS", 10, 1),
+    priorityFeeAdaptiveFragmentationBumpSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_FRAGMENTATION_BUMP_SOMPI", 4_000, 0),
+    priorityFeeAdaptiveTruncationBumpSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_TRUNCATION_BUMP_SOMPI", 8_000, 0),
+    priorityFeeAdaptiveDaaCongestionThresholdPct: envNum("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_DAA_CONGESTION_THRESHOLD_PCT", 70, 0),
+    priorityFeeAdaptiveDaaCongestionBumpSompi: envInt("TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_ADAPTIVE_DAA_CONGESTION_BUMP_SOMPI", 6_000, 0),
     preferConsolidation: envBool("TX_BUILDER_LOCAL_WASM_PREFER_CONSOLIDATION", true),
   };
 }
@@ -79,24 +90,92 @@ function clampPriorityFeeSompi(n, cfg) {
   return clamp(Math.round(Number(n || 0)), cfg.priorityFeeMinSompi, Math.max(cfg.priorityFeeMinSompi, cfg.priorityFeeMaxSompi));
 }
 
-export function computePriorityFeeSompi({ requestPriorityFeeSompi, outputsTotalSompi, outputCount, config }) {
-  const cfg = config || readLocalTxPolicyConfig();
+function computeBaselineFeeSompi({ requestPriorityFeeSompi, outputsTotalSompi, outputCount, cfg }) {
   const requestFee = Math.max(0, Math.round(Number(requestPriorityFeeSompi || 0)));
+  const outputCountSafe = Math.max(0, Math.round(Number(outputCount || 0)));
+  const fixedFee = clampPriorityFeeSompi(cfg.priorityFeeFixedSompi, cfg);
+  const perOutputFee = clampPriorityFeeSompi(outputCountSafe * Math.max(0, Math.round(cfg.priorityFeePerOutputSompi)), cfg);
+  const base = Number(outputsTotalSompi > 0n ? outputsTotalSompi : 0n);
+  const outputBpsFee = clampPriorityFeeSompi(Math.round((base * Number(cfg.priorityFeeOutputBps || 0)) / 10_000), cfg);
+  return {
+    requestFee,
+    fixedFee,
+    perOutputFee,
+    outputBpsFee,
+    defaultAdaptiveBaseFee: Math.max(fixedFee, perOutputFee, outputBpsFee),
+  };
+}
+
+function adaptiveLatencyMultiplier(confirmP95Ms, cfg) {
+  const p95 = Math.max(0, Math.round(Number(confirmP95Ms || 0)));
+  if (!(p95 > 0)) return 1;
+  const target = Math.max(100, Math.round(Number(cfg.priorityFeeAdaptiveTargetConfirmMs || 8000)));
+  const high = Math.max(target, Math.round(Number(cfg.priorityFeeAdaptiveHighConfirmMs || 20000)));
+  const critical = Math.max(high, Math.round(Number(cfg.priorityFeeAdaptiveCriticalConfirmMs || 45000)));
+  if (p95 > high) {
+    const severity = clamp((p95 - high) / Math.max(1, critical - high), 0, 1.5);
+    return 1 + (severity * Number(cfg.priorityFeeAdaptiveLatencyUpPct || 120)) / 100;
+  }
+  if (p95 < target) {
+    const relief = clamp((target - p95) / Math.max(1, target), 0, 1);
+    return Math.max(0.5, 1 - (relief * Number(cfg.priorityFeeAdaptiveLatencyDownPct || 30)) / 100);
+  }
+  return 1;
+}
+
+export function computePriorityFeeSompi({ requestPriorityFeeSompi, outputsTotalSompi, outputCount, config, telemetry, selectionStats }) {
+  const cfg = config || readLocalTxPolicyConfig();
+  const baseFees = computeBaselineFeeSompi({ requestPriorityFeeSompi, outputsTotalSompi, outputCount, cfg });
+  const requestFee = baseFees.requestFee;
   if (cfg.priorityFeeMode === "fixed") return clampPriorityFeeSompi(cfg.priorityFeeFixedSompi, cfg);
   if (cfg.priorityFeeMode === "output_bps") {
-    const base = Number(outputsTotalSompi > 0n ? outputsTotalSompi : 0n);
-    const fee = Math.round((base * Number(cfg.priorityFeeOutputBps || 0)) / 10_000);
-    return clampPriorityFeeSompi(fee, cfg);
+    return baseFees.outputBpsFee;
   }
   if (cfg.priorityFeeMode === "per_output") {
-    const fee = Math.max(0, Math.round(Number(outputCount || 0))) * Math.max(0, Math.round(cfg.priorityFeePerOutputSompi));
+    return baseFees.perOutputFee;
+  }
+  if (cfg.priorityFeeMode === "adaptive") {
+    const selectedInputCount = Math.max(0, Math.round(Number(selectionStats?.selectedInputCount || 0)));
+    const truncatedByMaxInputs = Boolean(selectionStats?.truncatedByMaxInputs);
+    const confirmP95Ms = Math.max(0, Math.round(Number(telemetry?.observedConfirmP95Ms || telemetry?.confirmP95Ms || 0)));
+    const daaCongestionPct = clamp(Number(telemetry?.daaCongestionPct || 0), 0, 100);
+    const latencyMultiplier = adaptiveLatencyMultiplier(confirmP95Ms, cfg);
+    const adaptiveBase = requestFee > 0 ? requestFee : baseFees.defaultAdaptiveBaseFee;
+    let fee = Math.round(adaptiveBase * latencyMultiplier);
+    fee += selectedInputCount * Math.max(0, Math.round(cfg.priorityFeeAdaptivePerInputSompi || 0));
+    if (selectedInputCount >= Math.max(1, Math.round(cfg.priorityFeeAdaptiveFragmentationThresholdInputs || 10))) {
+      fee += Math.max(0, Math.round(cfg.priorityFeeAdaptiveFragmentationBumpSompi || 0));
+    }
+    if (truncatedByMaxInputs) {
+      fee += Math.max(0, Math.round(cfg.priorityFeeAdaptiveTruncationBumpSompi || 0));
+    }
+    if (daaCongestionPct >= Number(cfg.priorityFeeAdaptiveDaaCongestionThresholdPct || 70)) {
+      fee += Math.max(0, Math.round(cfg.priorityFeeAdaptiveDaaCongestionBumpSompi || 0));
+    }
     return clampPriorityFeeSompi(fee, cfg);
   }
   // request_or_fixed
   return clampPriorityFeeSompi(requestFee > 0 ? requestFee : cfg.priorityFeeFixedSompi, cfg);
 }
 
-export function selectUtxoEntriesForLocalBuild({ entries, outputsTotalSompi, outputCount, requestPriorityFeeSompi, config }) {
+function extendSelectionToTarget({ ordered, selectedEntries, selectedAmountSompi, cfg, baseTargetSompi, targetSompi }) {
+  let truncatedByMaxInputs = false;
+  let total = selectedAmountSompi;
+  for (let i = selectedEntries.length; i < ordered.length; i += 1) {
+    if (selectedEntries.length >= cfg.maxInputs) {
+      truncatedByMaxInputs = true;
+      break;
+    }
+    const entry = ordered[i];
+    selectedEntries.push(entry);
+    total += amountSompi(entry);
+    const dynamicTargetSompi = baseTargetSompi + BigInt(selectedEntries.length) * BigInt(Math.max(0, cfg.perInputFeeBufferSompi));
+    if (total >= dynamicTargetSompi && total >= targetSompi) break;
+  }
+  return { selectedEntries, selectedAmountSompi: total, truncatedByMaxInputs };
+}
+
+export function selectUtxoEntriesForLocalBuild({ entries, outputsTotalSompi, outputCount, requestPriorityFeeSompi, telemetry, config }) {
   const cfg = config || readLocalTxPolicyConfig();
   const normalizedEntries = Array.isArray(entries) ? entries : [];
   if (!normalizedEntries.length) {
@@ -109,13 +188,16 @@ export function selectUtxoEntriesForLocalBuild({ entries, outputsTotalSompi, out
       selectionMode: cfg.coinSelection,
       totalEntries: 0,
       truncatedByMaxInputs: false,
+      priorityFeeMode: cfg.priorityFeeMode,
+      adaptiveSignals: undefined,
     };
   }
 
-  const priorityFeeSompi = computePriorityFeeSompi({
+  let priorityFeeSompi = computePriorityFeeSompi({
     requestPriorityFeeSompi,
     outputsTotalSompi,
     outputCount,
+    telemetry,
     config: cfg,
   });
   const ordered = coinSort(normalizedEntries, cfg.coinSelection, cfg.preferConsolidation);
@@ -141,8 +223,64 @@ export function selectUtxoEntriesForLocalBuild({ entries, outputsTotalSompi, out
     if (selectedAmountSompi >= dynamicTargetSompi) break;
   }
 
-  const requiredTargetSompi =
+  let requiredTargetSompi =
     baseTargetSompi + BigInt(selectedEntries.length) * BigInt(Math.max(0, cfg.perInputFeeBufferSompi));
+
+  let adaptiveSignals;
+  if (cfg.priorityFeeMode === "adaptive") {
+    const recomputedAdaptiveFeeSompi = computePriorityFeeSompi({
+      requestPriorityFeeSompi,
+      outputsTotalSompi,
+      outputCount,
+      telemetry,
+      selectionStats: {
+        selectedInputCount: selectedEntries.length,
+        truncatedByMaxInputs,
+      },
+      config: cfg,
+    });
+    adaptiveSignals = {
+      observedConfirmP95Ms: Math.max(0, Math.round(Number(telemetry?.observedConfirmP95Ms || telemetry?.confirmP95Ms || 0))),
+      daaCongestionPct: clamp(Number(telemetry?.daaCongestionPct || 0), 0, 100),
+      selectedInputCount: selectedEntries.length,
+      truncatedByMaxInputs,
+      provisionalPriorityFeeSompi: priorityFeeSompi,
+      recomputedPriorityFeeSompi: recomputedAdaptiveFeeSompi,
+    };
+    if (recomputedAdaptiveFeeSompi !== priorityFeeSompi) {
+      priorityFeeSompi = recomputedAdaptiveFeeSompi;
+      requiredTargetSompi =
+        BigInt(outputsTotalSompi || 0n) +
+        BigInt(Math.max(0, cfg.estimatedNetworkFeeSompi)) +
+        BigInt(Math.max(0, cfg.extraSafetyBufferSompi)) +
+        BigInt(Math.max(0, priorityFeeSompi)) +
+        BigInt(selectedEntries.length) * BigInt(Math.max(0, cfg.perInputFeeBufferSompi));
+      if (selectedAmountSompi < requiredTargetSompi && selectedEntries.length < ordered.length) {
+        const extended = extendSelectionToTarget({
+          ordered,
+          selectedEntries,
+          selectedAmountSompi,
+          cfg,
+          baseTargetSompi:
+            BigInt(outputsTotalSompi || 0n) +
+            BigInt(Math.max(0, cfg.estimatedNetworkFeeSompi)) +
+            BigInt(Math.max(0, cfg.extraSafetyBufferSompi)) +
+            BigInt(Math.max(0, priorityFeeSompi)),
+          targetSompi: requiredTargetSompi,
+        });
+        selectedAmountSompi = extended.selectedAmountSompi;
+        truncatedByMaxInputs = truncatedByMaxInputs || extended.truncatedByMaxInputs;
+        requiredTargetSompi =
+          BigInt(outputsTotalSompi || 0n) +
+          BigInt(Math.max(0, cfg.estimatedNetworkFeeSompi)) +
+          BigInt(Math.max(0, cfg.extraSafetyBufferSompi)) +
+          BigInt(Math.max(0, priorityFeeSompi)) +
+          BigInt(selectedEntries.length) * BigInt(Math.max(0, cfg.perInputFeeBufferSompi));
+        adaptiveSignals.selectedInputCount = selectedEntries.length;
+        adaptiveSignals.truncatedByMaxInputs = truncatedByMaxInputs;
+      }
+    }
+  }
 
   return {
     selectedEntries,
@@ -151,8 +289,10 @@ export function selectUtxoEntriesForLocalBuild({ entries, outputsTotalSompi, out
     requiredTargetSompi,
     priorityFeeSompi,
     selectionMode: cfg.coinSelection,
+    priorityFeeMode: cfg.priorityFeeMode,
     totalEntries: ordered.length,
     truncatedByMaxInputs,
+    adaptiveSignals,
     config: cfg,
   };
 }
@@ -170,7 +310,17 @@ export function describeLocalTxPolicyConfig(config = readLocalTxPolicyConfig()) 
     priorityFeePerOutputSompi: config.priorityFeePerOutputSompi,
     priorityFeeMinSompi: config.priorityFeeMinSompi,
     priorityFeeMaxSompi: config.priorityFeeMaxSompi,
+    priorityFeeAdaptiveTargetConfirmMs: config.priorityFeeAdaptiveTargetConfirmMs,
+    priorityFeeAdaptiveHighConfirmMs: config.priorityFeeAdaptiveHighConfirmMs,
+    priorityFeeAdaptiveCriticalConfirmMs: config.priorityFeeAdaptiveCriticalConfirmMs,
+    priorityFeeAdaptiveLatencyUpPct: config.priorityFeeAdaptiveLatencyUpPct,
+    priorityFeeAdaptiveLatencyDownPct: config.priorityFeeAdaptiveLatencyDownPct,
+    priorityFeeAdaptivePerInputSompi: config.priorityFeeAdaptivePerInputSompi,
+    priorityFeeAdaptiveFragmentationThresholdInputs: config.priorityFeeAdaptiveFragmentationThresholdInputs,
+    priorityFeeAdaptiveFragmentationBumpSompi: config.priorityFeeAdaptiveFragmentationBumpSompi,
+    priorityFeeAdaptiveTruncationBumpSompi: config.priorityFeeAdaptiveTruncationBumpSompi,
+    priorityFeeAdaptiveDaaCongestionThresholdPct: config.priorityFeeAdaptiveDaaCongestionThresholdPct,
+    priorityFeeAdaptiveDaaCongestionBumpSompi: config.priorityFeeAdaptiveDaaCongestionBumpSompi,
     preferConsolidation: config.preferConsolidation,
   };
 }
-

@@ -30,6 +30,45 @@ It includes:
 - Kaspa resource index: `docs/kaspa/links.md`
 - Master AI prompts: `docs/ai/kaspa-elite-engineer-mode.md`
 
+<details>
+<summary><strong>GitHub DIY Contributor Hacks (Useful Daily)</strong></summary>
+
+### Stable References
+- Press <kbd>y</kbd> on any GitHub file page to create a commit-pinned permalink before sharing line refs.
+- Use line anchors in reviews/docs:
+  - `src/quant/runQuantEngine.ts#L771`
+  - `server/scheduler/index.mjs#L1410`
+
+### Faster Repo Search
+- Examples for GitHub code search:
+  - `path:src/components/dashboard useExecutionQueue`
+  - `path:server/scheduler "leaderFenceToken"`
+  - `path:tests runQuantEngineOverlayCache`
+
+### Review / Release Hygiene
+- Compare two commits directly:
+  - `/compare/<old_sha>...<new_sha>`
+- Open “Blame” on a hotspot before refactors to understand coupling patterns.
+- Attach failing Playwright screenshots/videos from Actions artifacts instead of only pasting text logs.
+
+### Good PR Description Pattern
+```md
+## What changed
+- ...
+
+## Why
+- ...
+
+## Risk / regression surface
+- ...
+
+## Validation
+- npm run ci
+- npm run test:e2e
+```
+
+</details>
+
 ## Project Layout
 - `forgeos-ui.tsx`: stable app export entry (re-exports `src/ForgeOS.tsx`)
 - `src/ForgeOS.tsx`: root shell/topbar + view routing
@@ -85,7 +124,26 @@ Optional threshold assertions (fail harness on latency/error regressions):
 LOAD_PIPELINE_MAX_TOTAL_ERRORS=0 LOAD_PIPELINE_MAX_ERROR_RATE_PCT=1 LOAD_PIPELINE_MAX_P95_SCHEDULER_TICK_MS=750 LOAD_PIPELINE_MAX_P95_RECEIPT_POST_MS=250 LOAD_PIPELINE_MAX_P95_TX_BUILDER_MS=2500 npm run load:pipeline
 ```
 
+Tx-builder policy benchmarking (synthetic UTXO shapes / output counts):
+```bash
+npm run bench:tx-policy
+TX_BUILDER_LOCAL_WASM_PRIORITY_FEE_MODE=adaptive TX_POLICY_BENCH_CONFIRM_P95_MS=42000 TX_POLICY_BENCH_DAA_CONGESTION_PCT=85 npm run bench:tx-policy
+```
+
 Nightly CI load profile uses the same harness with Redis enabled (see `.github/workflows/nightly-load.yml`).
+
+<details>
+<summary><strong>Load Harness SLO Debug Tips (GitHub Actions + Local)</strong></summary>
+
+- Start with a small local profile and thresholds, then move to Redis-backed CI.
+- If `saturation` fails first, increase capacity only after confirming callback duplicate/stale fence counters remain `0`.
+- Keep separate thresholds for:
+  - local smoke
+  - CI Redis smoke
+  - nightly load
+- Prefer trend comparison over a single run when tuning tx-builder p95.
+
+</details>
 
 ## Domain Validation
 ```bash
@@ -367,6 +425,17 @@ Then create GitHub release and attach:
 - non-blocking for now; optimize later with code-splitting
 - GitHub Pages `InvalidDNSError`:
 - use `docs/ops/custom-domain.md` and verify delegation/records with `npm run domain:check`
+
+## Troubleshooting By Symptom (Contributor Fast Map)
+
+| Symptom | Likely Surface | Fastest Check |
+| --- | --- | --- |
+| Wallet adapter breaks only one provider | `src/wallet/WalletAdapter.ts` provider branch | Run wallet adapter tests + inspect provider-specific path |
+| Queue truth badge looks wrong | `useExecutionQueue` receipt lifecycle merge | Check queue item `receipt_*` fields and provenance source |
+| PnL “realized” feels too optimistic | `pnlAttribution` + confirmation policy | Check `VITE_PNL_REALIZED_*` and consistency degradation policy |
+| Scheduler works locally but duplicates under scale | leader lock / callback fence | Run Redis scheduler integration tests and callback-consumer metrics |
+| E2E fails after UI copy/layout change | brittle selectors | Update Playwright selectors to `data-testid` or resilient labels |
+| Build is green but Pages is stale | deploy artifact mismatch | `npm run domain:check` + inspect live `manifest.json` entry hash |
 
 ## Security Notes
 - Private keys are not handled by this app directly.
