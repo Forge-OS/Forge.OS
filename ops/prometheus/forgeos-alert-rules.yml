@@ -12,6 +12,26 @@ groups:
           summary: "Receipt consistency mismatch ratio high"
           description: "Backend vs chain receipt mismatch ratio exceeded 10% for 5m. Investigate truth pipeline and degrade automation."
 
+      - alert: ForgeOSCalibrationDegradedDuration
+        expr: forgeos:callback_consumer:calibration_degraded_active > 0 and forgeos:callback_consumer:calibration_last_report_age_seconds < 180
+        for: 15m
+        labels:
+          severity: warning
+          service: callback-consumer
+        annotations:
+          summary: "Calibration health degraded for a sustained duration"
+          description: "Client-reported calibration/truth degraded state has remained active for 15m. Reduce automation, review Brier/EV/regime metrics, and inspect truth pipeline consistency."
+
+      - alert: ForgeOSCalibrationMetricsStale
+        expr: forgeos:callback_consumer:calibration_last_report_age_seconds > 900
+        for: 10m
+        labels:
+          severity: warning
+          service: callback-consumer
+        annotations:
+          summary: "Calibration telemetry is stale"
+          description: "No fresh calibration metrics have been reported to callback-consumer for >15m. Prometheus/Grafana calibration visibility may be stale."
+
       - alert: ForgeOSSchedulerCallbackErrorsHigh
         expr: forgeos:scheduler:callback_error_ratio5m > 0.05
         for: 5m

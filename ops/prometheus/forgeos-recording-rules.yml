@@ -11,6 +11,12 @@ groups:
           forgeos:callback_consumer:receipt_consistency_mismatch_rate5m
           /
           clamp_min(forgeos:callback_consumer:receipt_consistency_checks_rate5m, 0.000001)
+      - record: forgeos:callback_consumer:calibration_degraded_active
+        expr: max(forgeos_callback_consumer_calibration_degraded_active)
+      - record: forgeos:callback_consumer:calibration_auto_approve_disabled_active
+        expr: max(forgeos_callback_consumer_calibration_auto_approve_disabled)
+      - record: forgeos:callback_consumer:calibration_last_report_age_seconds
+        expr: max(forgeos_callback_consumer_calibration_last_report_age_seconds)
       - record: forgeos:scheduler:callback_error_ratio5m
         expr: |
           rate(forgeos_scheduler_callback_error_total[5m])

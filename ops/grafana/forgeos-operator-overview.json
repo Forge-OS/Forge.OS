@@ -368,7 +368,66 @@
       },
       "id": 9,
       "options": {
-        "content": "Use Forge.OS UI for calibration metrics (`Brier`, `EV calibration error`, `Regime hit-rate`) and truth banners/provenance.\n\nUse this Grafana board for backend truth/control/execution SLOs:\n- receipt consistency mismatch ratio\n- callback duplicate / stale-fence events\n- scheduler saturation\n- tx-builder fee/overfund/fallback efficiency\n- telemetry freshness + stale-drop pressure\n\nTune alert thresholds from production baselines, then lock them in Prometheus rules.",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "title": "Calibration Health / Automation Guardrails",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "forgeos_callback_consumer_calibration_health",
+          "legendFormat": "calibration health",
+          "refId": "A"
+        },
+        {
+          "expr": "forgeos_callback_consumer_calibration_brier_score",
+          "legendFormat": "brier score",
+          "refId": "B"
+        },
+        {
+          "expr": "forgeos_callback_consumer_calibration_ev_calibration_error_pct",
+          "legendFormat": "EV cal error %",
+          "refId": "C"
+        },
+        {
+          "expr": "forgeos_callback_consumer_calibration_regime_hit_rate_pct",
+          "legendFormat": "regime hit rate %",
+          "refId": "D"
+        },
+        {
+          "expr": "forgeos_callback_consumer_calibration_degraded_active",
+          "legendFormat": "degraded active",
+          "refId": "E"
+        },
+        {
+          "expr": "forgeos_callback_consumer_calibration_auto_approve_disabled",
+          "legendFormat": "auto-approve disabled",
+          "refId": "F"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 10,
+      "options": {
+        "content": "Use Forge.OS UI for per-agent calibration details (`Brier`, `EV calibration error`, `Regime hit-rate`, truth banners). This Grafana board is the backend truth/control/execution + calibration telemetry surface. Alerts are defined in `ops/prometheus/forgeos-alert-rules.yml` and should be tuned from production baselines.",
         "mode": "markdown"
       },
       "title": "Calibration / Ops Guidance",
@@ -395,6 +454,6 @@
   "timezone": "",
   "title": "Forge.OS Operator Overview",
   "uid": "forgeos-operator-overview",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }
