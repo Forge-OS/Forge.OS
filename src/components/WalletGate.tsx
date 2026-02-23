@@ -370,7 +370,6 @@ export function WalletGate({onConnect}: any) {
                           </div>
 
                           <div style={{display:"flex", gap:6, marginTop:8, flexWrap:"wrap"}}>
-                            <Badge text={walletMultiOutputLabel(w.capabilities.nativeMultiOutputSend)} color={C.text}/>
                             {w.capabilities.network ? <Badge text="NETWORK AWARE" color={C.ok} /> : null}
                             {w.capabilities.manualTxid ? <Badge text="MANUAL TXID" color={C.warn} /> : null}
                           </div>
