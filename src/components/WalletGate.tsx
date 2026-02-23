@@ -270,6 +270,42 @@ export function WalletGate({onConnect}: any) {
                 </div>
               ))}
             </div>
+            
+            {/* Social Links */}
+            <div style={{display:"flex", gap:12, marginTop:20, justifyContent:"center", flexWrap:"wrap"}}>
+              <a 
+                href="https://x.com/ForgeOSDefi" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                style={{
+                  display:"flex", alignItems:"center", gap:8,
+                  padding:"8px 14px", borderRadius:6,
+                  background:C.s2, border:`1px solid ${C.border}`,
+                  color:C.text, textDecoration:"none",
+                  fontSize:11, fontWeight:600, ...mono,
+                  transition:"all 0.15s"
+                }}
+              >
+                <span style={{fontSize:14}}>𝕏</span>
+                <span>@ForgeOSDefi</span>
+              </a>
+              <a 
+                href="https://github.com/Forge-OS" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                style={{
+                  display:"flex", alignItems:"center", gap:8,
+                  padding:"8px 14px", borderRadius:6,
+                  background:C.s2, border:`1px solid ${C.border}`,
+                  color:C.text, textDecoration:"none",
+                  fontSize:11, fontWeight:600, ...mono,
+                  transition:"all 0.15s"
+                }}
+              >
+                <span style={{fontSize:14}}>⌘</span>
+                <span>GitHub</span>
+              </a>
+            </div>
           </div>
           <div className="forge-gate-points">
             <div className="forge-gate-point">
