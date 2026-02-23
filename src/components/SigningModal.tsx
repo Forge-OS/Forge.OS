@@ -38,29 +38,6 @@ export function SigningModal({tx, wallet, onSign, onReject}: any) {
     <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20}}>
       <Card p={28} style={{maxWidth:480, width:"100%", border:`1px solid ${C.warn}40`}}>
         <div style={{fontSize:14, color:C.warn, fontWeight:700, ...mono, marginBottom:4}}>⚠ TRANSACTION SIGNING REQUIRED</div>
-        <div style={{fontSize:12, color:C.dim, marginBottom:18}}>
-          {wallet?.provider==="kasware"
-            ? "Kasware will prompt you to sign."
-            : wallet?.provider==="kastle"
-              ? "Kastle will prompt you to sign."
-              : wallet?.provider==="ghost"
-                ? "Ghost Wallet will prompt you to approve the provider transaction."
-                : wallet?.provider==="tangem" || wallet?.provider==="onekey"
-                  ? `${String(wallet?.provider || "hardware").toUpperCase()} bridge flow will prompt for txid after external wallet/device broadcast.`
-                : wallet?.provider==="kaspium"
-                  ? "Kaspium deep-link will open; paste txid after broadcast."
-                  : "Confirm this transaction to proceed."}
-        </div>
-        {Array.isArray(tx?.outputs) && tx.outputs.length > 1 && (
-          <div style={{fontSize:11, color:C.accent, marginBottom:12, ...mono}}>
-            Multi-output transaction · {tx.outputs.length} recipients (treasury-combined path)
-          </div>
-        )}
-        {tx?.metaKind === "treasury_fee" && (
-          <div style={{fontSize:12, color:C.warn, marginBottom:12, ...mono}}>
-            Protocol treasury fee payout transfer (separate on-chain micro-transaction)
-          </div>
-        )}
         <Card p={0} style={{marginBottom:16}}>
           {[
             ["Type",      tx.type],

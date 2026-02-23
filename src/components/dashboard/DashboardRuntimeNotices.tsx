@@ -35,14 +35,6 @@ export function DashboardRuntimeNotices(props: Props) {
         </div>
       )}
 
-      {liveExecutionArmed && !liveExecutionReady && (
-        <div style={{background:C.wLow, border:`1px solid ${C.warn}40`, borderRadius:6, padding:"11px 16px", marginBottom:14}}>
-          <span style={{fontSize:12, color:C.warn, ...mono}}>
-            Live execution is armed but not ready. Require DAG live feed and a real wallet provider session (Kasware, Kaspium, Kastle, Ghost, Tangem bridge, or OneKey bridge).
-          </span>
-        </div>
-      )}
-
       {executionGuardrails?.truth?.degraded && (
         <div style={{background:C.dLow, border:`1px solid ${C.danger}40`, borderRadius:6, padding:"11px 16px", marginBottom:14, display:"flex", justifyContent:"space-between", gap:10, flexWrap:"wrap"}}>
           <span style={{fontSize:12, color:C.danger, ...mono}}>

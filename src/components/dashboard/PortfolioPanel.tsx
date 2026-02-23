@@ -40,19 +40,6 @@ export function PortfolioPanel({
         <Btn onClick={onRefresh} size="sm" variant="ghost">REFRESH ALLOCATOR</Btn>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8, marginBottom: 12 }}>
-        {[
-          ["Capital", "Wallet KAS + Allocatable tell you how much the bot can deploy this cycle."],
-          ["Safety", "Concentration + RW Exposure explain portfolio risk concentration across all agents."],
-          ["Automation", "Calibration/truth quality can reduce allocations even when balance is available."],
-        ].map(([title, text]) => (
-          <div key={String(title)} style={{ background: `linear-gradient(180deg, ${C.s2} 0%, ${C.s1} 100%)`, border: `1px solid ${C.border}`, borderRadius: 6, padding: "9px 10px" }}>
-            <div style={{ fontSize: 10, color: C.accent, ...mono, marginBottom: 3 }}>{title}</div>
-            <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.35 }}>{text}</div>
-          </div>
-        ))}
-      </div>
-
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginBottom: 12 }}>
         {summaryCards.map(([label, value, color, hint]) => (
           <Card key={String(label)} p={12} title={hint}>

@@ -31,7 +31,7 @@ export const WStep1 = ({d, set, wallet}: any) => (
           >
             <div style={{display:"flex", justifyContent:"space-between", gap:8, alignItems:"center", marginBottom:4}}>
               <div style={{fontSize:12, color:on?C.accent:C.text, fontWeight:700, ...mono}}>{tpl.name}</div>
-              <Badge text={tpl.class.toUpperCase()} color={tpl.class === "accumulation" ? C.ok : C.warn}/>
+              <Badge text={tpl.tag} color={tpl.tagColor || C.ok}/>
             </div>
             <div style={{fontSize:11, color:C.text, marginBottom:3}}>{tpl.purpose || tpl.desc}</div>
             {tpl.bestFor && <div style={{fontSize:10, color:C.dim}}>Best for: {tpl.bestFor}</div>}
