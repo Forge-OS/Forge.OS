@@ -135,7 +135,7 @@ export function WalletPanel({ agent, wallet, kasData, marketHistory = [], lastDe
         {/* Header strip */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 16px", borderBottom: `1px solid rgba(33,48,67,0.5)`, background: "rgba(8,13,20,0.6)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <img src="/kas-icon.png" alt="KAS" width={16} height={16} style={{ borderRadius: "50%" }} />
+            <img src="/kaspa-logo.png" alt="KAS" width={16} height={16} style={{ borderRadius: "50%" }} />
             <span style={{ fontSize: 11, color: C.accent, fontWeight: 700, ...mono }}>KAS / USDC</span>
             <span style={{ fontSize: 9, color: C.dim, ...mono, background: "rgba(33,48,67,0.5)", padding: "2px 6px", borderRadius: 3 }}>{networkName}</span>
             {daaScore && (
@@ -198,7 +198,7 @@ export function WalletPanel({ agent, wallet, kasData, marketHistory = [], lastDe
         {/* Vault balance */}
         <div style={{ padding: "12px 16px 14px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-            <img src="/kas-icon.png" alt="KAS" width={38} height={38} style={{ borderRadius: "50%", boxShadow: `0 0 16px ${C.accent}40` }} />
+            <img src="/kaspa-logo.png" alt="KAS" width={38} height={38} style={{ borderRadius: "50%", boxShadow: `0 0 16px ${C.accent}40` }} />
             <div>
               <div style={{ fontSize: 9, color: C.dim, ...mono, letterSpacing: "0.12em", marginBottom: 2 }}>VAULT BALANCE</div>
               <div style={{ fontSize: 26, color: C.accent, fontWeight: 700, ...mono, lineHeight: 1 }}>

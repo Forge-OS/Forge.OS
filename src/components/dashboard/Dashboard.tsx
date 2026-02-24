@@ -958,7 +958,7 @@ const [viewportWidth, setViewportWidth] = useState(
             <div style={{padding: "18px 24px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom: `1px solid ${C.border}`, background: `linear-gradient(90deg, ${C.accent}15 0%, transparent 100%)`}}>
               <div style={{display:"flex", alignItems:"center", gap:14}}>
                 <div style={{width:52, height:52, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden"}}>
-                  <img src="/kas-icon.png" alt="KAS" width={56} height={56} style={{objectFit:"cover", marginTop:1}} />
+                  <img src="/kaspa-logo.png" alt="KAS" width={56} height={56} style={{objectFit:"cover", marginTop:1}} />
                 </div>
                 <div style={{display:"flex", flexDirection:"column", justifyContent:"center"}}>
                   <div style={{fontSize:10, color:C.accent, ...mono, marginBottom:1, letterSpacing:"0.15em", fontWeight:700}}>◆ TOTAL PORTFOLIO VALUE</div>

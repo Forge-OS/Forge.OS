@@ -12,7 +12,7 @@ import {
 
 const KasValue = ({ value, color = C.text, fontSize = 14 }: { value: string; color?: string; fontSize?: number }) => (
   <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-    <img src="/kas-icon.png" alt="KAS" width={fontSize + 2} height={fontSize + 2} style={{ borderRadius: "50%" }} />
+    <img src="/kaspa-logo.png" alt="KAS" width={fontSize + 2} height={fontSize + 2} style={{ borderRadius: "50%" }} />
     <span style={{ fontSize, color, fontWeight: 600, ...mono }}>{value}</span>
   </span>
 );
@@ -236,7 +236,7 @@ export function PortfolioPanel({
         {priceUsd > 0 && (
           <div style={{ padding: "8px 16px", borderTop: `1px solid rgba(33,48,67,0.4)`, background: "rgba(8,13,20,0.4)", display: "flex", alignItems: "center", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <img src="/kas-icon.png" alt="KAS" width={14} height={14} style={{ borderRadius: "50%" }} />
+              <img src="/kaspa-logo.png" alt="KAS" width={14} height={14} style={{ borderRadius: "50%" }} />
               <span style={{ fontSize: 10, color: C.accent, fontWeight: 700, ...mono }}>KAS / USDC</span>
               <span style={{ fontSize: 12, color: C.text, fontWeight: 700, ...mono }}>${priceUsd.toFixed(4)}</span>
             </div>
