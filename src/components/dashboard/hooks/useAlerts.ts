@@ -69,7 +69,7 @@ export function useAlerts(params: UseAlertsParams) {
       type: "system",
       key: `test_alert:${String(agentId || agentName || "agent")}`,
       title: `${agentName || "Agent"} test alert`,
-      message: `Test alert from Forge.OS (${DEFAULT_NETWORK}) · strategy=${String(activeStrategyLabel || "Custom")}`,
+      message: `Test alert from Forge-OS (${DEFAULT_NETWORK}) · strategy=${String(activeStrategyLabel || "Custom")}`,
       severity: "info",
       meta: { network: DEFAULT_NETWORK, strategy: activeStrategyLabel },
     });

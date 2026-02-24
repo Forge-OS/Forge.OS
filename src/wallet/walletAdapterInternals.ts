@@ -304,12 +304,12 @@ export async function buildKastleRawTxJson(
   const promptBody = [
     "KASTLE raw multi-output txJson required",
     "",
-    "Forge.OS can call kastle.signAndBroadcastTx(networkId, txJson), but no automatic txJson builder is currently available in this runtime.",
+    "Forge-OS can call kastle.signAndBroadcastTx(networkId, txJson), but no automatic txJson builder is currently available in this runtime.",
     ...(backendError ? [`Builder error: ${String(backendError?.message || backendError).slice(0, 180)}`, ""] : []),
     "Paste a prebuilt txJson (serializeToSafeJSON) matching the outputs below.",
     "",
     `Network: ${kastleNetworkIdForCurrentProfile()}`,
-    `Purpose: ${String(purpose || "").slice(0, 120) || "Forge.OS multi-output"}`,
+    `Purpose: ${String(purpose || "").slice(0, 120) || "Forge-OS multi-output"}`,
     "Outputs:",
     ...normalizedOutputs.map((o, i) => `  ${i + 1}. ${o.to}  ${Number(o.amount_kas).toFixed(8)} KAS`),
   ].join("\n");

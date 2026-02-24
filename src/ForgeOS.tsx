@@ -9,21 +9,42 @@ import { Btn } from "./components/ui";
 import { KASPA_NETWORK_PROFILES } from "./kaspa/network";
 import { ForgeAtmosphere } from "./components/chrome/ForgeAtmosphere";
 
+const FORGE_AGENTS_KEY = "forgeos.session.agents.v2";
+const FORGE_ACTIVE_KEY = "forgeos.session.activeAgent.v2";
+
 export default function ForgeOS() {
   const [wallet, setWallet] = useState(null as any);
-  const [view, setView] = useState("create");
-  const [agents, setAgents] = useState([] as any[]);
-  const [activeAgentId, setActiveAgentId] = useState("");
+  const [agents, setAgents] = useState<any[]>(() => {
+    try {
+      if (typeof window === "undefined") return [];
+      const raw = window.localStorage.getItem(FORGE_AGENTS_KEY);
+      if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) return p.slice(0, 24); }
+    } catch {}
+    return [];
+  });
+  const [activeAgentId, setActiveAgentId] = useState<string>(() => {
+    try {
+      if (typeof window === "undefined") return "";
+      return window.localStorage.getItem(FORGE_ACTIVE_KEY) || "";
+    } catch { return ""; }
+  });
+  const [view, setView] = useState<string>(() => {
+    try {
+      if (typeof window === "undefined") return "create";
+      const raw = window.localStorage.getItem(FORGE_AGENTS_KEY);
+      if (raw) { const p = JSON.parse(raw); if (Array.isArray(p) && p.length > 0) return "dashboard"; }
+    } catch {}
+    return "create";
+  });
   const [editingAgent, setEditingAgent] = useState<any>(null);
   const [switchingNetwork, setSwitchingNetwork] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1280
   );
 
-  const handleConnect = (session: any) => { 
-    setWallet(session); 
-    // Go to dashboard after connecting, not directly to wizard
-    setView("dashboard");
+  const handleConnect = (session: any) => {
+    setWallet(session);
+    setView(agents.length > 0 ? "dashboard" : "create");
   };
   const handleDeploy = (a: any) => {
     setAgents((prev: any[]) => {
@@ -74,6 +95,14 @@ export default function ForgeOS() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(FORGE_AGENTS_KEY, JSON.stringify(agents)); } catch {}
+  }, [agents]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(FORGE_ACTIVE_KEY, activeAgentId); } catch {}
+  }, [activeAgentId]);
 
   if(!wallet) return <WalletGate onConnect={handleConnect}/>;
 
@@ -150,7 +179,7 @@ export default function ForgeOS() {
             <div style={{width:6, height:6, borderRadius:"50%", background:wallet?.provider==="demo"?C.warn:C.ok}}/>
             <span style={{fontSize:10, color:C.dim, letterSpacing:"0.08em", ...mono}}>{shortAddr(wallet?.address)}</span>
           </div>
-          <Btn onClick={()=>{setWallet(null); setAgents([]); setActiveAgentId(""); setView("create");}} variant="ghost" size="sm">DISCONNECT</Btn>
+          <Btn onClick={()=>setWallet(null)} variant="ghost" size="sm">DISCONNECT</Btn>
         </div>
       </div>
       {view === "create" ? (

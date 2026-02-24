@@ -893,7 +893,7 @@ const [viewportWidth, setViewportWidth] = useState(
       {/* Header */}
       <div style={{display:"flex", flexDirection:isMobile ? "column" : "row", justifyContent:"space-between", alignItems:isMobile ? "stretch" : "flex-start", marginBottom:16, gap:isMobile ? 10 : 0}}>
         <div>
-          <div style={{fontSize:11, color:C.dim, letterSpacing:"0.1em", ...mono, marginBottom:2}}>FORGE.OS / AGENT / {agent.name}</div>
+          <div style={{fontSize:11, color:C.dim, letterSpacing:"0.1em", ...mono, marginBottom:2}}>FORGE-OS / AGENT / {agent.name}</div>
           <div style={{fontSize:18, color:C.text, fontWeight:700, ...mono}}>{agent.name}</div>
         </div>
         <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", justifyContent:isMobile ? "flex-start" : "flex-end"}}>
@@ -939,7 +939,7 @@ const [viewportWidth, setViewportWidth] = useState(
       {tab==="overview" && (
         <div>
           {/* DeFi Header - Wallet Balance & Key Metrics */}
-          <Card p={0} style={{marginBottom:12, background: `linear-gradient(135deg, ${C.s2} 0%, ${C.s1} 100%)`, border: `1px solid ${C.accent}40`, boxShadow: `0 4px 24px ${C.accent}15`}}>
+          <Card p={0} style={{marginBottom:12, background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, border: `1px solid ${C.accent}40`, boxShadow: `0 4px 24px ${C.accent}15`}}>
             <div style={{padding: "18px 24px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom: `1px solid ${C.border}`, background: `linear-gradient(90deg, ${C.accent}15 0%, transparent 100%)`}}>
               <div style={{display:"flex", alignItems:"center", gap:14}}>
                 <div style={{width:52, height:52, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden"}}>
@@ -1071,7 +1071,7 @@ const [viewportWidth, setViewportWidth] = useState(
                 {/* Primary Metrics Row - Enhanced */}
                 <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap:12, marginBottom:16}}>
                   {/* Decision Source with Icon */}
-                  <div style={{background: `linear-gradient(135deg, ${C.s2} 0%, ${C.s1} 100%)`, borderRadius:10, padding:14, border:`1px solid ${lastDecisionSource === "hybrid-ai" ? C.accent + '40' : C.border}`}}>
+                  <div style={{background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, borderRadius:10, padding:14, border:`1px solid ${lastDecisionSource === "hybrid-ai" ? C.accent + '40' : C.border}`}}>
                     <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:8}}>
                       <span style={{fontSize:16}}>{lastDecisionSource === "hybrid-ai" ? "🧠" : lastDecisionSource === "ai" ? "🤖" : "📊"}</span>
                       <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.1em"}}>DECISION SOURCE</div>
@@ -1083,7 +1083,7 @@ const [viewportWidth, setViewportWidth] = useState(
                   </div>
                   
                   {/* Confidence Score - Circular Gauge Style */}
-                  <div style={{background: `linear-gradient(135deg, ${C.s2} 0%, ${C.s1} 100%)`, borderRadius:10, padding:14, border:`1px solid ${lastDecision.confidence_score >= 0.8 ? C.ok + '40' : lastDecision.confidence_score >= 0.5 ? C.warn + '40' : C.danger + '40'}`}}>
+                  <div style={{background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, borderRadius:10, padding:14, border:`1px solid ${lastDecision.confidence_score >= 0.8 ? C.ok + '40' : lastDecision.confidence_score >= 0.5 ? C.warn + '40' : C.danger + '40'}`}}>
                     <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8}}>
                       <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.1em"}}>CONFIDENCE</div>
                       <span style={{fontSize:14}}>{lastDecision.confidence_score >= 0.8 ? "🟢" : lastDecision.confidence_score >= 0.5 ? "🟡" : "🔴"}</span>
@@ -1100,7 +1100,7 @@ const [viewportWidth, setViewportWidth] = useState(
                   </div>
                   
                   {/* Kelly Sizing */}
-                  <div style={{background: `linear-gradient(135deg, ${C.s2} 0%, ${C.s1} 100%)`, borderRadius:10, padding:14, border:`1px solid ${C.accent}40`}}>
+                  <div style={{background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, borderRadius:10, padding:14, border:`1px solid ${C.accent}40`}}>
                     <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8}}>
                       <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.1em"}}>KELLY SIZING</div>
                       <span style={{fontSize:14}}>📈</span>
@@ -1115,7 +1115,7 @@ const [viewportWidth, setViewportWidth] = useState(
                   </div>
                   
                   {/* Monte Carlo Win */}
-                  <div style={{background: `linear-gradient(135deg, ${C.s2} 0%, ${C.s1} 100%)`, borderRadius:10, padding:14, border:`1px solid ${C.ok}40`}}>
+                  <div style={{background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, borderRadius:10, padding:14, border:`1px solid ${C.ok}40`}}>
                     <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8}}>
                       <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.1em"}}>MONTE CARLO</div>
                       <span style={{fontSize:14}}>🎯</span>
@@ -1132,7 +1132,7 @@ const [viewportWidth, setViewportWidth] = useState(
                 
                 {/* Quant Metrics Row - More Detail */}
                 {lastDecision.quant_metrics && (
-                  <div style={{background: C.s2, borderRadius:10, padding:16, marginBottom:16, border:`1px solid ${C.border}`}}>
+                  <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:16, marginBottom:16, border:`1px solid ${C.border}`}}>
                     <div style={{fontSize:11, color:C.accent, fontWeight:700, ...mono, marginBottom:12, letterSpacing:"0.1em"}}>📊 QUANT CORE METRICS</div>
                     <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap:12}}>
                       <div>
@@ -1163,7 +1163,7 @@ const [viewportWidth, setViewportWidth] = useState(
                 
                 {/* Risk & Execution Row */}
                 <div style={{display:"flex", gap:12, marginBottom:16, flexWrap:"wrap"}}>
-                  <div style={{flex: "1 1 200px", background: C.s2, borderRadius:10, padding:14, border:`1px solid ${lastDecision.risk_score <= 0.4 ? C.ok + '40' : lastDecision.risk_score <= 0.7 ? C.warn + '40' : C.danger + '40'}`}}>
+                  <div style={{flex: "1 1 200px", background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${lastDecision.risk_score <= 0.4 ? C.ok + '40' : lastDecision.risk_score <= 0.7 ? C.warn + '40' : C.danger + '40'}`}}>
                     <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
                       <div style={{fontSize:10, color:C.dim, ...mono}}>RISK SCORE</div>
                       <span style={{fontSize:14}}>{lastDecision.risk_score <= 0.4 ? "🛡️" : lastDecision.risk_score <= 0.7 ? "⚠️" : "🚨"}</span>
@@ -1176,7 +1176,7 @@ const [viewportWidth, setViewportWidth] = useState(
                     </div>
                   </div>
                   
-                  <div style={{flex: "1 1 200px", background: C.s2, borderRadius:10, padding:14, border:`1px solid ${C.accent}40`}}>
+                  <div style={{flex: "1 1 200px", background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.accent}40`}}>
                     <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
                       <div style={{fontSize:10, color:C.dim, ...mono}}>CAPITAL ALLOCATION</div>
                       <span style={{fontSize:14}}>💰</span>
@@ -1189,7 +1189,7 @@ const [viewportWidth, setViewportWidth] = useState(
                     </div>
                   </div>
                   
-                  <div style={{flex: "1 1 200px", background: C.s2, borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
+                  <div style={{flex: "1 1 200px", background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
                     <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
                       <div style={{fontSize:10, color:C.dim, ...mono}}>NETWORK STATUS</div>
                       <span style={{fontSize:14}}>{liveConnected ? "🟢" : "🔴"}</span>
@@ -1336,7 +1336,7 @@ const [viewportWidth, setViewportWidth] = useState(
           )}
           
           {/* Performance Tracker - High Frequency Trading Metrics */}
-          <Card p={0} style={{marginBottom:12, background: `linear-gradient(135deg, ${C.s2} 0%, ${C.s1} 100%)`, border: `1px solid ${C.ok}30`, boxShadow: `0 4px 20px ${C.ok}10`}}>
+          <Card p={0} style={{marginBottom:12, background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, border: `1px solid ${C.ok}30`, boxShadow: `0 4px 20px ${C.ok}10`}}>
             {/* Header */}
             <div style={{padding: "16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom: `1px solid ${C.border}`, background: `linear-gradient(90deg, ${C.ok}10 0%, transparent 100%)`}}>
               <div style={{display:"flex", alignItems:"center", gap:10}}>
@@ -1370,7 +1370,7 @@ const [viewportWidth, setViewportWidth] = useState(
                 </div>
                 
                 {/* Trade Count */}
-                <div style={{background: C.s2, borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
+                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
                   <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
                     <div style={{fontSize:10, color:C.dim, ...mono}}>TRADES</div>
                     <span style={{fontSize:14}}>🔢</span>
@@ -1382,7 +1382,7 @@ const [viewportWidth, setViewportWidth] = useState(
                 </div>
                 
                 {/* Win Rate */}
-                <div style={{background: C.s2, borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
+                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
                   <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
                     <div style={{fontSize:10, color:C.dim, ...mono}}>WIN RATE</div>
                     <span style={{fontSize:14}}>🎯</span>
@@ -1394,7 +1394,7 @@ const [viewportWidth, setViewportWidth] = useState(
                 </div>
                 
                 {/* Avg Profit */}
-                <div style={{background: C.s2, borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
+                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
                   <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
                     <div style={{fontSize:10, color:C.dim, ...mono}}>AVG PROFIT</div>
                     <span style={{fontSize:14}}>💎</span>
@@ -1406,7 +1406,7 @@ const [viewportWidth, setViewportWidth] = useState(
                 </div>
                 
                 {/* Best Trade */}
-                <div style={{background: C.s2, borderRadius:10, padding:14, border:`1px solid ${C.ok}40`}}>
+                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.ok}40`}}>
                   <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
                     <div style={{fontSize:10, color:C.dim, ...mono}}>BEST TRADE</div>
                     <span style={{fontSize:14}}>🏆</span>
@@ -1421,14 +1421,14 @@ const [viewportWidth, setViewportWidth] = useState(
               {/* Secondary Stats */}
               <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap:12, marginBottom:16}}>
                 {/* Total Fees Paid */}
-                <div style={{background: C.s2, borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
+                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
                   <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>TOTAL FEES</div>
                   <div style={{fontSize:18, color:C.warn, fontWeight:700, ...mono}}>-{totalFees.toFixed(4)}</div>
                   <div style={{fontSize:10, color:C.dim, ...mono}}>KAS paid</div>
                 </div>
                 
                 {/* Net Profit */}
-                <div style={{background: C.s2, borderRadius:10, padding:14, border:`1px solid ${(pnlAttribution?.netPnlKas - totalFees) > 0 ? C.ok : C.danger}40`}}>
+                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${(pnlAttribution?.netPnlKas - totalFees) > 0 ? C.ok : C.danger}40`}}>
                   <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>NET PROFIT</div>
                   <div style={{fontSize:18, color:(pnlAttribution?.netPnlKas - totalFees) > 0 ? C.ok : C.danger, fontWeight:700, ...mono}}>
                     {(pnlAttribution?.netPnlKas - totalFees) > 0 ? "+" : ""}{(pnlAttribution?.netPnlKas - totalFees || 0).toFixed(4)}
@@ -1437,14 +1437,14 @@ const [viewportWidth, setViewportWidth] = useState(
                 </div>
                 
                 {/* Decisions Made */}
-                <div style={{background: C.s2, borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
+                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
                   <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>DECISIONS</div>
                   <div style={{fontSize:18, color:C.text, fontWeight:700, ...mono}}>{decisions.length}</div>
                   <div style={{fontSize:10, color:C.dim, ...mono}}>AI signals</div>
                 </div>
                 
                 {/* Accuracy */}
-                <div style={{background: C.s2, borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
+                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
                   <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>ACCURACY</div>
                   <div style={{fontSize:18, color:C.accent, fontWeight:700, ...mono}}>
                     {decisions.length > 0 ? Math.round((decisions.filter((d:any)=>d?.dec?.action === "ACCUMULATE" || d?.dec?.action === "HOLD").length / decisions.length) * 100) : 0}%
@@ -1506,6 +1506,8 @@ const [viewportWidth, setViewportWidth] = useState(
             agents={allAgents}
             activeAgentId={activeAgentId || agent?.agentId}
             walletKas={kasData?.walletKas || 0}
+            kasPriceUsd={kasData?.priceUsd || 0}
+            lastDecision={decisions[0] || null}
             summary={portfolioSummary}
             config={portfolioConfig}
             onConfigPatch={patchPortfolioConfig}
@@ -1557,7 +1559,7 @@ const [viewportWidth, setViewportWidth] = useState(
           receiptConsistencyMetrics={receiptConsistencyMetrics}
         />
       )}
-      {tab==="wallet" && <WalletPanel agent={agent} wallet={wallet} kasData={kasData}/>}
+      {tab==="wallet" && <WalletPanel agent={agent} wallet={wallet} kasData={kasData} marketHistory={marketHistory} lastDecision={decisions[0] || null}/>}
 
       {/* ── LOG ── */}
       {tab==="log" && (

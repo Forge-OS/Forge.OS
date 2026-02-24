@@ -5,7 +5,7 @@ This runbook is for GitHub Pages custom domain cutover and incident response.
 ## Target State
 - Root domain: `forge-os.xyz`
 - Alternate name: `www.forge-os.xyz`
-- GitHub Pages project URL remains available: `https://gryszzz.github.io/Forge.OS/`
+- GitHub Pages project URL remains available: `https://gryszzz.github.io/Forge-OS/`
 
 ## DNS Records (Name.com)
 Set these records:

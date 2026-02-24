@@ -302,9 +302,9 @@ Runtime override:
 - `signAndBroadcastTx(networkId, txJson)` via adapter capability detection
 - txJson can come from `VITE_KASTLE_TX_BUILDER_URL` (recommended), an injected builder bridge (`window.__FORGEOS_KASTLE_BUILD_TX_JSON__`), or manual operator paste prompt
 - Ghost Wallet send path:
-- provider `transact(outputs, fee?, inputs?)` bridge call (Forge.OS uses multi-output when treasury-combined send is supported/eligible)
+- provider `transact(outputs, fee?, inputs?)` bridge call (Forge-OS uses multi-output when treasury-combined send is supported/eligible)
 - Tangem / OneKey send path:
-- external sign/broadcast in hardware app/device with manual txid handoff back into Forge.OS
+- external sign/broadcast in hardware app/device with manual txid handoff back into Forge-OS
 - Kaspium connect path:
 - user enters address matching configured network prefixes
 - adapter stores session with provider `kaspium`
@@ -385,7 +385,7 @@ Behavior:
 - Publishes artifact with `actions/deploy-pages`.
 
 Expected URL for current user/repo:
-- `https://gryszzz.github.io/Forge.OS/`
+- `https://gryszzz.github.io/Forge-OS/`
 
 ## Go-Live Checklist
 1. Set GitHub Actions repository variables for all `VITE_KAS_*` values.

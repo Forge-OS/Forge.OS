@@ -14,8 +14,8 @@
     "file": "assets/react-vendor-D4yGots9.js",
     "name": "react-vendor"
   },
-  "_recharts-vendor-ckhLjPM5.js": {
-    "file": "assets/recharts-vendor-ckhLjPM5.js",
+  "_recharts-vendor-DS4t48dv.js": {
+    "file": "assets/recharts-vendor-DS4t48dv.js",
     "name": "recharts-vendor",
     "imports": [
       "_react-vendor-D4yGots9.js",
@@ -24,15 +24,19 @@
     ]
   },
   "index.html": {
-    "file": "assets/index-DmKboTgU.js",
+    "file": "assets/index-O0c9DMdQ.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
     "imports": [
-      "_react-vendor-D4yGots9.js"
+      "_react-vendor-D4yGots9.js",
+      "_recharts-vendor-DS4t48dv.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
     ],
     "dynamicImports": [
       "src/components/dashboard/PerfChart.tsx",
+      "src/components/dashboard/AgentOverviewPanel.tsx",
       "src/components/dashboard/IntelligencePanel.tsx",
       "src/components/dashboard/PortfolioPanel.tsx",
       "src/components/dashboard/PnlAttributionPanel.tsx",
@@ -50,67 +54,95 @@
     "file": "assets/kastle-Td3Ch6zZ.svg",
     "src": "src/assets/wallets/kastle.svg"
   },
+  "src/components/dashboard/AgentOverviewPanel.tsx": {
+    "file": "assets/AgentOverviewPanel-CD3cVz0E.js",
+    "name": "AgentOverviewPanel",
+    "src": "src/components/dashboard/AgentOverviewPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-D4yGots9.js",
+      "index.html",
+      "_recharts-vendor-DS4t48dv.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
+    ]
+  },
   "src/components/dashboard/AlertsPanel.tsx": {
-    "file": "assets/AlertsPanel-b6IfzcUZ.js",
+    "file": "assets/AlertsPanel-DLoS_IWW.js",
     "name": "AlertsPanel",
     "src": "src/components/dashboard/AlertsPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
-      "index.html"
+      "index.html",
+      "_recharts-vendor-DS4t48dv.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
     ]
   },
   "src/components/dashboard/IntelligencePanel.tsx": {
-    "file": "assets/IntelligencePanel-C2HzWDF-.js",
+    "file": "assets/IntelligencePanel-Cg4u5O42.js",
     "name": "IntelligencePanel",
     "src": "src/components/dashboard/IntelligencePanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
-      "index.html"
+      "index.html",
+      "_recharts-vendor-DS4t48dv.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
     ]
   },
   "src/components/dashboard/PerfChart.tsx": {
-    "file": "assets/PerfChart-B6AT0NJa.js",
+    "file": "assets/PerfChart-_O7VsHuJ.js",
     "name": "PerfChart",
     "src": "src/components/dashboard/PerfChart.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
       "index.html",
-      "_recharts-vendor-ckhLjPM5.js",
+      "_recharts-vendor-DS4t48dv.js",
       "_d3-render-vendor-RkpHolfk.js",
       "_d3-scale-vendor-BynLqmir.js"
     ]
   },
   "src/components/dashboard/PnlAttributionPanel.tsx": {
-    "file": "assets/PnlAttributionPanel-CGLkoO1G.js",
+    "file": "assets/PnlAttributionPanel-DjNmkjSX.js",
     "name": "PnlAttributionPanel",
     "src": "src/components/dashboard/PnlAttributionPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
-      "index.html"
+      "index.html",
+      "_recharts-vendor-DS4t48dv.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
     ]
   },
   "src/components/dashboard/PortfolioPanel.tsx": {
-    "file": "assets/PortfolioPanel-CICvOWNJ.js",
+    "file": "assets/PortfolioPanel-BrdGewUX.js",
     "name": "PortfolioPanel",
     "src": "src/components/dashboard/PortfolioPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
-      "index.html"
+      "index.html",
+      "_recharts-vendor-DS4t48dv.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
     ]
   },
   "src/components/dashboard/QuantAnalyticsPanel.tsx": {
-    "file": "assets/QuantAnalyticsPanel-D4VQFdZj.js",
+    "file": "assets/QuantAnalyticsPanel-CJEGaaaC.js",
     "name": "QuantAnalyticsPanel",
     "src": "src/components/dashboard/QuantAnalyticsPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
-      "index.html"
+      "index.html",
+      "_recharts-vendor-DS4t48dv.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
     ]
   }
 }

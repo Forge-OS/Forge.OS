@@ -1,9 +1,9 @@
-# Forge.OS Tx Builder (Kastle Raw-Tx Builder Starter)
+# Forge-OS Tx Builder (Kastle Raw-Tx Builder Starter)
 
 Backend tx-builder starter for automatic `Kastle` `signAndBroadcastTx(networkId, txJson)` flows.
 
 What it does:
-- Accepts normalized Forge.OS tx-build requests for Kastle multi-output sends
+- Accepts normalized Forge-OS tx-build requests for Kastle multi-output sends
 - Returns `{ txJson }` for the frontend to pass into `kastle.signAndBroadcastTx(...)`
 - Supports local and bridged integration modes:
   - local `kaspa-wasm` UTXO constructor (`TX_BUILDER_LOCAL_WASM_ENABLED=true`)
@@ -80,7 +80,7 @@ export TX_BUILDER_UPSTREAM_TOKEN=upstream-secret
 node server/tx-builder/index.mjs
 ```
 
-## Forge.OS Frontend Config
+## Forge-OS Frontend Config
 Set in `.env` for the web app:
 - `VITE_KASTLE_RAW_TX_ENABLED=true`
 - `VITE_KASTLE_TX_BUILDER_URL=http://127.0.0.1:8795/v1/kastle/build-tx-json`
@@ -118,7 +118,7 @@ Optional:
 - `TX_BUILDER_ALLOW_MANUAL_TXJSON` (debug/manual mode only)
 
 ## Command Hook Contract
-If `TX_BUILDER_COMMAND` is set, Forge.OS writes the request JSON to the command's stdin.
+If `TX_BUILDER_COMMAND` is set, Forge-OS writes the request JSON to the command's stdin.
 
 The command must write JSON to stdout:
 ```json

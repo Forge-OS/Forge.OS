@@ -255,9 +255,19 @@ export function QuantAnalyticsPanel({ decisions = [], queue = [] }: { decisions?
     return { label: "NEEDS WORK", color: C.danger };
   };
 
+  // Lower-is-better variant (for drawdown, VaR, etc.)
+  const getRatingLower = (value: number, thresholds: { excellent: number; good: number; fair: number }) => {
+    if (value <= thresholds.excellent) return { label: "EXCELLENT", color: C.ok };
+    if (value <= thresholds.good) return { label: "GOOD", color: C.accent };
+    if (value <= thresholds.fair) return { label: "FAIR", color: C.warn };
+    return { label: "NEEDS WORK", color: C.danger };
+  };
+
   const performanceRating = getRating(metrics.sharpeRatio, { excellent: 2.0, good: 1.0, fair: 0.5 });
   const winRateRating = getRating(metrics.winRate, { excellent: 60, good: 55, fair: 50 });
-  const riskRating = getRating(metrics.maxDrawdown, { excellent: 10, good: 15, fair: 25 });
+  const riskRating = metrics.totalDecisions === 0
+    ? { label: "NO DATA", color: C.dim }
+    : getRatingLower(metrics.maxDrawdown, { excellent: 10, good: 15, fair: 25 });
 
   return (
     <div>
@@ -271,43 +281,37 @@ export function QuantAnalyticsPanel({ decisions = [], queue = [] }: { decisions?
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
-        <Card p={16} style={{ border: `1px solid ${performanceRating.color}40` }}>
+        <Card p={16} style={{ border: `1px solid ${performanceRating.color}40`, background: `linear-gradient(135deg, ${performanceRating.color}14 0%, ${C.s1} 100%)` }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <Label>Performance Score</Label>
             <Badge text={performanceRating.label} color={performanceRating.color} />
           </div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: performanceRating.color, ...mono }}>
+          <div style={{ fontSize: 32, fontWeight: 700, color: performanceRating.color, ...mono, letterSpacing: "-0.02em" }}>
             {metrics.totalDecisions > 0 ? metrics.sharpeRatio.toFixed(2) : "—"}
           </div>
-          <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 4 }}>
-            Sharpe Ratio (target: 2.0+)
-          </div>
+          <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 4 }}>Sharpe Ratio · target 2.0+</div>
         </Card>
 
-        <Card p={16} style={{ border: `1px solid ${winRateRating.color}40` }}>
+        <Card p={16} style={{ border: `1px solid ${winRateRating.color}40`, background: `linear-gradient(135deg, ${winRateRating.color}14 0%, ${C.s1} 100%)` }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <Label>Win Rate</Label>
             <Badge text={winRateRating.label} color={winRateRating.color} />
           </div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: winRateRating.color, ...mono }}>
+          <div style={{ fontSize: 32, fontWeight: 700, color: winRateRating.color, ...mono, letterSpacing: "-0.02em" }}>
             {metrics.totalDecisions > 0 ? `${metrics.winRate.toFixed(1)}%` : "—"}
           </div>
-          <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 4 }}>
-            Target: 55%+
-          </div>
+          <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 4 }}>Decision accuracy · target 55%+</div>
         </Card>
 
-        <Card p={16} style={{ border: `1px solid ${riskRating.color}40` }}>
+        <Card p={16} style={{ border: `1px solid ${riskRating.color}40`, background: `linear-gradient(135deg, ${riskRating.color}14 0%, ${C.s1} 100%)` }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <Label>Risk Score</Label>
+            <Label>Max Drawdown</Label>
             <Badge text={riskRating.label} color={riskRating.color} />
           </div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: riskRating.color, ...mono }}>
+          <div style={{ fontSize: 32, fontWeight: 700, color: riskRating.color, ...mono, letterSpacing: "-0.02em" }}>
             {metrics.totalDecisions > 0 ? `-${metrics.maxDrawdown.toFixed(1)}%` : "—"}
           </div>
-          <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 4 }}>
-            Max Drawdown (target: 15%-)
-          </div>
+          <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 4 }}>Peak-to-trough · target &lt;15%</div>
         </Card>
       </div>
 
@@ -331,7 +335,7 @@ export function QuantAnalyticsPanel({ decisions = [], queue = [] }: { decisions?
             ["VaR (95%)", metrics.var95 > 0 ? `-${metrics.var95.toFixed(2)}%` : "—", C.warn],
             ["CVaR (95%)", metrics.cvar95 > 0 ? `-${metrics.cvar95.toFixed(2)}%` : "—", C.danger],
           ].map(([label, value, color]) => (
-            <div key={String(label)} style={{ background: C.s2, borderRadius: 6, padding: "10px 12px" }}>
+            <div key={String(label)} style={{ background: `linear-gradient(135deg, ${color as string}08 0%, ${C.s2} 100%)`, border: `1px solid ${color as string}18`, borderRadius: 6, padding: "10px 12px" }}>
               <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>{String(label)}</div>
               <div style={{ fontSize: 14, color: color as string, fontWeight: 700, ...mono }}>{String(value)}</div>
             </div>
@@ -355,7 +359,7 @@ export function QuantAnalyticsPanel({ decisions = [], queue = [] }: { decisions?
               ["24h Change", `${indicators.priceChange24h >= 0 ? "+" : ""}${indicators.priceChange24h}%`, 
                indicators.priceChange24h > 0 ? C.ok : C.danger, indicators.priceChange24h > 0 ? "GAIN" : "LOSS"],
             ].map(([label, value, color, note]) => (
-              <div key={String(label)} style={{ background: C.s2, borderRadius: 6, padding: "12px 14px" }}>
+              <div key={String(label)} style={{ background: `linear-gradient(135deg, ${color as string}10 0%, ${C.s2} 100%)`, border: `1px solid ${color as string}20`, borderRadius: 6, padding: "12px 14px" }}>
                 <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>{String(label)}</div>
                 <div style={{ fontSize: 16, color: color as string, fontWeight: 700, ...mono }}>{String(value)}</div>
                 {note && <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 2 }}>{String(note)}</div>}
@@ -413,14 +417,47 @@ export function QuantAnalyticsPanel({ decisions = [], queue = [] }: { decisions?
       )}
 
       <Card p={18}>
-        <Label style={{ marginBottom: 12 }}>Optimization Tips</Label>
+        <Label style={{ marginBottom: 12 }}>Agent Insights</Label>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {metrics.sharpeRatio < 2 && <div style={{ fontSize: 12, color: C.warn, ...mono }}>* Improve Sharpe Ratio by reducing position sizes during high volatility</div>}
-          {metrics.winRate < 55 && <div style={{ fontSize: 12, color: C.warn, ...mono }}>* Win rate below 55%: Consider longer holding periods or wait for stronger momentum</div>}
-          {metrics.maxDrawdown > 15 && <div style={{ fontSize: 12, color: C.danger, ...mono }}>* High drawdown: Implement tighter stop losses or reduce Kelly fraction</div>}
-          {metrics.profitFactor < 1.5 && <div style={{ fontSize: 12, color: C.warn, ...mono }}>* Profit factor below 1.5: Review risk/reward ratios on losing trades</div>}
-          {metrics.totalDecisions < 30 && <div style={{ fontSize: 12, color: C.dim, ...mono }}>* Need more decisions for reliable metrics - keep the agent running</div>}
-          {metrics.sharpeRatio >= 2 && metrics.winRate >= 55 && metrics.maxDrawdown < 15 && <div style={{ fontSize: 12, color: C.ok, ...mono }}>* Excellent performance! Consider slightly increasing position sizes</div>}
+          {metrics.totalDecisions === 0 && (
+            <div style={{ fontSize: 12, color: C.dim, ...mono, textAlign: "center", padding: "16px 0" }}>Run cycles to generate performance insights</div>
+          )}
+          {metrics.sharpeRatio < 2 && metrics.totalDecisions > 0 && (
+            <div style={{ background: `${C.warn}10`, border: `1px solid ${C.warn}30`, borderRadius: 6, padding: "10px 14px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 11, color: C.warn, flexShrink: 0 }}>⚠</span>
+              <span style={{ fontSize: 12, color: C.warn }}>Sharpe Ratio below target — reduce position sizes during high-volatility periods</span>
+            </div>
+          )}
+          {metrics.winRate < 55 && metrics.totalDecisions > 0 && (
+            <div style={{ background: `${C.warn}10`, border: `1px solid ${C.warn}30`, borderRadius: 6, padding: "10px 14px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 11, color: C.warn, flexShrink: 0 }}>⚠</span>
+              <span style={{ fontSize: 12, color: C.warn }}>Win rate below 55% — consider longer holding periods or wait for stronger momentum signals</span>
+            </div>
+          )}
+          {metrics.maxDrawdown > 15 && metrics.totalDecisions > 0 && (
+            <div style={{ background: `${C.danger}10`, border: `1px solid ${C.danger}30`, borderRadius: 6, padding: "10px 14px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 11, color: C.danger, flexShrink: 0 }}>✕</span>
+              <span style={{ fontSize: 12, color: C.danger }}>High drawdown detected — tighten stop losses or reduce Kelly fraction</span>
+            </div>
+          )}
+          {metrics.profitFactor < 1.5 && metrics.totalDecisions > 0 && (
+            <div style={{ background: `${C.warn}10`, border: `1px solid ${C.warn}30`, borderRadius: 6, padding: "10px 14px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 11, color: C.warn, flexShrink: 0 }}>⚠</span>
+              <span style={{ fontSize: 12, color: C.warn }}>Profit factor below 1.5 — review risk/reward ratios on losing entries</span>
+            </div>
+          )}
+          {metrics.totalDecisions < 30 && metrics.totalDecisions > 0 && (
+            <div style={{ background: `${C.dim}10`, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 11, color: C.dim, flexShrink: 0 }}>ℹ</span>
+              <span style={{ fontSize: 12, color: C.dim }}>Collecting data — need 30+ decisions for reliable statistical metrics</span>
+            </div>
+          )}
+          {metrics.sharpeRatio >= 2 && metrics.winRate >= 55 && metrics.maxDrawdown < 15 && metrics.totalDecisions > 0 && (
+            <div style={{ background: `${C.ok}10`, border: `1px solid ${C.ok}30`, borderRadius: 6, padding: "10px 14px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 11, color: C.ok, flexShrink: 0 }}>✓</span>
+              <span style={{ fontSize: 12, color: C.ok }}>Excellent performance across all metrics — consider slightly increasing position sizing</span>
+            </div>
+          )}
         </div>
       </Card>
     </div>

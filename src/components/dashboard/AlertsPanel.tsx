@@ -22,7 +22,7 @@ function testDiscordWebhook(webhookUrl: string): Promise<{success: boolean, mess
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 
-      content: "🔔 Forge.OS test alert - your Discord webhook is working!" 
+      content: "🔔 Forge-OS test alert - your Discord webhook is working!" 
     }),
   }).then(() => ({ success: true, message: "Discord connected!" }))
    .catch((e) => ({ success: false, message: "Discord failed: " + e.message }));
@@ -37,7 +37,7 @@ function testTelegramWebhook(botApiUrl: string, chatId: string): Promise<{succes
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 
       chat_id: chatId, 
-      text: "🔔 Forge.OS test alert - your Telegram bot is working!",
+      text: "🔔 Forge-OS test alert - your Telegram bot is working!",
       disable_web_page_preview: true,
     }),
   }).then(() => ({ success: true, message: "Telegram connected!" }))
@@ -52,7 +52,7 @@ function testEmailWebhook(webhookUrl: string): Promise<{success: boolean, messag
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 
-      subject: "Forge.OS Test Alert", 
+      subject: "Forge-OS Test Alert", 
       message: "Your email webhook is working!",
     }),
   }).then(() => ({ success: true, message: "Email webhook connected!" }))

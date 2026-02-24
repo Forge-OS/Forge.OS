@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { C, mono } from "../../tokens";
 import { fmtT } from "../../helpers";
 import { decisionAuditVerifyCacheKey, type AuditCryptoVerificationResult, verifyDecisionAuditCryptoSignature } from "../../runtime/auditCryptoVerify";
-import { Badge, Btn, Card, Label } from "../ui";
+import { Badge, Btn, Card } from "../ui";
 
 export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) {
   const [viewportWidth, setViewportWidth] = useState(
@@ -20,6 +20,8 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
   const queueItems = Array.isArray(queue) ? queue : [];
   const [auditVerifyByDecisionHash, setAuditVerifyByDecisionHash] = useState<Record<string, { cacheKey: string; result: AuditCryptoVerificationResult }>>({});
   const verifyInFlight = useRef(new Set<string>());
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showAuditTrail, setShowAuditTrail] = useState(false);
 
   const decisionToQueue = useMemo(() => {
     const map = new Map<string, any>();
@@ -153,12 +155,13 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
 
   return(
     <div>
+      {/* ── Header ── */}
       <div style={{display:"flex", flexDirection:isMobile ? "column" : "row", justifyContent:"space-between", alignItems:isMobile ? "flex-start" : "center", marginBottom:16, gap:isMobile ? 8 : 0}}>
         <div>
-          <div style={{fontSize:13, color:C.text, fontWeight:700, ...mono}}>Quant Intelligence Layer</div>
-          <div style={{fontSize:11, color:C.dim}}>Deterministic quant core + AI risk overlay · Kelly sizing · regime detection · execution guardrails</div>
+          <div style={{fontSize:13, color:C.text, fontWeight:700, ...mono}}>Intelligence Layer</div>
+          <div style={{fontSize:11, color:C.dim}}>On-chain quant core · Kelly sizing · regime detection · AI risk overlay</div>
         </div>
-        <Btn onClick={onRun} disabled={loading}>{loading?"PROCESSING...":"RUN QUANT CYCLE"}</Btn>
+        <Btn onClick={onRun} disabled={loading}>{loading ? "PROCESSING..." : "RUN CYCLE"}</Btn>
       </div>
 
       {loading && (
@@ -170,211 +173,209 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
 
       {!dec && !loading && (
         <Card p={40} style={{textAlign:"center", marginBottom:12}}>
-          <div style={{fontSize:13, color:C.dim, ...mono, marginBottom:6}}>No intelligence output yet.</div>
-          <div style={{fontSize:12, color:C.dim}}>Run a quant cycle to generate a structured trade decision with Kelly sizing and Monte Carlo confidence.</div>
+          <div style={{fontSize:28, marginBottom:12}}>⚡</div>
+          <div style={{fontSize:13, color:C.text, fontWeight:700, ...mono, marginBottom:6}}>No Intelligence Signal Yet</div>
+          <div style={{fontSize:12, color:C.dim}}>Run a cycle to generate a structured decision with Kelly sizing, Monte Carlo confidence, and on-chain regime detection.</div>
         </Card>
       )}
 
       {dec && (
         <>
-          {/* Decision header */}
-          <Card p={18} style={{marginBottom:10, border:`1px solid ${ac}25`}}>
-            <div style={{display:"flex", alignItems:isMobile ? "flex-start" : "center", justifyContent:"space-between", flexDirection:isMobile ? "column" : "row", gap:isMobile ? 8 : 0, marginBottom:14}}>
-              <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
-                <Badge text={dec.action} color={ac}/>
+          {/* ── Signal Banner ── */}
+          <div style={{background:`linear-gradient(135deg, ${ac}12 0%, ${C.s1} 100%)`, border:`1px solid ${ac}35`, borderRadius:10, padding:isMobile?"14px 16px":"18px 22px", marginBottom:12, display:"flex", gap:18, alignItems:"center", flexWrap:isMobile?"wrap":"nowrap"}}>
+            {/* Confidence ring */}
+            <div style={{flexShrink:0, width:72, height:72, borderRadius:"50%", background:`conic-gradient(${ac} 0deg ${Math.round(dec.confidence_score*360)}deg, ${C.s2} ${Math.round(dec.confidence_score*360)}deg 360deg)`, display:"flex", alignItems:"center", justifyContent:"center"}}>
+              <div style={{width:52, height:52, borderRadius:"50%", background:C.s1, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column"}}>
+                <span style={{fontSize:13, fontWeight:700, color:ac, ...mono, lineHeight:1}}>{Math.round(dec.confidence_score*100)}</span>
+                <span style={{fontSize:8, color:C.dim, ...mono}}>CONF%</span>
+              </div>
+            </div>
+            {/* Signal content */}
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{display:"flex", gap:6, flexWrap:"wrap", marginBottom:8, alignItems:"center"}}>
+                <span style={{fontSize:16, fontWeight:700, color:ac, letterSpacing:"0.1em", ...mono}}>{dec.action}</span>
+                <span style={{width:1, height:14, background:C.border, display:"inline-block", flexShrink:0}}/>
                 <Badge text={dec.strategy_phase} color={C.purple}/>
-                <Badge text={`SOURCE ${source.toUpperCase()}`} color={sourceColor}/>
-                {latestTruth && <Badge text={`TRUTH ${latestTruth.text}`} color={latestTruth.color}/>}
+                <Badge text={`SRC: ${source.toUpperCase()}`} color={sourceColor}/>
+                {quant?.regime && <Badge text={String(quant.regime).replace(/_/g," ").toUpperCase()} color={C.accent}/>}
+                {latestTruth && <Badge text={latestTruth.text} color={latestTruth.color}/>}
                 {latestTruth && <Badge text={`PROV ${latestTruth.provenance.text}`} color={latestTruth.provenance.color}/>}
-                {quant?.regime && <Badge text={`REGIME ${String(quant.regime).replace(/_/g, " ")}`} color={C.accent}/>}
+              </div>
+              <div style={{fontSize:12, color:C.text, lineHeight:1.55, marginBottom:8}}>{dec.rationale}</div>
+              <div style={{display:"flex", gap:6, flexWrap:"wrap", alignItems:"center"}}>
                 {dec?.audit_record?.audit_sig && <Badge text="AUDIT READY" color={C.text}/>}
                 {cryptoSig?.status === "signed" && <Badge text="CRYPTO SIGNED" color={C.ok}/>}
                 {cryptoSig?.status === "signed" && cryptoVerifyBadge(latestAuditVerify)}
                 {latestAuditVerify?.pinMatched === true && <Badge text="KEY PINNED" color={C.accent}/>}
                 {latestAuditVerify?.pinMatched === false && <Badge text="KEY UNPINNED" color={C.warn}/>}
-                {cryptoSig?.status === "error" && <Badge text="CRYPTO SIGN ERR" color={C.warn}/>}
-                <span style={{fontSize:11, color:C.dim, ...mono}}>{fmtT(latest.ts)}</span>
-              </div>
-              <div style={{display:"flex", gap:8}}>
-                <Badge text={`CONF ${dec.confidence_score}`} color={dec.confidence_score>=0.8?C.ok:C.warn}/>
-                <Badge text={`RISK ${dec.risk_score}`} color={dec.risk_score<=0.4?C.ok:dec.risk_score<=0.7?C.warn:C.danger}/>
+                {cryptoSig?.status === "error" && <Badge text="SIGN ERR" color={C.warn}/>}
+                <span style={{fontSize:10, color:C.dim, ...mono}}>{fmtT(latest.ts)}</span>
               </div>
             </div>
-
-            {/* Quant metrics grid */}
-            <div style={{display:"grid", gridTemplateColumns:metricsCols, gap:10, marginBottom:14}}>
-              {[
-                ["Kelly Fraction", `${(dec.kelly_fraction*100).toFixed(1)}%`, C.accent, "Position sizing fraction after quant/AI guardrails. Higher is more aggressive."],
-                ["Monte Carlo Win", `${dec.monte_carlo_win_pct}%`, C.ok, "Model-estimated win probability for the current setup; not guaranteed realized PnL."],
-                ["Capital Alloc", `${dec.capital_allocation_kas} KAS`, C.text, "Proposed KAS amount for this cycle after portfolio caps and risk controls."],
-                ["Expected Value", `+${dec.expected_value_pct}%`, C.ok, "Expected edge for this decision before realized execution drift is known."],
-                ["Stop Loss", `-${dec.stop_loss_pct}%`, C.danger, "Loss control target used for risk envelope logic."],
-                ["Take Profit", `+${dec.take_profit_pct}%`, C.ok, "Profit-taking target used for expected value and phase planning."],
-                ["Volatility", dec.volatility_estimate, dec.volatility_estimate==="HIGH"?C.danger:dec.volatility_estimate==="MEDIUM"?C.warn:C.ok, "Quant-estimated volatility bucket; high volatility tightens trust in raw signals."],
-                ["Liquidity Impact", dec.liquidity_impact, dec.liquidity_impact==="SIGNIFICANT"?C.danger:C.dim, "Estimated execution friction/slippage pressure for current market conditions."],
-                ["Engine Latency", `${dec.engine_latency_ms || 0} ms`, (dec.engine_latency_ms || 0) <= 2500 ? C.ok : C.warn, "Decision engine runtime (quant + AI overlay path + fusion) for this cycle."],
-                ["Data Quality", quant?.data_quality_score ?? "—", (quant?.data_quality_score ?? 0) >= 0.75 ? C.ok : C.warn, "Signal trust score from quant feature sufficiency and stability. Low quality reduces automation confidence."],
-              ].map(([k,v,c,hint])=> (
-                <div key={k as any} title={String(hint)} style={{background:C.s2, borderRadius:4, padding:"10px 12px"}}>
-                  <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.06em", marginBottom:4}}>{k}</div>
-                  <div style={{fontSize:13, color:c as any, fontWeight:700, ...mono}}>{v}</div>
-                </div>
-              ))}
+            {/* Risk pill */}
+            <div style={{flexShrink:0, background:C.s2, borderRadius:8, padding:"12px 16px", textAlign:"center", border:`1px solid ${dec.risk_score<=0.4?C.ok:dec.risk_score<=0.7?C.warn:C.danger}30`}}>
+              <div style={{fontSize:9, color:C.dim, ...mono, letterSpacing:"0.1em", marginBottom:2}}>RISK</div>
+              <div style={{fontSize:20, fontWeight:700, ...mono, color:dec.risk_score<=0.4?C.ok:dec.risk_score<=0.7?C.warn:C.danger}}>{dec.risk_score}</div>
+              <div style={{fontSize:9, color:C.dim, ...mono}}>SCORE</div>
             </div>
-            <div style={{display:"grid", gridTemplateColumns:isMobile ? "1fr" : "repeat(3,1fr)", gap:8, marginBottom:14}}>
-              {[
-                ["Sizing", "Kelly Fraction + Capital Alloc are your practical position-size controls in KAS."],
-                ["Trust", "Data Quality + Regime + Risk/Confidence tell you whether to trust the action or wait."],
-                ["Execution", "Liquidity Impact + Engine Latency help explain slippage risk and cycle responsiveness."],
-              ].map(([title, text]) => (
-                <div key={String(title)} style={{background:`linear-gradient(180deg, ${C.s2} 0%, ${C.s1} 100%)`, border:`1px solid ${C.border}`, borderRadius:6, padding:"9px 10px"}}>
-                  <div style={{fontSize:10, color:C.accent, ...mono, marginBottom:3}}>{title}</div>
-                  <div style={{fontSize:11, color:C.dim, lineHeight:1.35}}>{text}</div>
-                </div>
-              ))}
-            </div>
+          </div>
 
-            {/* Rationale */}
-            <div style={{background:C.s2, borderRadius:4, padding:"10px 14px", marginBottom:12}}>
-              <Label>Decision Rationale</Label>
-              <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{dec.rationale}</div>
-              {dec.decision_source_detail && (
-                <div style={{fontSize:11, color:C.dim, marginTop:8, ...mono}}>source detail: {dec.decision_source_detail}</div>
-              )}
-              {dec.audit_record && (
-                <div style={{fontSize:11, color:C.dim, marginTop:8, ...mono, lineHeight:1.5}}>
-                  <div>
-                    audit: {String(dec.audit_record.audit_record_version || "—")} · prompt {String(dec.audit_record.prompt_version || "—")} · schema {String(dec.audit_record.ai_response_schema_version || "—")}
-                  </div>
-                  <div>
-                    qhash {String(dec.audit_record.quant_feature_snapshot_hash || "—").slice(0, 22)}… · dhash {String(dec.audit_record.decision_hash || "—").slice(0, 22)}… · sig {String(dec.audit_record.audit_sig || "—").slice(0, 18)}…
-                  </div>
-                  {dec.audit_record.crypto_signature && (
-                    <div>
-                      crypto {String(dec.audit_record.crypto_signature.status || "unknown")} · {String(dec.audit_record.crypto_signature.alg || "—")} · key {String(dec.audit_record.crypto_signature.key_id || "—").slice(0, 22)}
-                    </div>
-                  )}
-                  {dec.audit_record.crypto_signature?.status === "signed" && (
-                    <div>{cryptoVerifyDetail(latestAuditVerify)}</div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Risk factors */}
-            {dec.risk_factors?.length>0 && (
-              <div style={{marginBottom:12}}>
-                <Label>Risk Factors</Label>
-                <div style={{display:"flex", flexWrap:"wrap", gap:6}}>
-                  {dec.risk_factors.map((f: any, i: number)=><Badge key={i} text={f} color={C.warn}/>) }
-                </div>
+          {/* ── Key Signal Metrics ── */}
+          <div style={{display:"grid", gridTemplateColumns:metricsCols, gap:8, marginBottom:12}}>
+            {[
+              {k:"Kelly Fraction", v:`${(dec.kelly_fraction*100).toFixed(1)}%`, c:C.accent, hint:"Position sizing fraction after quant/AI guardrails. Higher is more aggressive."},
+              {k:"Monte Carlo Win", v:`${dec.monte_carlo_win_pct}%`, c:C.ok, hint:"Model-estimated win probability for the current setup; not guaranteed realized PnL."},
+              {k:"Capital Alloc", v:`${dec.capital_allocation_kas} KAS`, c:C.text, hint:"Proposed KAS amount for this cycle after portfolio caps and risk controls."},
+              {k:"Expected Value", v:`+${dec.expected_value_pct}%`, c:C.ok, hint:"Expected edge for this decision before realized execution drift."},
+              {k:"Stop Loss", v:`-${dec.stop_loss_pct}%`, c:C.danger, hint:"Loss control target used for risk envelope logic."},
+              {k:"Take Profit", v:`+${dec.take_profit_pct}%`, c:C.ok, hint:"Profit-taking target used for expected value and phase planning."},
+              {k:"Volatility", v:String(dec.volatility_estimate), c:dec.volatility_estimate==="HIGH"?C.danger:dec.volatility_estimate==="MEDIUM"?C.warn:C.ok, hint:"Quant volatility bucket; high volatility tightens signal trust."},
+              {k:"Liquidity Impact", v:String(dec.liquidity_impact), c:dec.liquidity_impact==="SIGNIFICANT"?C.danger:C.dim, hint:"Estimated execution friction/slippage pressure."},
+              {k:"Engine Latency", v:`${dec.engine_latency_ms||0}ms`, c:(dec.engine_latency_ms||0)<=2500?C.ok:C.warn, hint:"Decision engine runtime (quant + AI overlay + fusion) for this cycle."},
+              {k:"Data Quality", v:formatMetric(quant?.data_quality_score), c:(quant?.data_quality_score??0)>=0.75?C.ok:C.warn, hint:"Signal trust score from quant feature sufficiency. Low quality reduces automation confidence."},
+            ].map((item) => (
+              <div key={item.k} title={item.hint} style={{background:`linear-gradient(135deg, ${item.c}10 0%, ${C.s2} 100%)`, border:`1px solid ${item.c}20`, borderRadius:6, padding:"10px 12px"}}>
+                <div style={{fontSize:9, color:C.dim, ...mono, letterSpacing:"0.06em", marginBottom:4}}>{item.k.toUpperCase()}</div>
+                <div style={{fontSize:13, color:item.c, fontWeight:700, ...mono}}>{item.v}</div>
               </div>
-            )}
+            ))}
+          </div>
 
-            <div style={{background:C.aLow, borderRadius:4, padding:"10px 14px"}}>
-              <Label color={C.accent}>Next Review Trigger</Label>
-              <div style={{fontSize:12, color:C.text}}>{dec.next_review_trigger}</div>
+          {/* ── Next Review ── */}
+          {dec.next_review_trigger && (
+            <div style={{background:C.aLow, border:`1px solid ${C.accent}25`, borderRadius:6, padding:"10px 14px", marginBottom:12, display:"flex", gap:8, alignItems:"flex-start"}}>
+              <span style={{fontSize:9, color:C.accent, ...mono, letterSpacing:"0.08em", flexShrink:0, paddingTop:2}}>NEXT TRIGGER</span>
+              <span style={{fontSize:12, color:C.text}}>{dec.next_review_trigger}</span>
             </div>
-          </Card>
+          )}
 
+          {/* ── Risk Factors ── */}
+          {dec.risk_factors?.length > 0 && (
+            <div style={{background:`${C.warn}08`, border:`1px solid ${C.warn}30`, borderRadius:6, padding:"10px 14px", marginBottom:12}}>
+              <div style={{fontSize:9, color:C.warn, ...mono, letterSpacing:"0.08em", marginBottom:6}}>RISK FACTORS</div>
+              <div style={{display:"flex", flexWrap:"wrap", gap:6}}>
+                {dec.risk_factors.map((f: any, i: number) => <Badge key={i} text={f} color={C.warn}/>)}
+              </div>
+            </div>
+          )}
+
+          {/* ── Quant Diagnostics (collapsible) ── */}
           {quant && (
-            <Card p={18} style={{marginBottom:10}}>
-              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, gap:8, flexWrap:"wrap"}}>
-                <Label>Quant Core Diagnostics</Label>
-                <div style={{display:"flex", gap:6, flexWrap:"wrap"}}>
-                  <Badge text={`SAMPLES ${formatMetric(quant.sample_count)}`} color={C.dim}/>
-                  <Badge text={`EDGE ${formatMetric(quant.edge_score)}`} color={(Number(quant.edge_score) || 0) > 0 ? C.ok : C.warn}/>
-                  {quant.ai_overlay_applied && <Badge text="AI OVERLAY APPLIED" color={C.accent}/>}
+            <Card p={0} style={{marginBottom:10}}>
+              <div
+                onClick={() => setShowDiagnostics(s => !s)}
+                style={{padding:"12px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer", userSelect:"none"}}
+              >
+                <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+                  <span style={{fontSize:11, color:C.text, fontWeight:700, ...mono}}>QUANT DIAGNOSTICS</span>
+                  <Badge text={`${formatMetric(quant.sample_count)} SAMPLES`} color={C.dim}/>
+                  <Badge text={`EDGE ${formatMetric(quant.edge_score)}`} color={(Number(quant.edge_score)||0)>0?C.ok:C.warn}/>
+                  {quant.ai_overlay_applied && <Badge text="AI OVERLAY" color={C.accent}/>}
                 </div>
+                <span style={{fontSize:12, color:C.dim, flexShrink:0}}>{showDiagnostics ? "▲" : "▼"}</span>
               </div>
-              <div style={{fontSize:11, color:C.dim, marginBottom:10}}>
-                Raw quant features behind the decision. Use these to understand regime behavior and why guardrails or AI fusion changed sizing/action.
-              </div>
-              <div style={{display:"grid", gridTemplateColumns:isMobile ? "1fr" : "1fr 1fr", gap:8}}>
-                {[
-                  ["Risk Profile", quant.risk_profile],
-                  ["Risk Ceiling", quant.risk_ceiling],
-                  ["Kelly Cap", quant.kelly_cap],
-                  ["Price USD", quant.price_usd],
-                  ["1-step Return %", quant.price_return_1_pct],
-                  ["5-step Return %", quant.price_return_5_pct],
-                  ["20-step Return %", quant.price_return_20_pct],
-                  ["Momentum Z", quant.momentum_z],
-                  ["EWMA Volatility", quant.ewma_volatility],
-                  ["DAA Velocity", quant.daa_velocity],
-                  ["DAA Slope", quant.daa_slope],
-                  ["Drawdown %", quant.drawdown_pct],
-                  ["Model Win Prob", quant.win_probability_model],
-                  ["Exposure Cap %", quant.exposure_cap_pct],
-                ].map(([label, value]) => (
-                  <div key={String(label)} style={{display:"flex", justifyContent:"space-between", gap:10, background:C.s2, borderRadius:4, padding:"9px 12px"}}>
-                    <span style={{fontSize:11, color:C.dim, ...mono}}>{label}</span>
-                    <span style={{fontSize:11, color:C.text, ...mono}}>{formatMetric(value)}</span>
+              {showDiagnostics && (
+                <div style={{padding:"0 16px 16px", borderTop:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:11, color:C.dim, marginBottom:10, marginTop:10, lineHeight:1.4}}>
+                    Raw quant features behind the decision — use these to understand regime behavior and why guardrails or AI fusion changed sizing/action.
                   </div>
-                ))}
-              </div>
+                  <div style={{display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:6}}>
+                    {([
+                      ["Risk Profile", quant.risk_profile],
+                      ["Risk Ceiling", quant.risk_ceiling],
+                      ["Kelly Cap", quant.kelly_cap],
+                      ["Price USD", quant.price_usd],
+                      ["1-step Return %", quant.price_return_1_pct],
+                      ["5-step Return %", quant.price_return_5_pct],
+                      ["20-step Return %", quant.price_return_20_pct],
+                      ["Momentum Z", quant.momentum_z],
+                      ["EWMA Volatility", quant.ewma_volatility],
+                      ["DAA Velocity", quant.daa_velocity],
+                      ["DAA Slope", quant.daa_slope],
+                      ["Drawdown %", quant.drawdown_pct],
+                      ["Model Win Prob", quant.win_probability_model],
+                      ["Exposure Cap %", quant.exposure_cap_pct],
+                    ] as [string, any][]).map(([label, value]) => (
+                      <div key={label} style={{display:"flex", justifyContent:"space-between", gap:10, background:C.s2, borderRadius:4, padding:"8px 12px"}}>
+                        <span style={{fontSize:11, color:C.dim, ...mono}}>{label}</span>
+                        <span style={{fontSize:11, color:C.text, fontWeight:600, ...mono}}>{formatMetric(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </Card>
           )}
 
-          {/* History */}
-          {decisions.length>1 && (
-            <Card p={0}>
-              <div style={{padding:"11px 16px", borderBottom:`1px solid ${C.border}`}}>
-                <span style={{fontSize:11, color:C.dim, ...mono}}>DECISION HISTORY — {decisions.length} records</span>
+          {/* ── Audit Trail (collapsible) ── */}
+          {dec.audit_record && (
+            <Card p={0} style={{marginBottom:10}}>
+              <div
+                onClick={() => setShowAuditTrail(s => !s)}
+                style={{padding:"12px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer", userSelect:"none"}}
+              >
+                <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+                  <span style={{fontSize:11, color:C.text, fontWeight:700, ...mono}}>AUDIT TRAIL</span>
+                  {cryptoSig?.status === "signed" && cryptoVerifyBadge(latestAuditVerify)}
+                  {latestAuditVerify?.pinMatched === true && <Badge text="PINNED" color={C.accent}/>}
+                </div>
+                <span style={{fontSize:12, color:C.dim, flexShrink:0}}>{showAuditTrail ? "▲" : "▼"}</span>
               </div>
-              {decisions.slice(1).map((d: any, i: number)=>{
+              {showAuditTrail && (
+                <div style={{padding:"0 16px 16px", borderTop:`1px solid ${C.border}`}}>
+                  {dec.decision_source_detail && (
+                    <div style={{fontSize:11, color:C.dim, ...mono, marginTop:10, marginBottom:8}}>source detail: {dec.decision_source_detail}</div>
+                  )}
+                  <div style={{fontSize:11, color:C.dim, ...mono, lineHeight:1.8, marginTop:dec.decision_source_detail ? 0 : 10}}>
+                    <div>audit: {String(dec.audit_record.audit_record_version||"—")} · prompt {String(dec.audit_record.prompt_version||"—")} · schema {String(dec.audit_record.ai_response_schema_version||"—")}</div>
+                    <div>qhash {String(dec.audit_record.quant_feature_snapshot_hash||"—").slice(0,22)}… · dhash {String(dec.audit_record.decision_hash||"—").slice(0,22)}…</div>
+                    <div>sig {String(dec.audit_record.audit_sig||"—").slice(0,18)}…</div>
+                    {dec.audit_record.crypto_signature && (
+                      <div>crypto {String(dec.audit_record.crypto_signature.status||"unknown")} · {String(dec.audit_record.crypto_signature.alg||"—")} · key {String(dec.audit_record.crypto_signature.key_id||"—").slice(0,22)}</div>
+                    )}
+                    {dec.audit_record.crypto_signature?.status === "signed" && (
+                      <div>{cryptoVerifyDetail(latestAuditVerify)}</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* ── Signal History ── */}
+          {decisions.length > 1 && (
+            <Card p={0}>
+              <div style={{padding:"11px 16px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                <span style={{fontSize:11, color:C.dim, ...mono}}>SIGNAL HISTORY</span>
+                <Badge text={`${decisions.length} records`} color={C.dim}/>
+              </div>
+              {decisions.slice(1).map((d: any, i: number) => {
                 const c = d.dec.action==="ACCUMULATE"?C.ok:d.dec.action==="REDUCE"?C.danger:C.warn;
                 const truth = truthLabelForDecision(d);
                 const verify = d?.dec?.audit_record?.decision_hash
                   ? auditVerifyByDecisionHash[String(d.dec.audit_record.decision_hash)]?.result || null
                   : null;
-                const historySource = String(d?.dec?.decision_source || d?.source || "ai");
-                const historySourceLabel =
-                  historySource === "hybrid-ai" ? "HYB" :
-                  historySource === "quant-core" ? "Q" :
-                  historySource === "fallback" ? "F" :
-                  "AI";
-                const historySourceColor =
-                  historySource === "hybrid-ai" ? C.accent :
-                  historySource === "quant-core" ? C.text :
-                  historySource === "fallback" ? C.warn :
-                  C.ok;
-                return(
-                  <div key={i} style={{display:"grid", gridTemplateColumns:historyCols, gap:10, padding:"9px 16px", borderBottom:`1px solid ${C.border}`, alignItems:"center"}}>
+                const histSrc = String(d?.dec?.decision_source||d?.source||"ai");
+                const histSrcColor = histSrc==="hybrid-ai"?C.accent:histSrc==="quant-core"?C.text:histSrc==="fallback"?C.warn:C.ok;
+                return (
+                  <div key={i} style={{display:"grid", gridTemplateColumns:historyCols, gap:10, padding:"9px 16px", borderBottom:i<decisions.length-2?`1px solid ${C.border}`:"none", alignItems:"center"}}>
                     <span style={{fontSize:11, color:C.dim, ...mono}}>{fmtT(d.ts)}</span>
-                    <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap"}}>
+                    <div style={{display:"flex", gap:5, alignItems:"center", flexWrap:"wrap"}}>
                       <Badge text={d.dec.action} color={c}/>
-                      {!isMobile && <Badge text={historySourceLabel} color={historySourceColor}/>}
+                      {!isMobile && <Badge text={histSrc==="hybrid-ai"?"HYB":histSrc==="quant-core"?"Q":histSrc==="fallback"?"F":"AI"} color={histSrcColor}/>}
                       {!isMobile && <Badge text={truth.text} color={truth.color}/>}
                       {!isMobile && <Badge text={truth.provenance.text} color={truth.provenance.color}/>}
-                      {!isMobile && d?.dec?.audit_record?.crypto_signature?.status === "signed" && verify && (
+                      {!isMobile && d?.dec?.audit_record?.crypto_signature?.status==="signed" && verify && (
                         <Badge
-                          text={
-                            verify.status === "verified"
-                              ? "SIG✓"
-                              : verify.status === "unpinned"
-                                ? "SIG⚠"
-                                : verify.status === "invalid"
-                                  ? "SIG✗"
-                                  : "SIG?"
-                          }
-                          color={
-                            verify.status === "verified"
-                              ? C.ok
-                              : verify.status === "unpinned"
-                                ? C.warn
-                                : verify.status === "invalid"
-                                  ? C.danger
-                                  : C.dim
-                          }
+                          text={verify.status==="verified"?"SIG✓":verify.status==="unpinned"?"SIG⚠":verify.status==="invalid"?"SIG✗":"SIG?"}
+                          color={verify.status==="verified"?C.ok:verify.status==="unpinned"?C.warn:verify.status==="invalid"?C.danger:C.dim}
                         />
                       )}
                     </div>
                     {!isMobile && <span style={{fontSize:12, color:C.text, ...mono}}>{d.dec.capital_allocation_kas} KAS</span>}
                     {!isMobile && <span style={{fontSize:12, color:d.dec.confidence_score>=0.8?C.ok:C.warn, ...mono}}>c:{d.dec.confidence_score}</span>}
                     <span style={{fontSize:11, color:C.dim, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
-                      {d.dec.rationale}
-                      {d?.dec?.audit_record?.decision_hash ? ` · ${String(d.dec.audit_record.decision_hash).slice(0, 12)}` : ""}
+                      {d.dec.rationale}{d?.dec?.audit_record?.decision_hash ? ` · ${String(d.dec.audit_record.decision_hash).slice(0,12)}` : ""}
                     </span>
                   </div>
                 );

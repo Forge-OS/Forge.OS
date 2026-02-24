@@ -1,4 +1,4 @@
-# FORGE.OS
+# FORGE-OS
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -16,9 +16,9 @@
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-FORGE.OS is a **Kaspa-native quant trading control plane** with wallet-native signing, real AI overlay, deterministic quant guardrails, and production-oriented runtime controls.
+FORGE-OS is a **Kaspa-native quant trading control plane** with wallet-native signing, real AI overlay, deterministic quant guardrails, and production-oriented runtime controls.
 
-<!-- If you're reading source, you're in the right place. FORGE.OS is built for operators, not just screenshots. -->
+<!-- If you're reading source, you're in the right place. FORGE-OS is built for operators, not just screenshots. -->
 
 <p align="center">
   <img alt="Kaspa First" src="https://img.shields.io/badge/Kaspa-UTXO--First-00C2A8?style=for-the-badge" />
@@ -74,9 +74,9 @@ flowchart LR
   H --> B
 ```
 
-## Why FORGE.OS Is Different
+## Why FORGE-OS Is Different
 
-Most “AI trading dashboards” stop at UI. FORGE.OS implements the actual runtime stack:
+Most “AI trading dashboards” stop at UI. FORGE-OS implements the actual runtime stack:
 - **Wallet-native authorization** (Kasware, Kaspium, Demo) with no seed storage
 - **Quant core first** (regime, volatility, Kelly/risk caps, EV sizing)
 - **AI overlay second** (bounded by quant envelope; can run every cycle)
@@ -294,7 +294,7 @@ Create `.env` from `.env.example`.
 
 ## Mainnet / Testnet Runtime Switching
 
-FORGE.OS is **mainnet-first**.
+FORGE-OS is **mainnet-first**.
 
 Runtime network selection precedence:
 1. `?network=` query param
@@ -340,27 +340,27 @@ Address validation, explorer links, treasury routing, and accumulation vault rou
 ### Kastle (Browser Extension)
 - Injected `window.kastle` provider support in WalletGate and runtime adapter
 - Connect/account/network checks with mainnet/testnet profile enforcement
-- Send path (`sendKaspa`) wired into Forge.OS queue/signing lifecycle
+- Send path (`sendKaspa`) wired into Forge-OS queue/signing lifecycle
 - Wallet selector uses the real Kastle logo in UI
 - Native multi-output send: **conditional** via `signAndBroadcastTx(networkId, txJson)` when the `VITE_KASTLE_RAW_TX_ENABLED` raw-tx path is enabled and a txJson bridge/manual txJson input is available
 
 ### Ghost Wallet (Browser Extension / Provider Bridge)
 - Custom `kaspa:*` provider event bridge support in WalletGate and runtime adapter
 - Connect/account/network checks with profile enforcement
-- `transact` send path wired into Forge.OS queue/signing lifecycle
+- `transact` send path wired into Forge-OS queue/signing lifecycle
 - Wallet selector uses the real Ghost Wallet logo in UI
-- Native multi-output send: **yes** (`transact` accepts an outputs array; Forge.OS combines treasury fee output when eligible)
+- Native multi-output send: **yes** (`transact` accepts an outputs array; Forge-OS combines treasury fee output when eligible)
 
 ### Tangem (Hardware / Bridge Flow)
 - Manual bridge connect (address pairing) in WalletGate
-- External sign/broadcast flow with txid handoff back into Forge.OS
-- Preserves hardware custody model (no private key handling in Forge.OS)
+- External sign/broadcast flow with txid handoff back into Forge-OS
+- Preserves hardware custody model (no private key handling in Forge-OS)
 - Native multi-output send: **bridge/manual dependent**
 
 ### OneKey (Hardware / Bridge Flow)
 - Manual bridge connect (address pairing) in WalletGate
-- External sign/broadcast flow with txid handoff back into Forge.OS
-- Preserves hardware custody model (no private key handling in Forge.OS)
+- External sign/broadcast flow with txid handoff back into Forge-OS
+- Preserves hardware custody model (no private key handling in Forge-OS)
 - Native multi-output send: **bridge/manual dependent**
 
 ### Demo Mode
@@ -399,7 +399,7 @@ Queue items now track both:
 - `failed`
 - `timeout`
 
-FORGE.OS polls Kaspa transaction endpoints with backoff and persists receipt telemetry, including:
+FORGE-OS polls Kaspa transaction endpoints with backoff and persists receipt telemetry, including:
 - `submitted_ts`
 - `broadcast_ts`
 - `confirm_ts`
@@ -411,7 +411,7 @@ FORGE.OS polls Kaspa transaction endpoints with backoff and persists receipt tel
 
 This feeds receipt-aware attribution (`estimated` / `hybrid` / `realized`) and improves operator trust in execution state.
 
-Forge.OS also enforces a **truth degradation policy**:
+Forge-OS also enforces a **truth degradation policy**:
 - if backend-vs-chain receipt mismatch rate exceeds policy thresholds, `realized` attribution is downgraded to `hybrid`
 - optional policy can block autonomous auto-approve until receipt consistency recovers
 
@@ -438,7 +438,7 @@ flowchart LR
 
 ## Real AI + Quant Intelligence
 
-FORGE.OS uses a **quant-first, AI-bounded** model:
+FORGE-OS uses a **quant-first, AI-bounded** model:
 - Deterministic quant core computes regime, volatility, risk score, EV, Kelly cap, SL/TP, and sizing
 - Real AI overlay refines decisions using quant context
 - Guarded fusion enforces risk limits and can block unsafe AI actions
@@ -501,7 +501,7 @@ This is the bridge toward moving orchestration out of the browser.
 
 ```mermaid
 flowchart TB
-  UI[FORGE.OS Browser Control Plane]
+  UI[FORGE-OS Browser Control Plane]
   UI --> AP[AI Proxy]
   UI --> SCH[Scheduler]
   SCH --> KC[Shared Market Cache]

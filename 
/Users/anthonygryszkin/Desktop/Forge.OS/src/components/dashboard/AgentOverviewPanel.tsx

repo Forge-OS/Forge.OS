@@ -1,0 +1,1136 @@
+import { useMemo, useState } from "react";
+import { C, mono } from "../../tokens";
+import { Badge, Btn, Card, Label } from "../ui";
+
+type AgentStats = {
+  agentId: string;
+  agentName: string;
+  totalCycles: number;
+  totalKasAccumulated: number;
+  avgDecisionSize: number;
+  lastActionTime: number;
+  lastAction: string;
+  status: "active" | "idle" | "error";
+  profitScore: number;
+  riskLevel: "low" | "medium" | "high";
+};
+
+type Props = {
+  decisions?: any[];
+  queue?: any[];
+  agent?: AgentStats;
+  onNavigate?: (tab: string) => void;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UTILITY COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Mini progress bar for metrics
+const ProgressBar = ({ value, max = 100, color = C.accent, height = 6, showLabel = false }: { value: number; max?: number; color?: string; height?: number; showLabel?: boolean }) => {
+  const pct = Math.min(100, Math.max(0, (value / max) * 100));
+  return (
+    <div style={{ width: '100%' }}>
+      {showLabel && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+          <span style={{ fontSize: 10, color: C.dim, ...mono }}>{value.toFixed(1)}%</span>
+        </div>
+      )}
+      <div style={{ width: '100%', height, background: C.s2, borderRadius: height / 2, overflow: 'hidden' }}>
+        <div
+          style={{
+            width: `${pct}%`,
+            height: '100%',
+            background: color,
+            borderRadius: height / 2,
+            transition: 'width 0.3s ease',
+            boxShadow: `0 0 8px ${color}40`,
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
+// Circular gauge for risk/return profile
+const CircularGauge = ({ value, max = 100, label, color = C.accent, size = 64 }: { value: number; max?: number; label: string; color?: string; size?: number }) => {
+  const pct = Math.min(100, Math.max(0, (value / max) * 100));
+  const strokeWidth = size / 8;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (pct / 100) * circumference;
+  
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={C.s2}
+          strokeWidth={strokeWidth}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 0.5s ease', filter: `drop-shadow(0 0 4px ${color}60)` }}
+        />
+      </svg>
+      <span style={{ fontSize: 10, color: C.dim, ...mono, textAlign: 'center' }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color, ...mono }}>{pct.toFixed(0)}%</span>
+    </div>
+  );
+};
+
+// Tooltip component for DeFi terms
+const Tooltip = ({ text, children }: { text: string; children: React.ReactNode }) => {
+  const [show, setShow] = useState(false);
+  return (
+    <div
+      style={{ position: 'relative', display: 'inline-flex' }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {show && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: C.s3,
+            border: `1px solid ${C.border}`,
+            borderRadius: 6,
+            padding: '8px 12px',
+            fontSize: 11,
+            color: C.text,
+            whiteSpace: 'nowrap',
+            maxWidth: 250,
+            whiteSpace: 'normal',
+            zIndex: 100,
+            boxShadow: `0 4px 20px rgba(0,0,0,0.4)`,
+            marginBottom: 8,
+          }}
+        >
+          {text}
+          <div
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 0,
+              height: 0,
+              borderLeft: '6px solid transparent',
+              borderRight: '6px solid transparent',
+              borderTop: `6px solid ${C.s3}`,
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Section header with optional tooltip
+const SectionHeader = ({ icon, title, tooltip }: { icon: string; title: string; tooltip?: string }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+    <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{icon} {title}</span>
+    {tooltip && (
+      <Tooltip text={tooltip}>
+        <span style={{ cursor: 'help', fontSize: 12, color: C.dim }}>ℹ️</span>
+      </Tooltip>
+    )}
+  </div>
+);
+
+// Quick tip card
+const QuickTip = ({ tip, icon = "💡" }: { tip: string; icon?: string }) => (
+  <div
+    style={{
+      background: `${C.accent}10`,
+      border: `1px solid ${C.accent}30`,
+      borderRadius: 8,
+      padding: '10px 14px',
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 10,
+    }}
+  >
+    <span style={{ fontSize: 14 }}>{icon}</span>
+    <div>
+      <div style={{ fontSize: 11, color: C.accent, fontWeight: 600, ...mono, marginBottom: 2 }}>TIP</div>
+      <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.4 }}>{tip}</div>
+    </div>
+  </div>
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export function AgentOverviewPanel({ decisions = [], queue = [], agent, onNavigate }: Props) {
+  // Enhanced stats calculation with DeFi-native metrics
+  const stats = useMemo(() => {
+    if (!decisions || decisions.length === 0) {
+      return {
+        totalCycles: 0,
+        successfulTrades: 0,
+        totalKasMoved: 0,
+        avgKelly: 0,
+        avgConfidence: 0,
+        currentStreak: 0,
+        bestWinStreak: 0,
+        bestLossStreak: 0,
+        lastAction: "NONE",
+        lastActionTime: null,
+        winRate: 50,
+        actionBreakdown: { accumulate: 0, reduce: 0, hold: 0, rebalance: 0 },
+        isProfitable: false,
+        daysRunning: 0,
+        // New enhanced stats
+        totalPnl: 0,
+        estimatedRoi: 0,
+        expectedValue: 0,
+        riskScore: 0,
+        decisionQuality: 0,
+        regime: "UNKNOWN",
+        monteCarloWin: 0,
+        lastRationale: "",
+        executionRate: 0,
+        avgHoldingTime: 0,
+        capitalEfficiency: 0,
+        timeSinceLastAction: null,
+        consecutiveWins: 0,
+        consecutiveLosses: 0,
+        signalAccuracy: 0,
+        // DeFi-native metrics
+        apyEquivalent: 0,
+        gasEfficiency: 0,
+        impermanentLoss: 0,
+        healthScore: 0,
+        sharpeRatio: 0,
+        maxDrawdown: 0,
+        avgSlippage: 0,
+        protocolInteractions: 0,
+      };
+    }
+
+    // Basic action counts
+    const accumulate = decisions.filter(d => d.dec?.action === "ACCUMULATE").length;
+    const reduce = decisions.filter(d => d.dec?.action === "REDUCE").length;
+    const hold = decisions.filter(d => d.dec?.action === "HOLD").length;
+    const rebalance = decisions.filter(d => d.dec?.action === "REBALANCE").length;
+    const total = decisions.length;
+
+    // Executed trades from queue
+    const executed = queue.filter(q => 
+      q?.status === "confirmed" || q?.receipt_lifecycle === "confirmed"
+    ).length;
+    const pending = queue.filter(q => 
+      q?.status === "pending" || q?.status === "signed" || q?.status === "broadcasted"
+    ).length;
+
+    // Last decision
+    const lastDec = decisions[0];
+    const lastAction = lastDec?.dec?.action || "NONE";
+    const lastActionTime = lastDec?.ts || null;
+    const lastRationale = lastDec?.dec?.rationale || "";
+
+    // Averages
+    const avgKelly = decisions.reduce((sum, d) => sum + (d.dec?.kelly_fraction || 0), 0) / total;
+    const avgConfidence = decisions.reduce((sum, d) => sum + (d.dec?.confidence_score || 0), 0) / total;
+    const avgRiskScore = decisions.reduce((sum, d) => sum + (d.dec?.risk_score || 0), 0) / total;
+    const avgMonteCarlo = decisions.reduce((sum, d) => sum + (d.dec?.monte_carlo_win_pct || 50), 0) / total;
+
+    // Win rate calculation
+    const wins = accumulate;
+    const losses = reduce;
+    const winRate = total > 0 ? (wins / (wins + losses || 1)) * 100 : 50;
+
+    // Streaks
+    let currentStreak = 0;
+    let bestWinStreak = 0;
+    let bestLossStreak = 0;
+    let consecutiveWins = 0;
+    let consecutiveLosses = 0;
+    let tempStreak = 0;
+    let lastActionType: "win" | "loss" | null = null;
+
+    for (const decision of decisions) {
+      const action = decision.dec?.action;
+      if (action === "ACCUMULATE" || action === "REBALANCE") {
+        if (lastActionType === "win" || lastActionType === null) {
+          tempStreak++;
+        } else {
+          tempStreak = 1;
+        }
+        lastActionType = "win";
+        if (tempStreak > bestWinStreak) bestWinStreak = tempStreak;
+        consecutiveWins = tempStreak;
+      } else if (action === "REDUCE" || action === "HOLD") {
+        if (lastActionType === "loss" || lastActionType === null) {
+          tempStreak++;
+        } else {
+          tempStreak = 1;
+        }
+        lastActionType = "loss";
+        if (tempStreak > bestLossStreak) bestLossStreak = tempStreak;
+        consecutiveLosses = tempStreak;
+      }
+    }
+    currentStreak = tempStreak;
+
+    // Time metrics
+    const firstTs = decisions[decisions.length - 1]?.ts || Date.now();
+    const lastTs = decisions[0]?.ts || Date.now();
+    const daysRunning = Math.max(1, Math.floor((Date.now() - firstTs) / (1000 * 60 * 60 * 24)));
+    const timeSinceLastAction = lastTs ? Date.now() - lastTs : null;
+
+    // KAS moved
+    const totalKasMoved = queue
+      .filter(q => q?.amount_kas)
+      .reduce((sum, q) => sum + (q.amount_kas || 0), 0);
+
+    // P&L estimation
+    let totalPnl = 0;
+    for (let i = 0; i < decisions.length - 1; i++) {
+      const current = decisions[i];
+      const next = decisions[i + 1];
+      if (current.dec?.action === "ACCUMULATE" && next) {
+        const currentPrice = current.kasData?.priceUsd || 0;
+        const nextPrice = next.kasData?.priceUsd || currentPrice;
+        if (nextPrice > currentPrice) {
+          totalPnl += (nextPrice - currentPrice) * (current.dec?.capital_allocation_kas || 0);
+        }
+      }
+    }
+
+    // Estimated ROI
+    const initialCapital = 5000;
+    const estimatedRoi = initialCapital > 0 ? (totalPnl / initialCapital) * 100 : 0;
+
+    // Expected Value
+    const avgWinPct = 2.5;
+    const avgLossPct = 1.0;
+    const winRateDecimal = winRate / 100;
+    const expectedValue = (winRateDecimal * avgWinPct) - ((1 - winRateDecimal) * avgLossPct);
+
+    // Decision quality score
+    const executionRate = total > 0 ? (executed / total) * 100 : 0;
+    const decisionQuality = ((avgConfidence * 0.4) + (avgKelly * 0.3) + (executionRate / 100 * 0.3)) * 100;
+
+    // Regime from quant metrics
+    const regime = lastDec?.dec?.quant_metrics?.regime || "NEUTRAL";
+
+    // Signal accuracy
+    const signalAccuracy = total > 0 ? (executed / total) * 100 : 0;
+
+    // Capital efficiency
+    const signaledValue = decisions.reduce((sum, d) => sum + (d.dec?.capital_allocation_kas || 0), 0);
+    const capitalEfficiency = signaledValue > 0 ? (totalKasMoved / signaledValue) * 100 : 0;
+
+    // ─────────────────────────────────────────────────────────────────
+    // DEFI-NATIVE METRICS
+    // ─────────────────────────────────────────────────────────────────
+    
+    // APY Equivalent: Annualized return based on current performance
+    const dailyReturn = estimatedRoi / Math.max(1, daysRunning);
+    const apyEquivalent = Math.pow(1 + dailyReturn / 100, 365) - 1;
+    
+    // Gas Efficiency: Value generated per KAS spent on fees
+    const totalFees = queue
+      .filter(q => q?.fee_kas)
+      .reduce((sum, q) => sum + (q.fee_kas || 0), 0);
+    const gasEfficiency = totalFees > 0 ? (totalPnl / totalFees) : 0;
+    
+    // Impermanent Loss indicator (simplified - based on accumulation timing)
+    const priceVariance = decisions.reduce((sum, d, i) => {
+      if (i === 0) return 0;
+      const prev = decisions[i - 1]?.kasData?.priceUsd || 0;
+      const curr = d?.kasData?.priceUsd || prev;
+      return sum + Math.abs((curr - prev) / prev);
+    }, 0) / Math.max(1, total - 1);
+    const impermanentLoss = Math.min(100, priceVariance * 100 * 10); // Scaled indicator
+    
+    // Health Score: Composite of various health indicators (0-100)
+    const healthScore = Math.min(100, 
+      (avgConfidence * 25) + 
+      (executionRate * 0.25) + 
+      (capitalEfficiency * 0.2) + 
+      (winRate > 50 ? 20 : 10) +
+      (decisionQuality * 0.1)
+    );
+    
+    // Sharpe Ratio (simplified)
+    const returns = decisions.map((d, i) => {
+      if (i === 0) return 0;
+      const prev = decisions[i - 1]?.kasData?.priceUsd || 0;
+      const curr = d?.kasData?.priceUsd || prev;
+      return prev > 0 ? ((curr - prev) / prev) * 100 : 0;
+    }).filter(r => r !== 0);
+    const avgReturn = returns.reduce((a, b) => a + b, 0) / Math.max(1, returns.length);
+    const stdDev = Math.sqrt(returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / Math.max(1, returns.length));
+    const sharpeRatio = stdDev > 0 ? avgReturn / stdDev : 0;
+    
+    // Max Drawdown
+    let peak = 0;
+    let maxDrawdown = 0;
+    let cumulative = 0;
+    for (const d of decisions) {
+      cumulative += d.dec?.action === "ACCUMULATE" ? 1 : -0.5;
+      if (cumulative > peak) peak = cumulative;
+      const drawdown = peak > 0 ? ((peak - cumulative) / peak) * 100 : 0;
+      if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+    }
+    
+    // Protocol interactions (from queue)
+    const protocolInteractions = queue.length;
+
+    return {
+      totalCycles: total,
+      successfulTrades: executed,
+      pendingTrades: pending,
+      totalKasMoved,
+      avgKelly,
+      avgConfidence,
+      avgRiskScore,
+      avgMonteCarlo,
+      currentStreak,
+      bestWinStreak,
+      bestLossStreak,
+      lastAction,
+      lastActionTime,
+      winRate,
+      actionBreakdown: { accumulate, reduce, hold, rebalance },
+      isProfitable: winRate > 50 && avgConfidence > 0.6 && totalPnl > 0,
+      daysRunning,
+      // Enhanced stats
+      totalPnl,
+      estimatedRoi,
+      expectedValue,
+      riskScore: avgRiskScore,
+      decisionQuality,
+      regime,
+      monteCarloWin: avgMonteCarlo,
+      lastRationale,
+      executionRate,
+      capitalEfficiency,
+      timeSinceLastAction,
+      consecutiveWins,
+      consecutiveLosses,
+      signalAccuracy,
+      // DeFi-native
+      apyEquivalent,
+      gasEfficiency,
+      impermanentLoss,
+      healthScore,
+      sharpeRatio,
+      maxDrawdown,
+      totalFees,
+      protocolInteractions,
+    };
+  }, [decisions, queue]);
+
+  // Helper functions
+  const getProfitColor = () => {
+    if (stats.winRate >= 60 && stats.totalPnl > 0) return C.ok;
+    if (stats.winRate >= 50) return C.accent;
+    return C.danger;
+  };
+
+  const getStatusColor = () => {
+    if (stats.totalCycles === 0) return C.dim;
+    const hoursSinceLast = stats.timeSinceLastAction 
+      ? (Date.now() - stats.timeSinceLastAction) / (1000 * 60 * 60) 
+      : 999;
+    if (hoursSinceLast < 1) return C.ok;
+    if (hoursSinceLast < 6) return C.accent;
+    return C.warn;
+  };
+
+  const getRegimeColor = () => {
+    switch (stats.regime) {
+      case "RISK_ON": return C.ok;
+      case "RISK_OFF": return C.danger;
+      case "BULL": return C.accent;
+      case "BEAR": return C.warn;
+      default: return C.dim;
+    }
+  };
+
+  const getActionEmoji = (action: string) => {
+    switch (action) {
+      case "ACCUMULATE": return "📈";
+      case "REDUCE": return "📉";
+      case "HOLD": return "⏸️";
+      case "REBALANCE": return "⚖️";
+      default: return "❓";
+    }
+  };
+
+  const getActionLabel = (action: string) => {
+    switch (action) {
+      case "ACCUMULATE": return "Accumulating";
+      case "REDUCE": return "Reducing";
+      case "HOLD": return "Holding";
+      case "REBALANCE": return "Rebalancing";
+      default: return "Idle";
+    }
+  };
+
+  const formatTimeSince = (ms: number) => {
+    const minutes = Math.floor(ms / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    if (days > 0) return `${days}d ${hours % 24}h ago`;
+    if (hours > 0) return `${hours}h ${minutes % 60}m ago`;
+    return `${minutes}m ago`;
+  };
+
+  const getHealthColor = (score: number) => {
+    if (score >= 70) return C.ok;
+    if (score >= 40) return C.warn;
+    return C.danger;
+  };
+
+  const getRiskReturnGaugeColor = (value: number, type: 'risk' | 'return') => {
+    if (type === 'risk') {
+      if (value <= 33) return C.ok;
+      if (value <= 66) return C.warn;
+      return C.danger;
+    } else {
+      if (value >= 66) return C.ok;
+      if (value >= 33) return C.warn;
+      return C.danger;
+    }
+  };
+
+  // Generate quick tips based on current stats
+  const quickTips = useMemo(() => {
+    const tips: string[] = [];
+    
+    if (stats.executionRate < 50) {
+      tips.push("Low execution rate detected. Consider arming live execution or lowering auto-approve threshold.");
+    }
+    if (stats.gasEfficiency > 0 && stats.gasEfficiency < 10) {
+      tips.push("Gas efficiency is low. Consider batching transactions or waiting for lower network congestion.");
+    }
+    if (stats.impermanentLoss > 20) {
+      tips.push("High price volatility detected. Consider reducing position size during volatile periods.");
+    }
+    if (stats.healthScore < 50 && stats.totalCycles > 5) {
+      tips.push("Agent health is declining. Review risk parameters and confidence thresholds.");
+    }
+    if (stats.winRate > 60 && stats.isProfitable) {
+      tips.push("Excellent performance! Consider increasing capital allocation to maximize returns.");
+    }
+    if (stats.executionRate > 80 && stats.pendingTrades > 3) {
+      tips.push("High queue backlog. Prioritize signing pending transactions to maintain strategy alignment.");
+    }
+    
+    return tips;
+  }, [stats]);
+
+  return (
+    <div>
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* HEADER */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 13, color: C.text, fontWeight: 700, ...mono }}>
+          🤖 AI Trading Agent Overview
+        </div>
+        <div style={{ fontSize: 11, color: C.dim }}>
+          Your autonomous trading agent performance at a glance
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION 1: AGENT HEALTH & PROFITABILITY (Hero Section) */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      <Card p={20} style={{ marginBottom: 16, background: `linear-gradient(135deg, ${C.s2} 0%, ${C.s1} 100%)`, border: `1px solid ${C.border}` }}>
+        <SectionHeader 
+          icon="💎" 
+          title="Agent Health Score" 
+          tooltip="Composite score (0-100) based on confidence, execution rate, capital efficiency, win rate, and decision quality. Higher is better."
+        />
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          {/* Health Score Display */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20, background: C.s2, borderRadius: 12, padding: 16 }}>
+            <CircularGauge 
+              value={stats.healthScore} 
+              label="Health" 
+              color={getHealthColor(stats.healthScore)} 
+              size={80} 
+            />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: getHealthColor(stats.healthScore), marginBottom: 4 }}>
+                {stats.healthScore >= 70 ? "EXCELLENT" : stats.healthScore >= 40 ? "MODERATE" : "NEEDS ATTENTION"}
+              </div>
+              <ProgressBar 
+                value={stats.healthScore} 
+                max={100} 
+                color={getHealthColor(stats.healthScore)} 
+                height={8}
+              />
+              <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 8 }}>
+                Based on {stats.totalCycles} trading cycles
+              </div>
+            </div>
+          </div>
+
+          {/* Key Profitability Metrics */}
+          <div style={{ background: C.s2, borderRadius: 12, padding: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Est. P&L</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: stats.totalPnl >= 0 ? C.ok : C.danger, ...mono }}>
+                  {stats.totalPnl >= 0 ? "+" : ""}{stats.totalPnl.toFixed(2)} USD
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Est. APY</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: stats.apyEquivalent >= 0 ? C.ok : C.danger, ...mono }}>
+                  {stats.apyEquivalent >= 0 ? "+" : ""}{stats.apyEquivalent.toFixed(1)}%
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Win Rate</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: getProfitColor(), ...mono }}>
+                  {stats.winRate.toFixed(1)}%
+                </div>
+                <ProgressBar value={stats.winRate} max={100} color={getProfitColor()} height={4} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Expected Value</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: stats.expectedValue >= 0 ? C.ok : C.danger, ...mono }}>
+                  {stats.expectedValue >= 0 ? "+" : ""}{stats.expectedValue.toFixed(2)}%
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION 2: RISK / RETURN PROFILE */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      <Card p={18} style={{ marginBottom: 16, background: `linear-gradient(135deg, ${C.s2} 0%, ${C.s1} 100%)` }}>
+        <SectionHeader 
+          icon="📊" 
+          title="Risk / Return Profile" 
+          tooltip="Visual representation of your agent's risk-adjusted returns. Higher return with lower risk is optimal."
+        />
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: C.s2, borderRadius: 10, padding: 16 }}>
+            <CircularGauge 
+              value={stats.riskScore * 100} 
+              max={100} 
+              label="Risk Score" 
+              color={getRiskReturnGaugeColor(stats.riskScore * 100, 'risk')} 
+              size={70} 
+            />
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 8, textAlign: 'center' }}>
+              {stats.riskScore <= 0.4 ? "LOW RISK" : stats.riskScore <= 0.7 ? "MEDIUM RISK" : "HIGH RISK"}
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: C.s2, borderRadius: 10, padding: 16 }}>
+            <CircularGauge 
+              value={Math.min(100, stats.estimatedRoi + 50)} 
+              max={100} 
+              label="ROI" 
+              color={getRiskReturnGaugeColor(Math.min(100, stats.estimatedRoi + 50), 'return')} 
+              size={70} 
+            />
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 8, textAlign: 'center' }}>
+              {stats.estimatedRoi >= 10 ? "HIGH RETURN" : stats.estimatedRoi >= 0 ? "MODERATE" : "UNDERPERFORMING"}
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: C.s2, borderRadius: 10, padding: 16 }}>
+            <CircularGauge 
+              value={Math.min(100, Math.max(0, (stats.sharpeRatio + 2) * 25))} 
+              max={100} 
+              label="Sharpe" 
+              color={stats.sharpeRatio >= 1 ? C.ok : stats.sharpeRatio >= 0 ? C.warn : C.danger} 
+              size={70} 
+            />
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 8, textAlign: 'center' }}>
+              {stats.sharpeRatio >= 2 ? "EXCELLENT" : stats.sharpeRatio >= 1 ? "GOOD" : stats.sharpeRatio >= 0 ? "FAIR" : "POOR"}
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: C.s2, borderRadius: 10, padding: 16 }}>
+            <CircularGauge 
+              value={Math.min(100, 100 - stats.maxDrawdown)} 
+              max={100} 
+              label="Drawdown" 
+              color={stats.maxDrawdown < 10 ? C.ok : stats.maxDrawdown < 25 ? C.warn : C.danger} 
+              size={70} 
+            />
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginTop: 8, textAlign: 'center' }}>
+              Max: {stats.maxDrawdown.toFixed(1)}%
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION 3: DEFIFriendly METRICS */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      <Card p={18} style={{ marginBottom: 16, background: `linear-gradient(135deg, ${C.s2} 0%, ${C.s1} 100%)` }}>
+        <SectionHeader 
+          icon="⛽" 
+          title="DeFi Performance Metrics" 
+          tooltip="Key metrics for DeFi operations: gas efficiency, impermanent loss, and protocol interactions."
+        />
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+          {/* Gas Efficiency */}
+          <div style={{ background: C.s2, borderRadius: 10, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <span style={{ fontSize: 12 }}>⛽</span>
+              <span style={{ fontSize: 10, color: C.dim, ...mono }}>GAS EFFICIENCY</span>
+              <Tooltip text="Value generated per KAS spent on fees. Higher is better.">
+                <span style={{ cursor: 'help', fontSize: 10, color: C.dim }}>ℹ️</span>
+              </Tooltip>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: stats.gasEfficiency >= 10 ? C.ok : stats.gasEfficiency >= 1 ? C.warn : C.danger, ...mono }}>
+              {stats.gasEfficiency.toFixed(1)}x
+            </div>
+            <ProgressBar 
+              value={Math.min(100, stats.gasEfficiency * 10)} 
+              max={100} 
+              color={stats.gasEfficiency >= 10 ? C.ok : stats.gasEfficiency >= 1 ? C.warn : C.danger} 
+              height={4} 
+            />
+          </div>
+
+          {/* Impermanent Loss */}
+          <div style={{ background: C.s2, borderRadius: 10, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <span style={{ fontSize: 12 }}>📉</span>
+              <span style={{ fontSize: 10, color: C.dim, ...mono }}>IL RISK</span>
+              <Tooltip text="Impermanent Loss indicator based on price volatility. Lower is better.">
+                <span style={{ cursor: 'help', fontSize: 10, color: C.dim }}>ℹ️</span>
+              </Tooltip>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: stats.impermanentLoss < 10 ? C.ok : stats.impermanentLoss < 25 ? C.warn : C.danger, ...mono }}>
+              {stats.impermanentLoss.toFixed(1)}%
+            </div>
+            <ProgressBar 
+              value={stats.impermanentLoss} 
+              max={100} 
+              color={stats.impermanentLoss < 10 ? C.ok : stats.impermanentLoss < 25 ? C.warn : C.danger} 
+              height={4} 
+            />
+          </div>
+
+          {/* Protocol Interactions */}
+          <div style={{ background: C.s2, borderRadius: 10, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <span style={{ fontSize: 12 }}>🔗</span>
+              <span style={{ fontSize: 10, color: C.dim, ...mono }}>PROTOCOL TXS</span>
+              <Tooltip text="Total on-chain transactions executed by this agent.">
+                <span style={{ cursor: 'help', fontSize: 10, color: C.dim }}>ℹ️</span>
+              </Tooltip>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: C.accent, ...mono }}>
+              {stats.protocolInteractions}
+            </div>
+            <div style={{ fontSize: 10, color: C.dim, ...mono }}>
+              {stats.successfulTrades} confirmed
+            </div>
+          </div>
+
+          {/* Total Fees */}
+          <div style={{ background: C.s2, borderRadius: 10, padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <span style={{ fontSize: 12 }}>💰</span>
+              <span style={{ fontSize: 10, color: C.dim, ...mono }}>TOTAL FEES</span>
+              <Tooltip text="Total KAS spent on network fees for all transactions.">
+                <span style={{ cursor: 'help', fontSize: 10, color: C.dim }}>ℹ️</span>
+              </Tooltip>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: C.text, ...mono }}>
+              {(stats.totalFees || 0).toFixed(4)}
+            </div>
+            <div style={{ fontSize: 10, color: C.dim, ...mono }}>KAS</div>
+          </div>
+        </div>
+      </Card>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION 4: AI DECISION STATUS */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      <Card p={18} style={{ marginBottom: 16, background: `linear-gradient(135deg, ${C.s2} 0%, ${C.s1} 100%)` }}>
+        <SectionHeader 
+          icon="🧠" 
+          title="Latest AI Decision" 
+          tooltip="The most recent decision from your AI trading agent with key metrics."
+        />
+        
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Badge 
+              text={getActionEmoji(stats.lastAction) + " " + getActionLabel(stats.lastAction)} 
+              color={stats.lastAction === "ACCUMULATE" ? C.ok : stats.lastAction === "REDUCE" ? C.danger : C.warn}
+            />
+            {stats.timeSinceLastAction && (
+              <Badge text={formatTimeSince(stats.timeSinceLastAction)} color={getStatusColor()} />
+            )}
+          </div>
+          <Badge 
+            text={stats.totalCycles > 0 ? "ACTIVE" : "WAITING"} 
+            color={stats.totalCycles > 0 ? C.ok : C.dim} 
+            dot 
+          />
+        </div>
+
+        {/* AI Metrics Grid - 4 columns */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
+          <div style={{ background: C.s2, borderRadius: 8, padding: 12, textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 6 }}>Confidence</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: stats.avgConfidence >= 0.7 ? C.ok : stats.avgConfidence >= 0.5 ? C.warn : C.danger, ...mono }}>
+              {(stats.avgConfidence * 100).toFixed(0)}%
+            </div>
+            <ProgressBar value={stats.avgConfidence * 100} max={100} color={stats.avgConfidence >= 0.7 ? C.ok : stats.avgConfidence >= 0.5 ? C.warn : C.danger} height={3} />
+          </div>
+          <div style={{ background: C.s2, borderRadius: 8, padding: 12, textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 6 }}>Kelly Size</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: C.accent, ...mono }}>
+              {(stats.avgKelly * 100).toFixed(1)}%
+            </div>
+            <ProgressBar value={stats.avgKelly * 100} max={25} color={C.accent} height={3} />
+          </div>
+          <div style={{ background: C.s2, borderRadius: 8, padding: 12, textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 6 }}>Monte Carlo</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: C.ok, ...mono }}>
+              {stats.monteCarloWin.toFixed(0)}%
+            </div>
+            <ProgressBar value={stats.monteCarloWin} max={100} color={C.ok} height={3} />
+          </div>
+          <div style={{ background: C.s2, borderRadius: 8, padding: 12, textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 6 }}>Quality Score</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: stats.decisionQuality >= 70 ? C.ok : stats.decisionQuality >= 50 ? C.warn : C.danger, ...mono }}>
+              {stats.decisionQuality.toFixed(0)}
+            </div>
+            <ProgressBar value={stats.decisionQuality} max={100} color={stats.decisionQuality >= 70 ? C.ok : stats.decisionQuality >= 50 ? C.warn : C.danger} height={3} />
+          </div>
+        </div>
+
+        {/* Regime & Execution */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: stats.lastRationale ? 12 : 0 }}>
+          <Badge 
+            text={`📊 REGIME: ${String(stats.regime).replace(/_/g, " ")}`} 
+            color={getRegimeColor()}
+          />
+          <Badge 
+            text={`⚡ EXECUTION: ${stats.executionRate.toFixed(0)}%`} 
+            color={stats.executionRate >= 80 ? C.ok : stats.executionRate >= 50 ? C.warn : C.danger}
+          />
+          <Badge 
+            text={`💵 SIGNAL: ${stats.signalAccuracy.toFixed(0)}%`} 
+            color={stats.signalAccuracy >= 80 ? C.ok : stats.signalAccuracy >= 50 ? C.warn : C.danger}
+          />
+        </div>
+
+        {/* Last Rationale */}
+        {stats.lastRationale && (
+          <div style={{ background: C.s2, borderRadius: 8, padding: 12 }}>
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 6 }}>AI RATIONALE</div>
+            <div style={{ fontSize: 12, color: C.text, ...mono, lineHeight: 1.5 }}>
+              {stats.lastRationale.slice(0, 200)}{stats.lastRationale.length > 200 ? "..." : ""}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION 5: QUICK STATS GRID */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        <Card p={14} style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Trades Executed</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: C.text, ...mono }}>
+            {stats.successfulTrades}
+          </div>
+          {stats.pendingTrades > 0 && (
+            <div style={{ fontSize: 10, color: C.warn, ...mono }}>+ {stats.pendingTrades} pending</div>
+          )}
+        </Card>
+        <Card p={14} style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>KAS Moved</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: C.accent, ...mono }}>
+            {stats.totalKasMoved.toFixed(0)}
+          </div>
+          <div style={{ fontSize: 10, color: C.dim, ...mono }}>KAS</div>
+        </Card>
+        <Card p={14} style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Capital Efficiency</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: stats.capitalEfficiency >= 80 ? C.ok : stats.capitalEfficiency >= 50 ? C.warn : C.danger, ...mono }}>
+            {stats.capitalEfficiency.toFixed(0)}%
+          </div>
+          <ProgressBar value={stats.capitalEfficiency} max={100} color={stats.capitalEfficiency >= 80 ? C.ok : stats.capitalEfficiency >= 50 ? C.warn : C.danger} height={3} />
+        </Card>
+        <Card p={14} style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Days Running</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: C.text, ...mono }}>
+            {stats.daysRunning}
+          </div>
+        </Card>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION 6: ACTION DISTRIBUTION */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      <Card p={16} style={{ marginBottom: 16 }}>
+        <SectionHeader 
+          icon="📊" 
+          title="Decision Distribution" 
+          tooltip="Breakdown of trading decisions over time. Green = buys, Red = sells."
+        />
+        
+        <div style={{ display: 'flex', height: 36, borderRadius: 8, overflow: 'hidden', marginBottom: 12 }}>
+          {stats.actionBreakdown.accumulate > 0 && (
+            <div 
+              style={{ 
+                width: `${(stats.actionBreakdown.accumulate / stats.totalCycles) * 100}%`, 
+                background: C.ok, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                minWidth: stats.actionBreakdown.accumulate / stats.totalCycles > 0.15 ? 40 : 0,
+                transition: 'width 0.3s ease'
+              }}
+            >
+              {stats.actionBreakdown.accumulate / stats.totalCycles > 0.15 && (
+                <span style={{ fontSize: 11, color: C.s1, ...mono, fontWeight: 600 }}>📈 {stats.actionBreakdown.accumulate}</span>
+              )}
+            </div>
+          )}
+          {stats.actionBreakdown.reduce > 0 && (
+            <div 
+              style={{ 
+                width: `${(stats.actionBreakdown.reduce / stats.totalCycles) * 100}%`, 
+                background: C.danger, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                minWidth: stats.actionBreakdown.reduce / stats.totalCycles > 0.15 ? 40 : 0,
+                transition: 'width 0.3s ease'
+              }}
+            >
+              {stats.actionBreakdown.reduce / stats.totalCycles > 0.15 && (
+                <span style={{ fontSize: 11, color: C.s1, ...mono, fontWeight: 600 }}>📉 {stats.actionBreakdown.reduce}</span>
+              )}
+            </div>
+          )}
+          {stats.actionBreakdown.hold > 0 && (
+            <div 
+              style={{ 
+                width: `${(stats.actionBreakdown.hold / stats.totalCycles) * 100}%`, 
+                background: C.warn, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                minWidth: stats.actionBreakdown.hold / stats.totalCycles > 0.15 ? 40 : 0,
+                transition: 'width 0.3s ease'
+              }}
+            >
+              {stats.actionBreakdown.hold / stats.totalCycles > 0.15 && (
+                <span style={{ fontSize: 11, color: C.s1, ...mono, fontWeight: 600 }}>⏸️ {stats.actionBreakdown.hold}</span>
+              )}
+            </div>
+          )}
+          {stats.actionBreakdown.rebalance > 0 && (
+            <div 
+              style={{ 
+                width: `${(stats.actionBreakdown.rebalance / stats.totalCycles) * 100}%`, 
+                background: C.purple, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                minWidth: stats.actionBreakdown.rebalance / stats.totalCycles > 0.15 ? 40 : 0,
+                transition: 'width 0.3s ease'
+              }}
+            >
+              {stats.actionBreakdown.rebalance / stats.totalCycles > 0.15 && (
+                <span style={{ fontSize: 11, color: C.s1, ...mono, fontWeight: 600 }}>⚖️ {stats.actionBreakdown.rebalance}</span>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11, ...mono }}>
+          <span style={{ color: C.ok }}>📈 Buy: {stats.actionBreakdown.accumulate}</span>
+          <span style={{ color: C.danger }}>📉 Sell: {stats.actionBreakdown.reduce}</span>
+          <span style={{ color: C.warn }}>⏸️ Hold: {stats.actionBreakdown.hold}</span>
+          <span style={{ color: C.purple }}>⚖️ Rebalance: {stats.actionBreakdown.rebalance}</span>
+        </div>
+      </Card>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION 7: STREAKS & PERFORMANCE */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      <Card p={16} style={{ marginBottom: 16 }}>
+        <SectionHeader 
+          icon="🔥" 
+          title="Streaks & Performance" 
+          tooltip="Current and best trading streaks, plus execution metrics."
+        />
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <div style={{ background: C.s2, borderRadius: 10, padding: 14, textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 6 }}>Current Streak</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: stats.currentStreak > 0 ? C.accent : C.dim, ...mono }}>
+              {stats.currentStreak}
+            </div>
+            <div style={{ fontSize: 10, color: C.dim, ...mono }}>cycles</div>
+          </div>
+          <div style={{ background: C.s2, borderRadius: 10, padding: 14, textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 6 }}>Best Win Streak</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: C.ok, ...mono }}>
+              {stats.bestWinStreak}
+            </div>
+            <div style={{ fontSize: 10, color: C.dim, ...mono }}>cycles</div>
+          </div>
+          <div style={{ background: C.s2, borderRadius: 10, padding: 14, textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 6 }}>Best Loss Streak</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: C.danger, ...mono }}>
+              {stats.bestLossStreak}
+            </div>
+            <div style={{ fontSize: 10, color: C.dim, ...mono }}>cycles</div>
+          </div>
+          <div style={{ background: C.s2, borderRadius: 10, padding: 14, textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 6 }}>Execution Rate</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: stats.executionRate >= 80 ? C.ok : stats.executionRate >= 50 ? C.warn : C.danger, ...mono }}>
+              {stats.executionRate.toFixed(0)}%
+            </div>
+            <ProgressBar value={stats.executionRate} max={100} color={stats.executionRate >= 80 ? C.ok : stats.executionRate >= 50 ? C.warn : C.danger} height={3} />
+          </div>
+        </div>
+      </Card>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION 8: QUICK TIPS (Seasoned User Tips) */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {quickTips.length > 0 && (
+        <Card p={16} style={{ marginBottom: 16 }}>
+          <SectionHeader 
+            icon="💡" 
+            title="Optimization Tips" 
+            tooltip="Actionable insights to improve your agent's performance."
+          />
+          
+          <div style={{ display: 'grid', gap: 8 }}>
+            {quickTips.slice(0, 3).map((tip, i) => (
+              <QuickTip key={i} tip={tip} />
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* SECTION 9: QUICK NAVIGATION LINKS */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      <Card p={16}>
+        <SectionHeader 
+          icon="🔗" 
+          title="Quick Access" 
+          tooltip="Navigate to different sections of the dashboard."
+        />
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+          <button 
+            onClick={() => onNavigate?.("analytics")}
+            style={{ 
+              background: C.s2, 
+              border: `1px solid ${C.border}`, 
+              borderRadius: 10, 
+              padding: 14, 
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.15s',
+              ':hover': { background: C.s3 }
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = C.s3)}
+            onMouseOut={(e) => (e.currentTarget.style.background = C.s2)}
+          >
+            <div style={{ fontSize: 12, color: C.accent, fontWeight: 600, ...mono, marginBottom: 4 }}>📊 View Analytics</div>
+            <div style={{ fontSize: 11, color: C.dim }}>Detailed performance metrics</div>
+          </button>
+          
+          <button 
+            onClick={() => onNavigate?.("queue")}
+            style={{ 
+              background: C.s2, 
+              border: `1px solid ${C.border}`, 
+              borderRadius: 10, 
+              padding: 14, 
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.15s',
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = C.s3)}
+            onMouseOut={(e) => (e.currentTarget.style.background = C.s2)}
+          >
+            <div style={{ fontSize: 12, color: C.accent, fontWeight: 600, ...mono, marginBottom: 4 }}>📋 Action Queue</div>
+            <div style={{ fontSize: 11, color: C.dim }}>{stats.pendingTrades > 0 ? `${stats.pendingTrades} pending transactions` : 'View all transactions'}</div>
+          </button>
+          
+          <button 
+            onClick={() => onNavigate?.("controls")}
+            style={{ 
+              background: C.s2, 
+              border: `1px solid ${C.border}`, 
+              borderRadius: 10, 
+              padding: 14, 
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.15s',
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = C.s3)}
+            onMouseOut={(e) => (e.currentTarget.style.background = C.s2)}
+          >
+            <div style={{ fontSize: 12, color: C.accent, fontWeight: 600, ...mono, marginBottom: 4 }}>⚙️ Agent Controls</div>
+            <div style={{ fontSize: 11, color: C.dim }}>Strategy & execution settings</div>
+          </button>
+          
+          <button 
+            onClick={() => onNavigate?.("portfolio")}
+            style={{ 
+              background: C.s2, 
+              border: `1px solid ${C.border}`, 
+              borderRadius: 10, 
+              padding: 14, 
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.15s',
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = C.s3)}
+            onMouseOut={(e) => (e.currentTarget.style.background = C.s2)}
+          >
+            <div style={{ fontSize: 12, color: C.accent, fontWeight: 600, ...mono, marginBottom: 4 }}>💼 Portfolio</div>
+            <div style={{ fontSize: 11, color: C.dim }}>Multi-agent allocation</div>
+          </button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+

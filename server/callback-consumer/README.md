@@ -1,4 +1,4 @@
-# Forge.OS Callback Consumer (Reference Service)
+# Forge-OS Callback Consumer (Reference Service)
 
 Reference downstream callback receiver for scheduler cycle events with:
 - idempotency enforcement (`X-ForgeOS-Idempotency-Key`)

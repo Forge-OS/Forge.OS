@@ -62,7 +62,7 @@ The command must return JSON on stdout:
 
 ## Frontend Integration
 
-Configure Forge.OS frontend:
+Configure Forge-OS frontend:
 
 - `VITE_DECISION_AUDIT_SIGNER_URL=http://127.0.0.1:8797/v1/audit-sign`
 - `VITE_DECISION_AUDIT_SIGNER_TOKEN=...` (optional)

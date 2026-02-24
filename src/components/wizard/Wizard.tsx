@@ -61,7 +61,7 @@ export function Wizard({wallet, onComplete, editAgent, onCancel}: any) {
     <div style={{maxWidth:1040, margin:"0 auto", padding:"clamp(18px, 2.2vw, 34px)"}}>
       {pendingSign && <SigningModal tx={deployTx} wallet={wallet} onSign={handleSigned} onReject={()=>setPendingSign(false)}/>}
       <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:22, flexWrap:"wrap"}}>
-        <span style={{fontSize:10, color:C.dim, letterSpacing:"0.12em", ...mono}}>FORGE.OS / {editAgent ? "EDIT AGENT" : "NEW AGENT"}</span>
+        <span style={{fontSize:10, color:C.dim, letterSpacing:"0.12em", ...mono}}>FORGE-OS / {editAgent ? "EDIT AGENT" : "NEW AGENT"}</span>
         <span style={{width:1, height:12, background:C.border, display:"inline-block"}}/>
         <Badge text={wallet?.provider?.toUpperCase() || "CONNECTED"} color={C.ok} dot/>
       </div>

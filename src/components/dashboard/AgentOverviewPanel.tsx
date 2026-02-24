@@ -318,25 +318,25 @@ export function AgentOverviewPanel({ decisions = [], queue = [], agent, onNaviga
 
         {/* Key profitability metrics row */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-          <div style={{ background: C.s2, borderRadius: 8, padding: 14 }}>
+          <div style={{ background: "rgba(16,25,35,0.45)", borderRadius: 8, padding: 14 }}>
             <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Est. P&L</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: stats.totalPnl >= 0 ? C.ok : C.danger, ...mono }}>
               {stats.totalPnl >= 0 ? "+" : ""}{stats.totalPnl.toFixed(2)} USD
             </div>
           </div>
-          <div style={{ background: C.s2, borderRadius: 8, padding: 14 }}>
+          <div style={{ background: "rgba(16,25,35,0.45)", borderRadius: 8, padding: 14 }}>
             <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Est. ROI</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: stats.estimatedRoi >= 0 ? C.ok : C.danger, ...mono }}>
               {stats.estimatedRoi >= 0 ? "+" : ""}{stats.estimatedRoi.toFixed(2)}%
             </div>
           </div>
-          <div style={{ background: C.s2, borderRadius: 8, padding: 14 }}>
+          <div style={{ background: "rgba(16,25,35,0.45)", borderRadius: 8, padding: 14 }}>
             <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Win Rate</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: getProfitColor(), ...mono }}>
               {stats.winRate.toFixed(1)}%
             </div>
           </div>
-          <div style={{ background: C.s2, borderRadius: 8, padding: 14 }}>
+          <div style={{ background: "rgba(16,25,35,0.45)", borderRadius: 8, padding: 14 }}>
             <div style={{ fontSize: 10, color: C.dim, ...mono, marginBottom: 4 }}>Expected Value</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: stats.expectedValue >= 0 ? C.ok : C.danger, ...mono }}>
               {stats.expectedValue >= 0 ? "+" : ""}{stats.expectedValue.toFixed(2)}%
@@ -566,10 +566,10 @@ export function AgentOverviewPanel({ decisions = [], queue = [], agent, onNaviga
           <button 
             onClick={() => onNavigate?.("analytics")}
             style={{ 
-              background: C.s2, 
-              border: `1px solid ${C.border}`, 
-              borderRadius: 8, 
-              padding: 12, 
+              background: "rgba(16,25,35,0.45)",
+              border: `1px solid rgba(57,221,182,0.1)`,
+              borderRadius: 8,
+              padding: 12,
               cursor: "pointer",
               textAlign: "left",
               transition: "all 0.15s"
@@ -582,10 +582,10 @@ export function AgentOverviewPanel({ decisions = [], queue = [], agent, onNaviga
           <button 
             onClick={() => onNavigate?.("queue")}
             style={{ 
-              background: C.s2, 
-              border: `1px solid ${C.border}`, 
-              borderRadius: 8, 
-              padding: 12, 
+              background: "rgba(16,25,35,0.45)",
+              border: `1px solid rgba(57,221,182,0.1)`,
+              borderRadius: 8,
+              padding: 12,
               cursor: "pointer",
               textAlign: "left",
               transition: "all 0.15s"
@@ -598,10 +598,10 @@ export function AgentOverviewPanel({ decisions = [], queue = [], agent, onNaviga
           <button 
             onClick={() => onNavigate?.("controls")}
             style={{ 
-              background: C.s2, 
-              border: `1px solid ${C.border}`, 
-              borderRadius: 8, 
-              padding: 12, 
+              background: "rgba(16,25,35,0.45)",
+              border: `1px solid rgba(57,221,182,0.1)`,
+              borderRadius: 8,
+              padding: 12,
               cursor: "pointer",
               textAlign: "left",
               transition: "all 0.15s"
@@ -614,10 +614,10 @@ export function AgentOverviewPanel({ decisions = [], queue = [], agent, onNaviga
           <button 
             onClick={() => onNavigate?.("portfolio")}
             style={{ 
-              background: C.s2, 
-              border: `1px solid ${C.border}`, 
-              borderRadius: 8, 
-              padding: 12, 
+              background: "rgba(16,25,35,0.45)",
+              border: `1px solid rgba(57,221,182,0.1)`,
+              borderRadius: 8,
+              padding: 12,
               cursor: "pointer",
               textAlign: "left",
               transition: "all 0.15s"

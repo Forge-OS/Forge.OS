@@ -1,6 +1,6 @@
-# Forge.OS Scheduler + Shared Market Cache (Starter)
+# Forge-OS Scheduler + Shared Market Cache (Starter)
 
-Server-side multi-agent scheduler scaffold for Forge.OS.
+Server-side multi-agent scheduler scaffold for Forge-OS.
 
 What it adds:
 - Shared Kaspa market snapshot cache (price + blockdag + wallet balance) with TTL and in-flight dedupe
@@ -14,7 +14,7 @@ What it adds:
 - Optional callback dispatch per agent (`callbackUrl`)
 - `/health` and Prometheus `/metrics` for operations
 
-This is a production-scale **starter**, not a final scheduler. It is intended to move orchestration pressure out of the browser and make Forge.OS the operator control plane + signing surface.
+This is a production-scale **starter**, not a final scheduler. It is intended to move orchestration pressure out of the browser and make Forge-OS the operator control plane + signing surface.
 
 ## Endpoints
 - `GET /health`

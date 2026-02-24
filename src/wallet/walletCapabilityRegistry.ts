@@ -77,7 +77,7 @@ export const FORGEOS_WALLET_CAPABILITY_REGISTRY: readonly ForgeWalletRegistryIte
     class: "mobile",
     status: "live",
     connectMode: "deeplink",
-    description: "Mobile wallet via deep-link handoff with manual txid confirmation in Forge.OS.",
+    description: "Mobile wallet via deep-link handoff with manual txid confirmation in Forge-OS.",
     uiIcon: "📱",
     docsUrl: "https://github.com/azbuky/kaspium_wallet",
     websiteUrl: "https://kaspium.io",
@@ -98,7 +98,7 @@ export const FORGEOS_WALLET_CAPABILITY_REGISTRY: readonly ForgeWalletRegistryIte
       nativeMultiOutputSend: "unsupported",
     },
     notes: [
-      "Current Forge.OS integration is a single-recipient deep-link + pasted txid flow.",
+      "Current Forge-OS integration is a single-recipient deep-link + pasted txid flow.",
       "No public injected dApp provider API documented in the Kaspium repo.",
     ],
   },
@@ -130,7 +130,7 @@ export const FORGEOS_WALLET_CAPABILITY_REGISTRY: readonly ForgeWalletRegistryIte
     },
     notes: [
       "Injected `window.kastle` API supports connect/getAccount/request/sendKaspa/signMessage.",
-      "Native sendKaspa is single-recipient; multi-output may be possible via signAndBroadcastTx(txJson) with a Forge.OS transaction builder path.",
+      "Native sendKaspa is single-recipient; multi-output may be possible via signAndBroadcastTx(txJson) with a Forge-OS transaction builder path.",
     ],
   },
   {
@@ -178,7 +178,7 @@ export const FORGEOS_WALLET_CAPABILITY_REGISTRY: readonly ForgeWalletRegistryIte
       psktSign: false,
       nativeMultiOutputSend: "unknown",
     },
-    notes: ["Promising for future dApp integration, but Forge.OS adapter work depends on stable injected provider docs/API shape."],
+    notes: ["Promising for future dApp integration, but Forge-OS adapter work depends on stable injected provider docs/API shape."],
   },
   {
     id: "tangem",
@@ -205,7 +205,7 @@ export const FORGEOS_WALLET_CAPABILITY_REGISTRY: readonly ForgeWalletRegistryIte
       psktSign: false,
       nativeMultiOutputSend: "unknown",
     },
-    notes: ["Forge.OS uses a manual hardware bridge flow today (address pairing + external signing/broadcast + pasted txid)."],
+    notes: ["Forge-OS uses a manual hardware bridge flow today (address pairing + external signing/broadcast + pasted txid)."],
   },
   {
     id: "onekey",
@@ -229,7 +229,7 @@ export const FORGEOS_WALLET_CAPABILITY_REGISTRY: readonly ForgeWalletRegistryIte
       psktSign: false,
       nativeMultiOutputSend: "unknown",
     },
-    notes: ["Forge.OS uses a manual hardware bridge flow today (address pairing + external signing/broadcast + pasted txid)."],
+    notes: ["Forge-OS uses a manual hardware bridge flow today (address pairing + external signing/broadcast + pasted txid)."],
   },
   {
     id: "zelcore",
@@ -252,7 +252,7 @@ export const FORGEOS_WALLET_CAPABILITY_REGISTRY: readonly ForgeWalletRegistryIte
       psktSign: false,
       nativeMultiOutputSend: "unknown",
     },
-    notes: ["No Forge.OS dApp signing path yet; candidate for watch-only/import workflows first."],
+    notes: ["No Forge-OS dApp signing path yet; candidate for watch-only/import workflows first."],
   },
 ];
 
