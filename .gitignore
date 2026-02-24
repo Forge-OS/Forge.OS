@@ -1,8 +1,9 @@
 # dependencies
 node_modules/
 
-# build outputs
+# build outputs — CI builds and deploys via GitHub Actions, never commit
 dist/
+assets/
 
 # local env files
 .env
@@ -16,13 +17,12 @@ yarn-error.log*
 
 # macOS
 .DS_Store
+**/.DS_Store
 
 # TypeScript cache
 tsconfig.tsbuildinfo
+*.tsbuildinfo
 
 # Playwright
 playwright-report/
 test-results/
-
-# Build output
-dist/

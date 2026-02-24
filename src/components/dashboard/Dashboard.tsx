@@ -893,7 +893,7 @@ const [viewportWidth, setViewportWidth] = useState(
       {/* Header */}
       <div style={{display:"flex", flexDirection:isMobile ? "column" : "row", justifyContent:"space-between", alignItems:isMobile ? "stretch" : "flex-start", marginBottom:16, gap:isMobile ? 10 : 0}}>
         <div>
-          <div style={{fontSize:11, color:C.dim, letterSpacing:"0.1em", ...mono, marginBottom:2}}>FORGE-OS / AGENT / {agent.name}</div>
+          <div style={{fontSize:11, color:C.dim, letterSpacing:"0.1em", ...mono, marginBottom:2}}>FORGE.OS / AGENT / {agent.name}</div>
           <div style={{fontSize:18, color:C.text, fontWeight:700, ...mono}}>{agent.name}</div>
         </div>
         <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", justifyContent:isMobile ? "flex-start" : "flex-end"}}>

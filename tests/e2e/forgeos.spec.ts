@@ -215,7 +215,8 @@ test.describe("ForgeOS E2E", () => {
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByTestId("network-select").selectOption({ value: "testnet-10" });
     await page.waitForURL(/network=testnet-10/);
-    await expect(page.getByText(/active network profile/i)).toBeVisible();
+    // After reload with testnet-10, WalletGate shows; verify network label is visible
+    await expect(page.getByText(/kaspa testnet/i).first()).toBeVisible();
   });
 
   test("pause/resume/kill-switch controls work and auto-cycle countdown is visible", async ({ page }) => {
