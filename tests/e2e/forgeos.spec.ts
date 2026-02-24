@@ -233,14 +233,14 @@ test.describe("ForgeOS E2E", () => {
     await expect(page.getByText(/AUTO \d{2}:\d{2}/i)).toBeVisible();
     await page.getByTestId("dashboard-tab-controls").click();
     await page.getByRole("button", { name: /PAUSE AGENT/i }).click();
-    await expect(page.getByText(/^PAUSED$/i)).toBeVisible();
+    await expect(page.getByText(/^PAUSED$/i).first()).toBeVisible();
     await page.getByRole("button", { name: /RESUME AGENT/i }).click();
-    await expect(page.getByText(/^RUNNING$/i)).toBeVisible();
+    await expect(page.getByText(/^RUNNING$/i).first()).toBeVisible();
 
     const killPendingId = await injectPendingActionQueueItem(page, { amountKas: 0.9, purpose: "kill switch pending queue item" });
     await page.getByTestId("dashboard-tab-controls").click();
     await page.getByRole("button", { name: /KILL-SWITCH/i }).click();
-    await expect(page.getByText(/^SUSPENDED$/i)).toBeVisible();
+    await expect(page.getByText(/^SUSPENDED$/i).first()).toBeVisible();
     await page.getByTestId("dashboard-tab-queue").click();
     await expect(page.getByTestId(`queue-item-status-${killPendingId}`)).toHaveText(/REJECTED/i);
   });
