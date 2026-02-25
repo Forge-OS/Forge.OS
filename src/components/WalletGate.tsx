@@ -177,6 +177,13 @@ export function WalletGate({onConnect}: any) {
   return (
     <div className="forge-shell" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "clamp(12px, 2vw, 20px)" }}>
       <ForgeAtmosphere />
+      {/* Top-left logo mark */}
+      <div style={{ position: "fixed", top: 16, left: 18, zIndex: 10, display: "flex", alignItems: "center", gap: 8 }}>
+        <img src="/forge-os-icon2.png" alt="Forge-OS" style={{ width: 32, height: 32, objectFit: "contain", filter: "drop-shadow(0 0 6px rgba(57,221,182,0.4))" }} />
+        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", ...mono, color: C.text }}>
+          <span style={{ color: C.accent }}>FORGE</span>-OS
+        </span>
+      </div>
       <div className="forge-content forge-gate-responsive" style={{ width: "100%", maxWidth: 1380, display: "grid", gridTemplateColumns: "minmax(0,1.1fr) minmax(320px,520px)", gap: "clamp(16px, 3vw, 28px)", alignItems: "start" }}>
 
         {/* ── HERO COLUMN ── */}
@@ -184,11 +191,6 @@ export function WalletGate({onConnect}: any) {
 
           {/* Kicker + title */}
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-            <img
-              src="/forge-os-icon2.png"
-              alt="Forge-OS"
-              style={{ width: 80, height: 80, objectFit: "contain", marginBottom: 16, filter: "drop-shadow(0 0 18px rgba(57,221,182,0.45))" }}
-            />
             <div style={{ fontSize: 9, color: C.accent, fontWeight: 700, ...mono, letterSpacing: "0.2em", marginBottom: 12 }}>
               FORGE-OS // KASPA-NATIVE QUANT STACK
             </div>
@@ -287,11 +289,14 @@ export function WalletGate({onConnect}: any) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
           {/* Branding lockup */}
-          <div style={{ textAlign: "center", marginBottom: 4 }}>
-            <div style={{ fontSize: "clamp(24px,4vw,32px)", fontWeight: 700, ...mono, letterSpacing: "0.12em", marginBottom: 4 }}>
-              <span style={{ color: C.accent }}>FORGE</span><span style={{ color: C.text }}>-OS</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, justifyContent: "center" }}>
+            <img src="/forge-os-icon2.png" alt="Forge-OS" style={{ width: 36, height: 36, objectFit: "contain", filter: "drop-shadow(0 0 8px rgba(57,221,182,0.4))" }} />
+            <div>
+              <div style={{ fontSize: "clamp(18px,3vw,24px)", fontWeight: 700, ...mono, letterSpacing: "0.12em", lineHeight: 1.2 }}>
+                <span style={{ color: C.accent }}>FORGE</span><span style={{ color: C.text }}>-OS</span>
+              </div>
+              <div style={{ fontSize: 9, color: C.dim, letterSpacing: "0.1em", ...mono }}>AI-NATIVE FINANCIAL OPERATING SYSTEM · POWERED BY KASPA</div>
             </div>
-            <div style={{ fontSize: 10, color: C.dim, letterSpacing: "0.1em", ...mono }}>AI-NATIVE FINANCIAL OPERATING SYSTEM · POWERED BY KASPA</div>
           </div>
 
           {/* Connect card */}
