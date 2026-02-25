@@ -184,6 +184,11 @@ export function WalletGate({onConnect}: any) {
 
           {/* Kicker + title */}
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+            <img
+              src="/forge-os-icon2.png"
+              alt="Forge-OS"
+              style={{ width: 80, height: 80, objectFit: "contain", marginBottom: 16, filter: "drop-shadow(0 0 18px rgba(57,221,182,0.45))" }}
+            />
             <div style={{ fontSize: 9, color: C.accent, fontWeight: 700, ...mono, letterSpacing: "0.2em", marginBottom: 12 }}>
               FORGE-OS // KASPA-NATIVE QUANT STACK
             </div>

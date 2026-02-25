@@ -1,6 +1,6 @@
 {
-  "name": "FORGE.OS",
-  "short_name": "FORGE.OS",
+  "name": "Forge-OS",
+  "short_name": "Forge-OS",
   "description": "Wallet-native AI agent execution and quant trading on Kaspa BlockDAG.",
   "start_url": "/",
   "scope": "/",
@@ -10,22 +10,10 @@
   "background_color": "#0b0f14",
   "icons": [
     {
-      "src": "/pwa-192.png",
-      "sizes": "192x192",
+      "src": "/forge-os-icon2.png",
+      "sizes": "any",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/pwa-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ],
   "screenshots": [],

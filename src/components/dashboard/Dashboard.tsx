@@ -45,7 +45,6 @@ import { SigningModal } from "../SigningModal";
 import { Badge, Btn, Card, ExtLink, Label, Inp } from "../ui";
 import { EXEC_OPTS, STRATEGY_TEMPLATES, PROFESSIONAL_PRESETS, RISK_OPTS } from "../wizard/constants";
 import { ActionQueue } from "./ActionQueue";
-import { DashboardMissionControlBadges } from "./DashboardMissionControlBadges";
 import { DashboardRuntimeNotices } from "./DashboardRuntimeNotices";
 import { WalletPanel } from "./WalletPanel";
 
@@ -893,7 +892,7 @@ const [viewportWidth, setViewportWidth] = useState(
       {/* Header */}
       <div style={{display:"flex", flexDirection:isMobile ? "column" : "row", justifyContent:"space-between", alignItems:isMobile ? "stretch" : "flex-start", marginBottom:16, gap:isMobile ? 10 : 0}}>
         <div>
-          <div style={{fontSize:11, color:C.dim, letterSpacing:"0.1em", ...mono, marginBottom:2}}>FORGE.OS / AGENT / {agent.name}</div>
+          <div style={{fontSize:11, color:C.dim, letterSpacing:"0.1em", ...mono, marginBottom:2}}>Forge-OS / AGENT / {agent.name}</div>
           <div style={{fontSize:18, color:C.text, fontWeight:700, ...mono}}>{agent.name}</div>
         </div>
         <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", justifyContent:isMobile ? "flex-start" : "flex-end"}}>
@@ -919,22 +918,7 @@ const [viewportWidth, setViewportWidth] = useState(
         </div>
       </div>
 
-      <DashboardMissionControlBadges
-        networkLabel={NETWORK_LABEL}
-        status={status}
-        execMode={execMode}
-        liveExecutionArmed={liveExecutionArmed}
-        autoCycleCountdownLabel={autoCycleCountdownLabel}
-        lastDecisionSource={lastDecisionSource}
-        usage={usage}
-        executionGuardrails={executionGuardrails}
-        receiptConsistencyMetrics={receiptConsistencyMetrics}
-        isAccumulateOnly={ACCUMULATE_ONLY}
-        walletProvider={wallet?.provider || ""}
-        quantClientMode={quantClientMode}
-      />
-
-      <DashboardRuntimeNotices kasDataError={kasDataError} refreshKasData={refreshKasData} kasDataLoading={kasDataLoading} liveExecutionArmed={liveExecutionArmed} liveExecutionReady={liveExecutionReady} executionGuardrails={executionGuardrails} pendingCount={pendingCount} isMobile={isMobile} setTab={setTab} />
+<DashboardRuntimeNotices kasDataError={kasDataError} refreshKasData={refreshKasData} kasDataLoading={kasDataLoading} liveExecutionArmed={liveExecutionArmed} liveExecutionReady={liveExecutionReady} executionGuardrails={executionGuardrails} pendingCount={pendingCount} isMobile={isMobile} setTab={setTab} />
 
       {/* Tabs */}
       <div style={{display:"flex", borderBottom:`1px solid ${C.border}`, marginBottom:18, overflowX:"auto"}}>

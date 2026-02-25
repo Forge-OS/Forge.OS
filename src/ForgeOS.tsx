@@ -113,8 +113,11 @@ export default function ForgeOS() {
       {/* Topbar */}
       <div className="forge-topbar" style={{borderBottom:`1px solid ${C.border}`, padding:"12px clamp(14px, 2vw, 24px)", display:"flex", flexDirection:isMobile ? "column" : "row", alignItems:isMobile ? "stretch" : "center", justifyContent:"space-between", gap:isMobile ? 10 : 0}}>
         <div style={{display:"flex", alignItems:"center", gap:14, justifyContent:isMobile ? "space-between" : "flex-start"}}>
-          <div style={{fontSize:14, fontWeight:700, letterSpacing:"0.14em", ...mono}}>
-            <span style={{color:C.accent}}>FORGE</span><span style={{color:C.text}}>.OS</span>
+          <div style={{display:"flex", alignItems:"center", gap:8}}>
+            <img src="/forge-os-icon2.png" alt="Forge-OS" style={{width:28, height:28, objectFit:"contain", filter:"drop-shadow(0 0 6px rgba(57,221,182,0.4))"}} />
+            <div style={{fontSize:14, fontWeight:700, letterSpacing:"0.14em", ...mono}}>
+              <span style={{color:C.accent}}>FORGE</span><span style={{color:C.text}}>-OS</span>
+            </div>
           </div>
           <div style={{width:1, height:14, background:C.border}}/>
           <div style={{fontSize:10, color:C.dim, letterSpacing:"0.08em", ...mono}}>AI-NATIVE FINANCIAL OS · KASPA</div>
