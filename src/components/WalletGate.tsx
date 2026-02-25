@@ -10,6 +10,7 @@ import {
 import { formatForgeError } from "../runtime/errorTaxonomy";
 import { Badge, Btn, Card, Divider, ExtLink } from "./ui";
 import { ForgeAtmosphere } from "./chrome/ForgeAtmosphere";
+import { WalletCreator } from "./WalletCreator";
 
 // Protocol capability blocks
 const PROTOCOL_STACK = [
@@ -17,7 +18,7 @@ const PROTOCOL_STACK = [
     status: "LIVE",
     statusColor: "#39DDB6",
     title: "KAS Accumulation",
-    desc: "AI-guided accumulation on the Kaspa BlockDAG. Kelly-sized entries, regime-aware execution.",
+    desc: "AI agents accumulate KAS now — Kelly-sized entries, regime-aware execution on the BlockDAG.",
     icon: "◆",
     iconColor: "#39DDB6",
   },
@@ -40,24 +41,24 @@ const PROTOCOL_STACK = [
   {
     status: "READY",
     statusColor: "#8F7BFF",
-    title: "KAS / USDC Pairs",
-    desc: "Engine prepared for native KAS/USDC L1 pairs. When USDC lands on Kaspa, agents activate pair trading automatically.",
+    title: "KAS / USDC Profit Trading",
+    desc: "When Kaspa stablecoins launch, agents flip from accumulation to active buy/sell — profiting on KAS price swings.",
     icon: "⇄",
     iconColor: "#8F7BFF",
   },
   {
     status: "READY",
     statusColor: "#F7B267",
-    title: "Stable Buy/Sell Logic",
-    desc: "Cleaner entry/exit against stable liquidity. Buy KAS with USDC on dips. Sell KAS to USDC on strength.",
-    icon: "↑↓",
+    title: "KRC-20 Token Support",
+    desc: "Engine ready for KRC-20 tokens on Kaspa. Buy the dip, sell the strength — across any KRC-20/KAS pair.",
+    icon: "⬡",
     iconColor: "#F7B267",
   },
   {
     status: "READY",
     statusColor: "#F7B267",
-    title: "Multi-Pair Routing",
-    desc: "Capital router prepared for multi-asset allocation. Extend to KAS/kUSD, KAS/kBTC as Kaspa's DeFi layer grows.",
+    title: "Kaspa 0x Swaps",
+    desc: "Built for Kaspa's 0x-style DEX layer. Agents route capital across pools — KAS, kUSD, kBTC and beyond.",
     icon: "⊕",
     iconColor: "#F7B267",
   },
@@ -67,6 +68,7 @@ export function WalletGate({onConnect}: any) {
   const [busyProvider, setBusyProvider] = useState<string | null>(null);
   const [err, setErr] = useState(null as any);
   const [info, setInfo] = useState("");
+  const [showCreator, setShowCreator] = useState(false);
   const [kaspiumAddress, setKaspiumAddress] = useState("");
   const [savedKaspiumAddress, setSavedKaspiumAddress] = useState("");
   const [lastProvider, setLastProvider] = useState("");
@@ -200,11 +202,11 @@ export function WalletGate({onConnect}: any) {
               <span style={{ color: C.dim, fontWeight: 500, fontSize: "0.85em" }}>⚡ BLOCKDAG SPEED</span>
             </h1>
             <p style={{ font: `500 13px/1.5 'Space Grotesk','Segoe UI',sans-serif`, color: "#9db0c6", maxWidth: "52ch", margin: "0 0 12px" }}>
-              Full-stack DeFi for Kaspa. AI agents accumulate KAS now & execute KAS/USDC pairs when stablecoins launch on L1.
+              Full-stack DeFi for Kaspa. Agents accumulate KAS today — and flip to active profit trading the moment stablecoins, KRC-20, and Kaspa 0x swaps go live.
             </p>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
               <Badge text={`${NETWORK_LABEL}`} color={C.ok} dot />
-              <Badge text="KAS / USDC READY" color={C.purple} dot />
+              <Badge text="KRC-20 READY" color={C.purple} dot />
               <Badge text="NON-CUSTODIAL" color={C.warn} dot />
               <Badge text="DAG-SPEED EXECUTION" color={C.accent} dot />
             </div>
@@ -267,7 +269,7 @@ export function WalletGate({onConnect}: any) {
           {/* Social links */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {[
-              { href: "https://x.com/ForgeOSDefi", icon: "𝕏", label: "@ForgeOSDefi", c: C.text },
+              { href: "https://x.com/ForgeOSxyz", icon: "𝕏", label: "@ForgeOSxyz", c: C.text },
               { href: "https://github.com/Forge-OS", icon: "⌘", label: "GitHub", c: C.dim },
               { href: "https://t.me/ForgeOSDefi", icon: "✈", label: "Telegram", c: C.dim },
             ].map(item => (
@@ -382,6 +384,21 @@ export function WalletGate({onConnect}: any) {
             {err && <div style={{ marginTop: 12, padding: "10px 14px", background: C.dLow, border: `1px solid ${C.danger}40`, borderRadius: 6, fontSize: 11, color: C.danger, ...mono }}>{err}</div>}
 
             <Divider m={16} />
+            {/* Create / import wallet shortcut */}
+            <div style={{ textAlign: "center" }}>
+              <button
+                onClick={() => setShowCreator(true)}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: C.accent, fontSize: 10, ...mono,
+                  textDecoration: "underline", textUnderlineOffset: 3,
+                  padding: "4px 0",
+                }}
+              >
+                No wallet yet? Create or import one →
+              </button>
+            </div>
+            <Divider m={8} />
             <div style={{ fontSize: 9, color: C.dim, ...mono, lineHeight: 1.6 }}>
               Forge-OS never requests your private key · All signing happens inside your wallet · {NETWORK_LABEL}
             </div>
@@ -393,11 +410,11 @@ export function WalletGate({onConnect}: any) {
             border: `1px solid ${C.purple}28`,
             borderRadius: 10, padding: "12px 16px",
           }}>
-            <div style={{ fontSize: 9, color: C.purple, fontWeight: 700, ...mono, letterSpacing: "0.12em", marginBottom: 6 }}>KAS / USDC PAIR READINESS</div>
+            <div style={{ fontSize: 9, color: C.purple, fontWeight: 700, ...mono, letterSpacing: "0.12em", marginBottom: 6 }}>KASPA STABLECOIN UPGRADE · READY</div>
             <div style={{ fontSize: 10, color: C.dim, lineHeight: 1.55 }}>
-              Forge-OS agents are architected for native KAS/USDC pairs. When Kaspa enables stablecoins at L1,
-              agents switch from accumulation-only to full buy/sell logic — stable PnL tracking, cleaner entry/exit,
-              and USDC-denominated risk management. No migration required.
+              Agents accumulate KAS now. When Kaspa stablecoins launch at L1, agents automatically
+              switch to active buy/sell — buying dips, selling strength, and booking profit in USD.
+              KRC-20 tokens and Kaspa 0x swaps are already in the engine. No migration, no downtime.
             </div>
           </div>
         </div>
@@ -409,6 +426,13 @@ export function WalletGate({onConnect}: any) {
           .forge-gate-responsive { grid-template-columns: 1fr !important; max-width: 720px; }
         }
       `}</style>
+
+      {showCreator && (
+        <WalletCreator
+          onConnect={(session) => { setShowCreator(false); onConnect(session); }}
+          onClose={() => setShowCreator(false)}
+        />
+      )}
     </div>
   );
 }

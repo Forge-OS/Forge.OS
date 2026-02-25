@@ -118,16 +118,16 @@ export default function ForgeOS() {
       <ForgeAtmosphere />
       <div className="forge-content" style={{minHeight:"100vh"}}>
       {/* Topbar */}
-      <div className="forge-topbar" style={{borderBottom:`1px solid ${C.border}`, padding:"12px clamp(14px, 2vw, 24px)", display:"flex", flexDirection:isMobile ? "column" : "row", alignItems:isMobile ? "stretch" : "center", justifyContent:"space-between", gap:isMobile ? 10 : 0}}>
-        <div style={{display:"flex", alignItems:"center", gap:14, justifyContent:isMobile ? "space-between" : "flex-start"}}>
-          <div style={{display:"flex", alignItems:"center", gap:8}}>
-            <img src="/forge-os-icon3.png" alt="Forge-OS" style={{width:86, height:86, objectFit:"contain", filter:"drop-shadow(0 0 8px rgba(57,221,182,0.5))"}} />
-            <div style={{fontSize:14, fontWeight:700, letterSpacing:"0.14em", ...mono}}>
+      <div className="forge-topbar" style={{borderBottom:`1px solid ${C.border}`, padding:"10px clamp(12px, 2vw, 20px)", display:"flex", flexDirection:isMobile ? "column" : "row", alignItems:isMobile ? "stretch" : "center", justifyContent:"space-between", gap:isMobile ? 10 : 0}}>
+        <div style={{display:"flex", alignItems:"center", gap:12, justifyContent:isMobile ? "space-between" : "flex-start"}}>
+          <div style={{display:"flex", alignItems:"center", gap:6, flexShrink:0}}>
+            <img src="/forge-os-icon3.png" alt="Forge-OS" style={{width:22, height:22, objectFit:"contain", filter:"drop-shadow(0 0 8px rgba(57,221,182,0.5))"}} />
+            <div style={{fontSize:12, fontWeight:700, letterSpacing:"0.12em", ...mono}}>
               <span style={{color:C.accent}}>FORGE</span><span style={{color:C.text}}>-OS</span>
             </div>
           </div>
-          <div style={{width:1, height:14, background:C.border}}/>
-          <div style={{fontSize:10, color:C.dim, letterSpacing:"0.08em", ...mono}}>AI-NATIVE FINANCIAL OS · KASPA</div>
+          {!isMobile && <div style={{width:1, height:14, background:C.border, margin:"0 4px"}}/>}
+          {!isMobile && <div style={{fontSize:9, color:C.dim, letterSpacing:"0.08em", ...mono}}>AI-NATIVE FINANCIAL OS · KASPA</div>}
         </div>
         <div style={{display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", justifyContent:isMobile ? "flex-start" : "flex-end"}}>
           <div style={{display:"flex", alignItems:"center", gap:6, border:`1px solid ${isMainnet ? C.warn : C.ok}50`, background:isMainnet?C.wLow:C.oLow, borderRadius:6, padding:"4px 6px"}}>

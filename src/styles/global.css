@@ -24,14 +24,45 @@ body {
     radial-gradient(1200px 520px at 85% -6%, rgba(57, 221, 182, 0.13), transparent 62%),
     radial-gradient(900px 460px at 10% -10%, rgba(69, 151, 255, 0.1), transparent 62%),
     linear-gradient(180deg, #05070a 0%, #071017 100%);
+  background-attachment: fixed;
+}
+
+/* PWA standalone mode - prevent blue bar in title bar area */
+@media (display-mode: standalone) {
+  body {
+    background: #05070a;
+  }
+  
+  .forge-shell {
+    background: #05070a;
+  }
 }
 
 .forge-shell {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
   isolation: isolate;
   overflow: hidden;
   overflow: clip;
+}
+
+/* PWA standalone mode - ensure proper background for title bar area */
+@supports (-webkit-touch-callout: none) {
+  html, body {
+    min-height: calc(100vh + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+  }
+  
+  .forge-shell {
+    min-height: calc(100vh + env(safe-area-inset-top));
+    min-height: calc(100dvh + env(safe-area-inset-top));
+  }
+  
+  .forge-topbar {
+    margin-top: calc(-1 * env(safe-area-inset-top));
+    padding-top: calc(10px + env(safe-area-inset-top));
+  }
 }
 
 .forge-atmosphere {
