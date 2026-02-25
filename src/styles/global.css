@@ -24,7 +24,6 @@ body {
     radial-gradient(1200px 520px at 85% -6%, rgba(57, 221, 182, 0.13), transparent 62%),
     radial-gradient(900px 460px at 10% -10%, rgba(69, 151, 255, 0.1), transparent 62%),
     linear-gradient(180deg, #05070a 0%, #071017 100%);
-  animation: forgeBgPulse 14s ease-in-out infinite alternate;
 }
 
 .forge-shell {
@@ -46,9 +45,11 @@ body {
 .forge-atmosphere__aura {
   position: absolute;
   border-radius: 999px;
-  filter: blur(42px);
-  opacity: 0.46;
+  filter: blur(22px);
+  opacity: 0.38;
   animation: forgeAuraShift 16s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+  contain: strict;
 }
 
 .forge-atmosphere__aura--north {
@@ -97,6 +98,7 @@ body {
   border: 1px solid rgba(57, 221, 182, 0.24);
   border-radius: 999px;
   transform-origin: center;
+  will-change: transform;
 }
 
 .forge-ring--one {
@@ -418,15 +420,6 @@ input:focus-visible {
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes forgeBgPulse {
-  from {
-    filter: saturate(96%);
-  }
-  to {
-    filter: saturate(108%);
   }
 }
 
