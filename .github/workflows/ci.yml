@@ -46,6 +46,44 @@ jobs:
       - name: Smoke
         run: npm run smoke
 
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_KAS_API: ${{ vars.VITE_KAS_API || 'https://api-tn10.kaspa.org' }}
+          VITE_KAS_API_FALLBACKS: ${{ vars.VITE_KAS_API_FALLBACKS || 'https://api.kaspa.org' }}
+          VITE_KAS_EXPLORER: ${{ vars.VITE_KAS_EXPLORER || 'https://explorer-tn10.kaspa.org' }}
+          VITE_KAS_NETWORK: ${{ vars.VITE_KAS_NETWORK || 'kaspa_testnet_10' }}
+          VITE_KAS_NETWORK_LABEL: ${{ vars.VITE_KAS_NETWORK_LABEL || 'Kaspa Testnet 10' }}
+          VITE_KAS_WS_URL: ${{ vars.VITE_KAS_WS_URL || '' }}
+          VITE_KAS_ENFORCE_WALLET_NETWORK: ${{ vars.VITE_KAS_ENFORCE_WALLET_NETWORK || 'true' }}
+        run: npm run build
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
+
   e2e:
     runs-on: ubuntu-latest
     steps:
