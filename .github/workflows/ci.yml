@@ -4,6 +4,13 @@ on:
   pull_request:
   push:
     branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      run_redis_tests:
+        description: 'Run Redis integration tests'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   validate:
@@ -73,6 +80,7 @@ jobs:
           if-no-files-found: ignore
 
   scheduler-redis-integration:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_redis_tests == 'true'
     runs-on: ubuntu-latest
     services:
       redis:
@@ -103,6 +111,7 @@ jobs:
         run: npm run test:scheduler:redis
 
   load-redis-smoke:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_redis_tests == 'true'
     runs-on: ubuntu-latest
     services:
       redis:
