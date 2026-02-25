@@ -15,8 +15,9 @@ async function loadKaspa() {
   // @ts-ignore — kaspa-wasm ships a flat ES module
   const kaspa = await import("kaspa-wasm");
   // Some builds require an explicit init call; call it if present and idempotent.
-  if (typeof kaspa.default === "function") {
-    try { await kaspa.default(); } catch {}
+  const initFn = (kaspa as any).default || (kaspa as any).init;
+  if (typeof initFn === "function") {
+    try { await initFn(); } catch {}
   }
   return kaspa;
 }

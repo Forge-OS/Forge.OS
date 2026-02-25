@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Forge-OS",
+  "version": "1.0.0",
+  "description": "Kaspa AI trading agents — wallet balance, send, receive, and agent monitoring.",
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background/service-worker.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://forgeos.xyz/*", "*://www.forgeos.xyz/*", "*://localhost:*/*"],
+      "js": ["content/site-bridge.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": ["storage", "alarms", "clipboardWrite"],
+  "host_permissions": [
+    "https://api.kaspa.org/*",
+    "https://api-tn10.kaspa.org/*"
+  ]
+}

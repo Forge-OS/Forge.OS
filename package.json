@@ -15,6 +15,9 @@
     "domain:check": "node scripts/domain-health.mjs",
     "domain:watch": "node scripts/domain-watch.mjs",
     "preview": "vite preview",
+    "build:ext": "vite build --config vite.extension.config.ts && node -e \"const {mkdirSync,cpSync}=require('fs');mkdirSync('dist-extension/extension/icons',{recursive:true});cpSync('extension/icons','dist-extension/extension/icons',{recursive:true})\"",
+    "build:ext:firefox": "TARGET_BROWSER=firefox vite build --config vite.extension.config.ts && node -e \"const {mkdirSync,cpSync}=require('fs');mkdirSync('dist-extension/extension/icons',{recursive:true});cpSync('extension/icons','dist-extension/extension/icons',{recursive:true})\"",
+    "dev:ext": "vite build --config vite.extension.config.ts --watch",
     "ci": "npm run verify:domain && npm run lint && npm run typecheck && npm run test:run && npm run build && npm run pages:fallback && npm run verify:fallback && npm run smoke",
     "lint": "node scripts/lint-basic.mjs",
     "test": "vitest",
@@ -44,9 +47,12 @@
     "@playwright/test": "^1.51.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/webextension-polyfill": "^0.12.5",
     "@vitejs/plugin-react": "^4.3.3",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
-    "vitest": "^3.2.4"
+    "vite-plugin-web-extension": "^4.5.0",
+    "vitest": "^3.2.4",
+    "webextension-polyfill": "^0.12.0"
   }
 }

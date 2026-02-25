@@ -195,18 +195,45 @@ export function WalletPanel({ agent, wallet, kasData, marketHistory = [], lastDe
           )}
         </div>
 
-        {/* Vault balance */}
+        {/* Stablecoin balance */}
         <div style={{ padding: "12px 16px 14px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-            <img src="/kaspa-logo.png" alt="KAS" width={38} height={38} style={{ borderRadius: "50%", boxShadow: `0 0 16px ${C.accent}40` }} />
-            <div>
-              <div style={{ fontSize: 9, color: C.dim, ...mono, letterSpacing: "0.12em", marginBottom: 2 }}>VAULT BALANCE</div>
-              <div style={{ fontSize: 26, color: C.accent, fontWeight: 700, ...mono, lineHeight: 1 }}>
-                {liveKas !== null ? fmt(liveKas, 4) : "—"} <span style={{ fontSize: 13, color: C.dim }}>KAS</span>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <div style={{ fontSize: 9, color: C.dim, ...mono, letterSpacing: "0.12em" }}>STABLECOIN BALANCE</div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: `${C.warn}15`, border: `1px solid ${C.warn}40`, borderRadius: 4, padding: "3px 8px" }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.warn, display: "inline-block" }} />
+                <span style={{ fontSize: 7, color: C.warn, fontWeight: 700, ...mono, letterSpacing: "0.1em" }}>DEMO</span>
               </div>
-              {balanceUsd !== null && (
-                <div style={{ fontSize: 12, color: C.dim, ...mono, marginTop: 2 }}>{fmtUsd(balanceUsd)} <span style={{ fontSize: 9, color: C.muted }}>USDC equiv.</span></div>
-              )}
+            </div>
+
+            {/* USDC row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <img src="/usdc_white.png" alt="USDC" width={32} height={32} style={{ flexShrink: 0, borderRadius: "50%", boxShadow: "0 0 10px rgba(39,117,202,0.4)" }} />
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.text, ...mono }}>USDC</div>
+                  <div style={{ fontSize: 8, color: C.dim }}>USD Coin</div>
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: C.text, ...mono, lineHeight: 1 }}>0.00</div>
+                <div style={{ fontSize: 9, color: C.dim, ...mono }}>≈ $0.00</div>
+              </div>
+            </div>
+
+            {/* USDT row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <img src="/usdt-logo.svg" alt="USDT" width={32} height={32} style={{ flexShrink: 0, boxShadow: "0 0 10px rgba(38,161,123,0.4)", borderRadius: "50%" }} />
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.text, ...mono }}>USDT</div>
+                  <div style={{ fontSize: 8, color: C.dim }}>Tether USD</div>
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: C.text, ...mono, lineHeight: 1 }}>0.00</div>
+                <div style={{ fontSize: 9, color: C.dim, ...mono }}>≈ $0.00</div>
+              </div>
             </div>
           </div>
 
