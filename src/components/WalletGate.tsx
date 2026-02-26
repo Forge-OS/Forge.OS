@@ -299,41 +299,22 @@ export function WalletGate({onConnect}: any) {
               All operations are wallet-native. Forge-OS never stores private keys or signs on your behalf.
             </div>
 
-            {/* Create / import wallet shortcut - moved here */}
-            <div style={{ 
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 16,
-              padding: "16px 20px",
-              background: "linear-gradient(135deg, rgba(57,221,182,0.06) 0%, rgba(8,13,20,0.6) 100%)",
-              border: `1px solid ${C.accent}30`,
-              borderRadius: 12,
-              boxShadow: `0 0 20px rgba(57,221,182,0.08), inset 0 1px 0 rgba(255,255,255,0.03)`,
-            }}>
-              <div style={{ fontSize: 11, color: C.text, ...mono, fontWeight: 600 }}>
-                Don't have a Kaspa wallet?
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  onClick={() => connect("demo")}
-                  disabled={busy}
-                  style={{
-                    background: `transparent`,
-                    border: `1px solid ${C.accent}`, 
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    color: C.accent, 
-                    fontSize: 10, 
-                    ...mono,
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                    padding: "10px 20px",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  Connect
-                </button>
+            {/* Connect buttons - two separate boxes */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              {/* Box 1: Create or import */}
+              <div style={{ 
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "14px 16px",
+                background: "linear-gradient(135deg, rgba(57,221,182,0.06) 0%, rgba(8,13,20,0.6) 100%)",
+                border: `1px solid ${C.accent}30`,
+                borderRadius: 12,
+              }}>
+                <div style={{ fontSize: 11, color: C.text, ...mono, fontWeight: 600 }}>
+                  Don't have a Kaspa wallet?
+                </div>
                 <button
                   onClick={() => setShowCreator(true)}
                   style={{
@@ -346,14 +327,34 @@ export function WalletGate({onConnect}: any) {
                     ...mono,
                     fontWeight: 700,
                     letterSpacing: "0.08em",
-                    padding: "10px 20px",
+                    padding: "8px 16px",
                     boxShadow: "0 4px 12px rgba(57,221,182,0.25)",
-                    transition: "transform 0.15s, box-shadow 0.15s",
                   }}
                 >
                   → Create or import one
                 </button>
               </div>
+              {/* Box 2: Connect */}
+              <button
+                onClick={() => connect("demo")}
+                disabled={busy}
+                style={{
+                  background: `transparent`,
+                  border: `1px solid ${C.accent}`, 
+                  borderRadius: 12,
+                  cursor: "pointer",
+                  color: C.accent, 
+                  fontSize: 11, 
+                  ...mono,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  padding: "14px 24px",
+                  transition: "all 0.15s",
+                  minWidth: 100,
+                }}
+              >
+                Connect
+              </button>
             </div>
 
             {info && <div style={{ marginTop: 12, padding: "10px 14px", background: `${C.ok}12`, border: `1px solid ${C.ok}44`, borderRadius: 6, fontSize: 11, color: C.ok, ...mono }}>{info}</div>}
