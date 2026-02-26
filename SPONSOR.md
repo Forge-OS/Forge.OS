@@ -21,7 +21,7 @@ If you find this project valuable, consider supporting its continued development
 Send any amount of KAS to:
 
 ```
-kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85
+kaspa:qzrchdekt7kxmypp2mc22l98q6ww8p4vtx8myj37xchk00jk7uj5u4v3k587a
 ```
 
 <p align="center">
