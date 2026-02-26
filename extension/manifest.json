@@ -23,11 +23,17 @@
   "content_scripts": [
     {
       "matches": ["*://forgeos.xyz/*", "*://www.forgeos.xyz/*", "*://localhost:*/*"],
+      "js": ["content/page-provider.ts"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://forgeos.xyz/*", "*://www.forgeos.xyz/*", "*://localhost:*/*"],
       "js": ["content/site-bridge.ts"],
       "run_at": "document_idle"
     }
   ],
-  "permissions": ["storage", "alarms", "clipboardWrite"],
+  "permissions": ["storage", "alarms", "clipboardWrite", "tabs"],
   "host_permissions": [
     "https://api.kaspa.org/*",
     "https://api-tn10.kaspa.org/*"

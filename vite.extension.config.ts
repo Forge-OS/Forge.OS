@@ -24,12 +24,20 @@ export default defineConfig({
         },
         icons: { "16": "extension/icons/icon16.png", "48": "extension/icons/icon48.png", "128": "extension/icons/icon128.png" },
         background: { service_worker: "extension/background/service-worker.ts", type: "module" },
-        content_scripts: [{
-          matches: ["*://forgeos.xyz/*", "*://www.forgeos.xyz/*", "*://localhost/*"],
-          js: ["extension/content/site-bridge.ts"],
-          run_at: "document_idle",
-        }],
-        permissions: ["storage", "alarms", "clipboardWrite"],
+        content_scripts: [
+          {
+            matches: ["*://forgeos.xyz/*", "*://www.forgeos.xyz/*", "*://localhost/*"],
+            js: ["extension/content/page-provider.ts"],
+            world: "MAIN",
+            run_at: "document_start",
+          },
+          {
+            matches: ["*://forgeos.xyz/*", "*://www.forgeos.xyz/*", "*://localhost/*"],
+            js: ["extension/content/site-bridge.ts"],
+            run_at: "document_idle",
+          },
+        ],
+        permissions: ["storage", "alarms", "clipboardWrite", "tabs"],
         host_permissions: ["https://api.kaspa.org/*", "https://api-tn10.kaspa.org/*"],
       }),
       browser,

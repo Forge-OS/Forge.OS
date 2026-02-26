@@ -8,12 +8,18 @@ import { Dashboard } from "./components/dashboard/Dashboard";
 import { Btn } from "./components/ui";
 import { KASPA_NETWORK_PROFILES } from "./kaspa/network";
 import { ForgeAtmosphere } from "./components/chrome/ForgeAtmosphere";
+import { Header } from "./components/Header";
+import { SignInModal } from "./components/SignInModal";
+import { loadSession, clearSession, type ForgeSession } from "./auth/siwa";
+import { WalletAdapter } from "./wallet/WalletAdapter";
 
 const FORGE_AGENTS_KEY = "forgeos.session.agents.v2";
 const FORGE_ACTIVE_KEY = "forgeos.session.activeAgent.v2";
 
 export default function ForgeOS() {
   const [wallet, setWallet] = useState(null as any);
+  const [siwaSession, setSiwaSession] = useState<ForgeSession | null>(() => loadSession());
+  const [showSignIn, setShowSignIn] = useState(false);
   const [agents, setAgents] = useState<any[]>(() => {
     try {
       if (typeof window === "undefined") return [];
@@ -46,13 +52,56 @@ export default function ForgeOS() {
     setWallet(session);
     setView(agents.length > 0 ? "dashboard" : "create");
   };
+
+  /** Called by SignInModal after connect + SIWA sign completes. */
+  const handleSignIn = (session: ForgeSession, walletInfo: any) => {
+    setSiwaSession(session);
+    setWallet(walletInfo);
+    setShowSignIn(false);
+    setView(agents.length > 0 ? "dashboard" : "create");
+  };
+
   const handleDisconnect = () => {
     const confirmed = window.confirm(
       "Disconnect wallet?\n\nYour agent configurations will be preserved and restored on next connect."
     );
     if (!confirmed) return;
+    clearSession();
+    setSiwaSession(null);
     setWallet(null);
   };
+
+  // Handle reconnect - try to reconnect via extension if user has existing session
+  const handleReconnect = async () => {
+    const session = loadSession();
+    if (!session) {
+      setShowSignIn(true);
+      return;
+    }
+
+    // Try to reconnect via extension
+    try {
+      let newSession: any;
+      if (session.provider === "kasware") {
+        newSession = await WalletAdapter.connectKasware();
+      } else if (session.provider === "kastle") {
+        newSession = await WalletAdapter.connectKastle();
+      } else if (session.provider === "forgeos") {
+        newSession = await WalletAdapter.connectForgeOS();
+      } else {
+        setShowSignIn(true);
+        return;
+      }
+
+      if (newSession?.address) {
+        setWallet({ address: newSession.address, network: session.network, provider: session.provider });
+        setView(agents.length > 0 ? "dashboard" : "create");
+      }
+    } catch {
+      setShowSignIn(true);
+    }
+  };
+
   const handleDeploy = (a: any) => {
     setAgents((prev: any[]) => {
       // If updating existing agent, replace it; otherwise add new
@@ -111,7 +160,21 @@ export default function ForgeOS() {
     try { window.localStorage.setItem(FORGE_ACTIVE_KEY, activeAgentId); } catch {}
   }, [activeAgentId]);
 
-  if(!wallet) return <WalletGate onConnect={handleConnect}/>;
+  if (!wallet) return (
+    <>
+      <ForgeAtmosphere />
+      <Header
+        wallet={siwaSession ? { address: siwaSession.address, network: siwaSession.network, provider: siwaSession.provider } : null}
+        onSignInClick={() => setShowSignIn(true)}
+        onReconnect={handleReconnect}
+        onDisconnect={handleDisconnect}
+      />
+      <WalletGate onConnect={handleConnect} onSignInClick={() => setShowSignIn(true)} />
+      {showSignIn && (
+        <SignInModal onSignIn={handleSignIn} onClose={() => setShowSignIn(false)} />
+      )}
+    </>
+  );
 
   return(
     <div className="forge-shell" style={{color:C.text}}>

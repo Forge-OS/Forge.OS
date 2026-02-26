@@ -3,6 +3,7 @@ import { createKaspiumProvider } from "./providers/kaspium";
 import { createKastleProvider } from "./providers/kastle";
 import { createGhostProvider } from "./providers/ghost";
 import { createKaswareProvider } from "./providers/kasware";
+import { loadManagedWallet, signMessage as managedSignMessage } from "./KaspaWalletManager";
 import {
   ALLOWED_ADDRESS_PREFIXES,
   ALL_KASPA_ADDRESS_PREFIXES,
@@ -129,16 +130,20 @@ export const WalletAdapter = {
   detect() {
     let kasware: any;
     let kastle: any;
+    let forgeos: any;
     try {
       kasware = typeof window !== "undefined" ? (window as any).kasware : undefined;
       kastle = typeof window !== "undefined" ? (window as any).kastle : undefined;
+      forgeos = typeof window !== "undefined" ? (window as any).forgeos : undefined;
     } catch {
       kasware = undefined;
       kastle = undefined;
+      forgeos = undefined;
     }
     return {
       kasware: !!kasware,
       kastle: !!kastle,
+      forgeos: !!forgeos?.isForgeOS,
       ghost: false,
       kaspium: true,
       kaswareMethods: kasware
@@ -169,6 +174,23 @@ export const WalletAdapter = {
 
   async connectKastle() {
     return kastleProvider.connect();
+  },
+
+  async connectForgeOS() {
+    // Try extension provider first (page-provider.ts injects window.forgeos)
+    const forgeos = (window as any).forgeos;
+    if (forgeos?.isForgeOS) {
+      const wallet = await forgeos.connect();
+      if (wallet?.address) {
+        return { address: wallet.address, network: wallet.network, provider: "forgeos" };
+      }
+    }
+    // Fallback: read managed wallet directly from localStorage (no extension needed)
+    const managed = loadManagedWallet();
+    if (managed?.address) {
+      return { address: managed.address, network: managed.network, provider: "forgeos" };
+    }
+    throw new Error("No Forge-OS wallet found. Please create or import a wallet first.");
   },
 
   connectKaspium(address: string) {
@@ -217,6 +239,20 @@ export const WalletAdapter = {
 
   async signMessageKastle(message: string) {
     return kastleProvider.signMessage(message);
+  },
+
+  async signMessageForgeOS(message: string) {
+    // Try extension provider first
+    const forgeos = (window as any).forgeos;
+    if (forgeos?.isForgeOS) {
+      return forgeos.signMessage(message);
+    }
+    // Fallback: sign locally with managed wallet phrase
+    const managed = loadManagedWallet();
+    if (managed?.phrase) {
+      return managedSignMessage(managed.phrase, message);
+    }
+    throw new Error("No Forge-OS wallet found for signing.");
   },
 
   supportsNativeMultiOutput(provider: string) {

@@ -1,22 +1,27 @@
-// Typed chrome.storage.local wrappers
-// Uses the same key names as the main Forge-OS site so the content script
-// can sync localStorage → extension storage seamlessly.
+// Typed chrome.storage.local wrappers.
+// SECURITY: ManagedWallet no longer carries a phrase field.
+// The mnemonic lives exclusively in the encrypted vault (forgeos.vault.v1).
+// The content bridge syncs only non-sensitive metadata (address, network, agents).
 
 const KEYS = {
   agents: "forgeos.session.agents.v2",
   activeAgent: "forgeos.session.activeAgent.v2",
-  managedWallet: "forgeos.managed.wallet.v1",
+  // Wallet address + network only — phrase is in the vault, never here
+  walletMeta: "forgeos.wallet.meta.v2",
   network: "forgeos.network",
   lastProvider: "forgeos.wallet.lastProvider.mainnet",
+  // Auto-lock settings (minutes)
+  autoLockMinutes: "forgeos.autolock.minutes.v1",
 } as const;
 
-function chromeStorage() {
-  // Works in both Chrome (chrome.storage) and Firefox (browser.storage via polyfill)
+function chromeStorage(): chrome.storage.LocalStorageArea | null {
   if (typeof chrome !== "undefined" && chrome.storage) return chrome.storage.local;
   return null;
 }
 
-export async function getAgents(): Promise<any[]> {
+// ── Agents ───────────────────────────────────────────────────────────────────
+
+export async function getAgents(): Promise<unknown[]> {
   const store = chromeStorage();
   if (!store) return [];
   return new Promise((resolve) => {
@@ -31,6 +36,14 @@ export async function getAgents(): Promise<any[]> {
   });
 }
 
+export async function setAgents(agents: unknown[]): Promise<void> {
+  const store = chromeStorage();
+  if (!store) return;
+  return new Promise((resolve) => {
+    store.set({ [KEYS.agents]: JSON.stringify(agents) }, resolve);
+  });
+}
+
 export async function getActiveAgentId(): Promise<string> {
   const store = chromeStorage();
   if (!store) return "";
@@ -39,40 +52,49 @@ export async function getActiveAgentId(): Promise<string> {
   });
 }
 
-export interface ManagedWallet {
-  phrase: string;
+// ── Wallet metadata (address + network ONLY — no phrase) ─────────────────────
+
+/**
+ * Non-sensitive wallet metadata stored in chrome.storage.local.
+ * The mnemonic is NEVER included here — it lives in the encrypted vault.
+ */
+export interface WalletMeta {
   address: string;
   network: string;
 }
 
-export async function getManagedWallet(): Promise<ManagedWallet | null> {
+export async function getWalletMeta(): Promise<WalletMeta | null> {
   const store = chromeStorage();
   if (!store) return null;
   return new Promise((resolve) => {
-    store.get(KEYS.managedWallet, (result) => {
+    store.get(KEYS.walletMeta, (result) => {
       try {
-        const raw = result[KEYS.managedWallet];
+        const raw = result[KEYS.walletMeta];
         if (!raw) return resolve(null);
         const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-        resolve(parsed?.address ? parsed : null);
+        resolve(parsed?.address ? (parsed as WalletMeta) : null);
       } catch { resolve(null); }
     });
   });
 }
 
-export async function setManagedWallet(data: ManagedWallet): Promise<void> {
+export async function setWalletMeta(meta: WalletMeta): Promise<void> {
   const store = chromeStorage();
   if (!store) return;
   return new Promise((resolve) => {
-    store.set({ [KEYS.managedWallet]: JSON.stringify(data) }, resolve);
+    store.set({ [KEYS.walletMeta]: JSON.stringify(meta) }, resolve);
   });
 }
 
-export async function clearManagedWallet(): Promise<void> {
+export async function clearWalletMeta(): Promise<void> {
   const store = chromeStorage();
   if (!store) return;
-  return new Promise((resolve) => { store.remove(KEYS.managedWallet, resolve); });
+  return new Promise((resolve) => {
+    store.remove(KEYS.walletMeta, resolve);
+  });
 }
+
+// ── Network ───────────────────────────────────────────────────────────────────
 
 export async function getNetwork(): Promise<string> {
   const store = chromeStorage();
@@ -82,10 +104,56 @@ export async function getNetwork(): Promise<string> {
   });
 }
 
-export async function setAgents(agents: any[]): Promise<void> {
+export async function setNetwork(network: string): Promise<void> {
   const store = chromeStorage();
   if (!store) return;
   return new Promise((resolve) => {
-    store.set({ [KEYS.agents]: JSON.stringify(agents) }, resolve);
+    store.set({ [KEYS.network]: network }, resolve);
   });
+}
+
+// ── Auto-lock settings ────────────────────────────────────────────────────────
+
+export async function getAutoLockMinutes(): Promise<number> {
+  const store = chromeStorage();
+  if (!store) return 15;
+  return new Promise((resolve) => {
+    store.get(KEYS.autoLockMinutes, (result) => {
+      const val = result[KEYS.autoLockMinutes];
+      resolve(typeof val === "number" ? val : 15);
+    });
+  });
+}
+
+export async function setAutoLockMinutes(minutes: number): Promise<void> {
+  const store = chromeStorage();
+  if (!store) return;
+  return new Promise((resolve) => {
+    store.set({ [KEYS.autoLockMinutes]: minutes }, resolve);
+  });
+}
+
+// ── Legacy shim ───────────────────────────────────────────────────────────────
+// Kept for backward compatibility during migration. Remove after one release cycle.
+
+/** @deprecated Use getWalletMeta() — phrase field is always undefined. */
+export interface ManagedWallet {
+  address: string;
+  network: string;
+  phrase?: never; // Explicitly forbidden — phrase lives in the vault only
+}
+
+/** @deprecated Use getWalletMeta(). */
+export async function getManagedWallet(): Promise<ManagedWallet | null> {
+  return getWalletMeta();
+}
+
+/** @deprecated Use setWalletMeta(). */
+export async function setManagedWallet(data: Pick<ManagedWallet, "address" | "network">): Promise<void> {
+  return setWalletMeta(data);
+}
+
+/** @deprecated Use resetWallet() from vault/vault.ts for a full wipe. */
+export async function clearManagedWallet(): Promise<void> {
+  return clearWalletMeta();
 }

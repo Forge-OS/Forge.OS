@@ -36,10 +36,33 @@ async function deriveAddress(phrase: string, networkId: string): Promise<string>
   return address.toString();
 }
 
-/** Generate a brand-new wallet. Returns phrase + derived address. */
-export async function generateWallet(networkId: string): Promise<ManagedWalletData> {
+/**
+ * Generate a brand-new wallet. Returns phrase + derived address.
+ *
+ * @param networkId  Kaspa network ID ("mainnet" | "testnet-10" etc.)
+ * @param wordCount  Mnemonic length: 12 (128-bit entropy) or 24 (256-bit, default).
+ *                   Both are standard BIP39 and importable into all Kaspa wallets
+ *                   using derivation path m/44'/111'/0'/0/0.
+ *
+ * Interoperability note:
+ *   The derived address matches what Kasware, Kastle, Kaspium and other BIP44
+ *   wallets derive for the same mnemonic on the same network.
+ *   Derivation path: m/44'/111'/0'/0/0 (account 0, receive chain, index 0).
+ */
+export async function generateWallet(
+  networkId: string,
+  wordCount: 12 | 24 = 24,
+): Promise<ManagedWalletData> {
   const { Mnemonic } = await loadKaspa();
-  const mnemonic = Mnemonic.random();
+  // kaspa-wasm Mnemonic.random() accepts an optional word count in newer builds.
+  // The published typings only declare the 0-arg overload, so we cast to any
+  // to pass wordCount and fall back to the 24-word default if the runtime rejects it.
+  let mnemonic: any;
+  try {
+    mnemonic = (Mnemonic as any).random(wordCount);
+  } catch {
+    mnemonic = Mnemonic.random();
+  }
   const phrase = mnemonic.phrase;
   const address = await deriveAddress(phrase, networkId);
   return { phrase, address, network: networkId };
@@ -77,4 +100,24 @@ export function loadManagedWallet(): ManagedWalletData | null {
 /** Remove the managed wallet from localStorage. */
 export function clearManagedWallet(): void {
   try { window.localStorage.removeItem(STORAGE_KEY); } catch {}
+}
+
+/**
+ * Sign a UTF-8 message with the managed wallet's derived private key.
+ * Derivation path: m/44'/111'/0'/0/0 — same as Kasware, Kastle, Kaspium.
+ * Returns a hex-encoded Schnorr signature.
+ */
+export async function signMessage(phrase: string, message: string): Promise<string> {
+  const { Mnemonic, XPrv, XPrivateKey } = await loadKaspa();
+  const mnemonic  = new Mnemonic(phrase);
+  const seed      = mnemonic.toSeed();
+  const masterXPrv = new XPrv(seed);
+  const xprvStr   = masterXPrv.intoString("kprv");
+  const xprvKey   = new XPrivateKey(xprvStr, false, BigInt(0));
+  const privKey   = xprvKey.receiveKey(0);
+
+  const bytes = new TextEncoder().encode(message);
+  // kaspa-wasm PrivateKey.sign() is present at runtime but not in the published types
+  const sig   = (privKey as any).sign(bytes) as Uint8Array;
+  return Array.from(sig, (b) => b.toString(16).padStart(2, "0")).join("");
 }

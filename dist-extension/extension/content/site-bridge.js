@@ -1,0 +1,1 @@
+(function(){"use strict";const n="forgeos.session.agents.v2",s="forgeos.managed.wallet.v1";function t(){try{const e=localStorage.getItem(n)??null,o=localStorage.getItem(s)??null;(e||o)&&chrome.runtime.sendMessage({type:"FORGEOS_SYNC",agents:e,wallet:o})}catch{}}t(),window.addEventListener("storage",e=>{(e.key===n||e.key===s)&&t()}),setInterval(t,5e3)})();

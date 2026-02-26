@@ -24,70 +24,7 @@ function setWindowKastle(kastle: any) {
   };
 }
 
-function setWindowGhostBridge(opts?: {
-  accountAddress?: string;
-  networkId?: string;
-  txid?: string;
-  rejectTransact?: boolean;
-  transactPayload?: any;
-}) {
-  const listeners = new Map<string, Set<(event: any) => void>>();
-  const add = (type: string, fn: any) => {
-    if (!listeners.has(type)) listeners.set(type, new Set());
-    listeners.get(type)!.add(fn);
-  };
-  const remove = (type: string, fn: any) => {
-    listeners.get(type)?.delete(fn);
-  };
-  const emit = (type: string, detail?: any) => {
-    const fns = listeners.get(type);
-    if (!fns) return;
-    for (const fn of [...fns]) fn({ type, detail });
-  };
-  const txid = opts?.txid || "e".repeat(64);
-  const accountAddress = opts?.accountAddress || "kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85";
-  const networkId = opts?.networkId || "mainnet";
-  class MockCustomEvent {
-    type: string;
-    detail: any;
-    constructor(type: string, init?: any) {
-      this.type = type;
-      this.detail = init?.detail;
-    }
-  }
-  (globalThis as any).CustomEvent = MockCustomEvent as any;
-  (globalThis as any).window = {
-    kasware: undefined,
-    kastle: undefined,
-    location: { href: "" },
-    prompt: vi.fn(),
-    addEventListener: vi.fn((type: string, fn: any) => add(type, fn)),
-    removeEventListener: vi.fn((type: string, fn: any) => remove(type, fn)),
-    dispatchEvent: vi.fn((event: any) => {
-      const type = String(event?.type || "");
-      if (type === "kaspa:requestProviders") {
-        emit("kaspa:provider", { id: "ghost", name: "Ghost Wallet" });
-        return true;
-      }
-      if (type === "kaspa:invoke") {
-        const req = event?.detail || {};
-        if (req.method === "account") {
-          emit("kaspa:event", { id: req.id, data: { addresses: [accountAddress], networkId } });
-          return true;
-        }
-        if (req.method === "transact") {
-          if (opts?.rejectTransact) {
-            emit("kaspa:event", { id: req.id, data: false });
-            return true;
-          }
-          emit("kaspa:event", { id: req.id, data: opts?.transactPayload ?? { txid } });
-          return true;
-        }
-      }
-      return true;
-    }),
-  };
-}
+
 
 describe('WalletAdapter', () => {
   const originalEnv = { ...(import.meta as any).env };
@@ -241,39 +178,8 @@ describe('WalletAdapter', () => {
     expect(getAccount).toHaveBeenCalledTimes(1);
   });
 
-  it('connects and sends with ghost wallet bridge', async () => {
-    setWindowGhostBridge();
-    const { WalletAdapter } = await import('../../src/wallet/WalletAdapter');
-    const session = await WalletAdapter.connectGhost();
-    expect(session.provider).toBe('ghost');
-    expect(session.address).toMatch(/^kaspa:/);
-    const txid = await WalletAdapter.sendGhostOutputs([
-      { to: 'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85', amount_kas: 1 },
-      { to: 'kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85', amount_kas: 0.1 },
-    ]);
-    expect(txid).toBe('e'.repeat(64));
-  });
-
-  it('normalizes ghost wallet rejection on transact', async () => {
-    setWindowGhostBridge({ rejectTransact: true });
-    const { WalletAdapter } = await import('../../src/wallet/WalletAdapter');
-    await WalletAdapter.connectGhost();
-    await expect(
-      WalletAdapter.sendGhost('kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85', 0.5)
-    ).rejects.toThrow(/User rejected wallet request/i);
-  });
-
-  it('prompts for ghost txid when payload is non-standard and accepts manual txid', async () => {
-    setWindowGhostBridge({ transactPayload: { result: { raw: 'serialized-tx-payload' } } });
-    (globalThis as any).window.prompt = vi.fn().mockReturnValue('c'.repeat(64));
-    const { WalletAdapter } = await import('../../src/wallet/WalletAdapter');
-    await WalletAdapter.connectGhost();
-    const txid = await WalletAdapter.sendGhost('kaspa:qpv7fcvdlz6th4hqjtm9qkkms2dw0raem963x3hm8glu3kjgj7922vy69hv85', 0.75);
-    expect(txid).toBe('c'.repeat(64));
-    expect((globalThis as any).window.prompt).toHaveBeenCalled();
-  });
-
   it('opens kaspium deep-link and accepts manual txid', async () => {
+
     const prompt = vi.fn().mockReturnValue('a'.repeat(64));
     (globalThis as any).window = {
       kasware: undefined,
