@@ -301,7 +301,9 @@ export function WalletGate({onConnect}: any) {
 
             {/* Create / import wallet shortcut - moved here */}
             <div style={{ 
-              textAlign: "center", 
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
               marginBottom: 16,
               padding: "16px 20px",
               background: "linear-gradient(135deg, rgba(57,221,182,0.06) 0%, rgba(8,13,20,0.6) 100%)",
@@ -309,28 +311,49 @@ export function WalletGate({onConnect}: any) {
               borderRadius: 12,
               boxShadow: `0 0 20px rgba(57,221,182,0.08), inset 0 1px 0 rgba(255,255,255,0.03)`,
             }}>
-              <div style={{ fontSize: 11, color: C.text, marginBottom: 10, ...mono, fontWeight: 600 }}>
+              <div style={{ fontSize: 11, color: C.text, ...mono, fontWeight: 600 }}>
                 Don't have a Kaspa wallet?
               </div>
-              <button
-                onClick={() => setShowCreator(true)}
-                style={{
-                  background: `linear-gradient(90deg, ${C.accent}, #7BE9CF)`,
-                  border: "none", 
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  color: "#04110E", 
-                  fontSize: 10, 
-                  ...mono,
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  padding: "10px 20px",
-                  boxShadow: "0 4px 12px rgba(57,221,182,0.25)",
-                  transition: "transform 0.15s, box-shadow 0.15s",
-                }}
-              >
-                → Create or import one
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => connect("demo")}
+                  disabled={busy}
+                  style={{
+                    background: `transparent`,
+                    border: `1px solid ${C.accent}`, 
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    color: C.accent, 
+                    fontSize: 10, 
+                    ...mono,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    padding: "10px 20px",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  Connect
+                </button>
+                <button
+                  onClick={() => setShowCreator(true)}
+                  style={{
+                    background: `linear-gradient(90deg, ${C.accent}, #7BE9CF)`,
+                    border: "none", 
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    color: "#04110E", 
+                    fontSize: 10, 
+                    ...mono,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    padding: "10px 20px",
+                    boxShadow: "0 4px 12px rgba(57,221,182,0.25)",
+                    transition: "transform 0.15s, box-shadow 0.15s",
+                  }}
+                >
+                  → Create or import one
+                </button>
+              </div>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
