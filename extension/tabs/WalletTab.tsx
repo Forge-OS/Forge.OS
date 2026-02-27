@@ -338,9 +338,173 @@ export function WalletTab({
   const masked = (value: string) => (hideBalances ? "••••" : value);
   const maskedKas = (amount: number, digits: number) => (hideBalances ? "•••• KAS" : `${fmt(amount, digits)} KAS`);
   const maskedUsd = (amount: number, digits: number) => (hideBalances ? "$••••" : `$${fmt(amount, digits)}`);
+  const showActionOverlay = sendStep !== "idle" || showReceive;
+  const canDismissSendOverlay = sendStep === "form" || sendStep === "error" || sendStep === "done";
+  const canDismissOverlay = showReceive || canDismissSendOverlay;
+  const dismissOverlay = () => {
+    if (showReceive) setShowReceive(false);
+    if (sendStep !== "idle" && canDismissSendOverlay) resetSend();
+  };
+  const actionPanels = (
+    <>
+      {/* FORM */}
+      {sendStep === "form" && (
+        <div style={panel()}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
+            <div style={sectionTitle}>SEND KAS</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {balance !== null && (
+                <div style={{ fontSize: 8, color: C.dim }}>
+                  Bal: {maskedKas(balance, 2)}
+                  {usdPrice > 0 ? ` ≈ ${maskedUsd(balance * usdPrice, 2)}` : ""}
+                </div>
+              )}
+              <button onClick={() => setSendStep("idle")} style={{ background: "none", border: "none", color: C.dim, fontSize: 8, cursor: "pointer", ...mono }}>✕</button>
+            </div>
+          </div>
+          {!isManaged && <div style={{ ...insetCard(), fontSize: 8, color: C.dim, marginBottom: 6, lineHeight: 1.4 }}>External wallet: signing opens in Forge-OS.</div>}
+          <input value={sendTo} onChange={(e) => setSendTo(e.target.value)} placeholder={`Recipient ${networkPrefix}qp…`} style={inputStyle(Boolean(sendTo && !addressValid))} />
+          {sendTo && !addressValid && <div style={{ fontSize: 8, color: C.danger }}>{!sendTo.toLowerCase().startsWith(networkPrefix) ? `Must start with "${networkPrefix}" on ${network}` : "Invalid Kaspa address"}</div>}
+          {/* Amount input + MAX button */}
+          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <input
+              value={sendAmt}
+              onChange={(e) => setSendAmt(e.target.value)}
+              placeholder="Amount (KAS)"
+              type="number"
+              min="0"
+              style={{ ...inputStyle(false), paddingRight: 48 }}
+            />
+            {balance !== null && balance > 0 && (
+              <button
+                onClick={() => {
+                  // Reserve ~0.01 KAS buffer for network fee
+                  const maxAmt = Math.max(0, balance - 0.01);
+                  setSendAmt(maxAmt > 0 ? String(parseFloat(maxAmt.toFixed(4))) : "");
+                }}
+                style={{
+                  position: "absolute", right: 6, background: `${C.accent}20`,
+                  border: `1px solid ${C.accent}50`, borderRadius: 4, padding: "2px 6px",
+                  color: C.accent, fontSize: 8, fontWeight: 700, cursor: "pointer", ...mono,
+                  letterSpacing: "0.06em",
+                }}
+              >MAX</button>
+            )}
+          </div>
+          {amountNum > 0 && usdPrice > 0 && (
+            <div style={{ fontSize: 8, color: C.dim }}>
+              ≈ {maskedUsd(amountNum * usdPrice, 2)}
+            </div>
+          )}
+          <button onClick={isManaged ? handleBuildAndValidate : () => chrome.tabs.create({ url: `https://forge-os.xyz?send=1&to=${encodeURIComponent(sendTo)}&amount=${encodeURIComponent(sendAmt)}` })} disabled={!formReady} style={submitBtn(formReady)}>
+            {isManaged ? "PREVIEW SEND →" : "OPEN IN FORGE-OS →"}
+          </button>
+        </div>
+      )}
+
+      {/* Building / Dry-run */}
+      {(sendStep === "building" || sendStep === "dry_run") && (
+        <StatusCard icon="⚙" title={sendStep === "building" ? "SELECTING INPUTS…" : "VALIDATING…"} sub={sendStep === "building" ? "Fetching UTXOs and estimating network fee." : "Running 5 security checks."} color={C.accent} />
+      )}
+
+      {/* Confirm */}
+      {sendStep === "confirm" && pendingTx && (
+        <ConfirmPanel tx={pendingTx} usdPrice={usdPrice} onConfirm={handleSign} onCancel={handleCancel} />
+      )}
+
+      {/* Signing */}
+      {sendStep === "signing" && <StatusCard icon="🔑" title="SIGNING…" sub="Deriving key and signing inputs with kaspa-wasm." color={C.warn} />}
+
+      {/* Broadcast */}
+      {sendStep === "broadcast" && (
+        <StatusCard icon="📡" title="BROADCASTING…" sub={`Polling for confirmation. TxID: ${pendingTx?.txId ? pendingTx.txId.slice(0, 20) + "…" : "pending"}`} color={C.accent} />
+      )}
+
+      {/* Done */}
+      {sendStep === "done" && (
+        <div style={{ ...panel(), background: `${C.ok}0A`, borderColor: `${C.ok}30` }}>
+          <div style={{ fontSize: 10, color: C.ok, fontWeight: 700, marginBottom: 6 }}>✓ TRANSACTION CONFIRMED</div>
+          {resultTxId && (
+            <>
+              <div style={{ fontSize: 8, color: C.dim, marginBottom: 3 }}>Transaction ID</div>
+              <div style={{ fontSize: 8, color: C.text, wordBreak: "break-all", marginBottom: 8 }}>{resultTxId}</div>
+              <button onClick={() => chrome.tabs.create({ url: `${explorerBase}/txs/${resultTxId}` })} style={{ background: "none", border: "none", color: C.accent, fontSize: 8, cursor: "pointer", ...mono }}>View on Explorer ↗</button>
+            </>
+          )}
+          <button onClick={resetSend} style={{ ...submitBtn(true), marginTop: 10, background: `${C.ok}20`, color: C.ok }}>DONE</button>
+        </div>
+      )}
+
+      {/* Error */}
+      {sendStep === "error" && (
+        <div style={{ ...panel(), background: C.dLow, borderColor: `${C.danger}40` }}>
+          <div style={{ fontSize: 9, color: C.danger, fontWeight: 700, marginBottom: 6 }}>TRANSACTION FAILED</div>
+          {errorMsg && <div style={{ fontSize: 8, color: C.dim, marginBottom: 6, lineHeight: 1.5 }}>{errorMsg}</div>}
+          {dryRunErrors.map((e, i) => <div key={i} style={{ fontSize: 8, color: C.danger, marginBottom: 2 }}>• {e}</div>)}
+          <button onClick={resetSend} style={{ ...submitBtn(true), marginTop: 8, background: C.dLow, border: `1px solid ${C.danger}50`, color: C.danger }}>TRY AGAIN</button>
+        </div>
+      )}
+
+      {/* Receive */}
+      {showReceive && address && (
+        <div style={panel()}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+            <div style={sectionTitle}>RECEIVE KAS</div>
+            <button onClick={() => setShowReceive(false)} style={{ background: "none", border: "none", color: C.dim, fontSize: 8, cursor: "pointer", ...mono }}>✕</button>
+          </div>
+          <div style={{ ...insetCard(), display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+            <div style={{ fontSize: 8, color: onChainVerified ? C.ok : C.warn, fontWeight: 700, letterSpacing: "0.06em" }}>
+              {verificationLabel}
+            </div>
+            <button
+              onClick={() => chrome.tabs.create({ url: explorerUrl })}
+              style={{ ...outlineButton(C.accent, true), padding: "4px 7px", fontSize: 8, color: C.accent, flexShrink: 0 }}
+            >
+              EXPLORER ↗
+            </button>
+          </div>
+          <div style={{ ...insetCard(), display: "flex", justifyContent: "center", alignItems: "center", minHeight: 140, marginBottom: 6 }}>
+            {receiveQrDataUrl ? (
+              <img
+                src={receiveQrDataUrl}
+                alt="Wallet receive QR"
+                style={{ width: 138, height: 138, borderRadius: 8, border: `1px solid ${C.border}` }}
+              />
+            ) : (
+              <div style={{ fontSize: 8, color: receiveQrError ? C.danger : C.dim }}>
+                {receiveQrError ? "QR ERROR" : "GENERATING QR…"}
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 8, color: C.muted, letterSpacing: "0.08em" }}>CONNECTED WALLET ADDRESS</div>
+          <div style={{ ...insetCard(), fontSize: 8, color: C.dim, lineHeight: 1.6, wordBreak: "break-all", marginBottom: 6 }}>{address}</div>
+          <button onClick={copyAddress} style={{ ...outlineButton(addrCopied ? C.ok : C.dim, true), padding: "7px 8px", color: addrCopied ? C.ok : C.dim, width: "100%" }}>
+            {addrCopied ? "✓ COPIED" : "COPY ADDRESS"}
+          </button>
+          <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginTop: 4 }}>
+            Send KAS to this address from any Kaspa wallet. Funds and UTXO state are verified against live on-chain data.
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   return (
-    <div style={popupTabStack}>
+    <div style={{ ...popupTabStack, position: "relative" }}>
+      {showActionOverlay && (
+        <div
+          style={overlayBackdrop}
+          onClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (!canDismissOverlay) return;
+            dismissOverlay();
+          }}
+        >
+          <div style={overlayCard}>
+            {actionPanels}
+          </div>
+        </div>
+      )}
 
       {/* Token card */}
       <div style={{
@@ -543,145 +707,6 @@ export function WalletTab({
         </div>
       </div>
 
-      {/* FORM */}
-      {sendStep === "form" && (
-        <div style={panel()}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
-            <div style={sectionTitle}>SEND KAS</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {balance !== null && (
-                <div style={{ fontSize: 8, color: C.dim }}>
-                  Bal: {maskedKas(balance, 2)}
-                  {usdPrice > 0 ? ` ≈ ${maskedUsd(balance * usdPrice, 2)}` : ""}
-                </div>
-              )}
-              <button onClick={() => setSendStep("idle")} style={{ background: "none", border: "none", color: C.dim, fontSize: 8, cursor: "pointer", ...mono }}>✕</button>
-            </div>
-          </div>
-          {!isManaged && <div style={{ ...insetCard(), fontSize: 8, color: C.dim, marginBottom: 6, lineHeight: 1.4 }}>External wallet: signing opens in Forge-OS.</div>}
-          <input value={sendTo} onChange={(e) => setSendTo(e.target.value)} placeholder={`Recipient ${networkPrefix}qp…`} style={inputStyle(Boolean(sendTo && !addressValid))} />
-          {sendTo && !addressValid && <div style={{ fontSize: 8, color: C.danger }}>{!sendTo.toLowerCase().startsWith(networkPrefix) ? `Must start with "${networkPrefix}" on ${network}` : "Invalid Kaspa address"}</div>}
-          {/* Amount input + MAX button */}
-          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-            <input
-              value={sendAmt}
-              onChange={(e) => setSendAmt(e.target.value)}
-              placeholder="Amount (KAS)"
-              type="number"
-              min="0"
-              style={{ ...inputStyle(false), paddingRight: 48 }}
-            />
-            {balance !== null && balance > 0 && (
-              <button
-                onClick={() => {
-                  // Reserve ~0.01 KAS buffer for network fee
-                  const maxAmt = Math.max(0, balance - 0.01);
-                  setSendAmt(maxAmt > 0 ? String(parseFloat(maxAmt.toFixed(4))) : "");
-                }}
-                style={{
-                  position: "absolute", right: 6, background: `${C.accent}20`,
-                  border: `1px solid ${C.accent}50`, borderRadius: 4, padding: "2px 6px",
-                  color: C.accent, fontSize: 8, fontWeight: 700, cursor: "pointer", ...mono,
-                  letterSpacing: "0.06em",
-                }}
-              >MAX</button>
-            )}
-          </div>
-          {amountNum > 0 && usdPrice > 0 && (
-            <div style={{ fontSize: 8, color: C.dim }}>
-              ≈ {maskedUsd(amountNum * usdPrice, 2)}
-            </div>
-          )}
-          <button onClick={isManaged ? handleBuildAndValidate : () => chrome.tabs.create({ url: `https://forge-os.xyz?send=1&to=${encodeURIComponent(sendTo)}&amount=${encodeURIComponent(sendAmt)}` })} disabled={!formReady} style={submitBtn(formReady)}>
-            {isManaged ? "PREVIEW SEND →" : "OPEN IN FORGE-OS →"}
-          </button>
-        </div>
-      )}
-
-      {/* Building / Dry-run */}
-      {(sendStep === "building" || sendStep === "dry_run") && (
-        <StatusCard icon="⚙" title={sendStep === "building" ? "SELECTING INPUTS…" : "VALIDATING…"} sub={sendStep === "building" ? "Fetching UTXOs and estimating network fee." : "Running 5 security checks."} color={C.accent} />
-      )}
-
-      {/* Confirm */}
-      {sendStep === "confirm" && pendingTx && (
-        <ConfirmPanel tx={pendingTx} usdPrice={usdPrice} onConfirm={handleSign} onCancel={handleCancel} />
-      )}
-
-      {/* Signing */}
-      {sendStep === "signing" && <StatusCard icon="🔑" title="SIGNING…" sub="Deriving key and signing inputs with kaspa-wasm." color={C.warn} />}
-
-      {/* Broadcast */}
-      {sendStep === "broadcast" && (
-        <StatusCard icon="📡" title="BROADCASTING…" sub={`Polling for confirmation. TxID: ${pendingTx?.txId ? pendingTx.txId.slice(0, 20) + "…" : "pending"}`} color={C.accent} />
-      )}
-
-      {/* Done */}
-      {sendStep === "done" && (
-        <div style={{ ...panel(), background: `${C.ok}0A`, borderColor: `${C.ok}30` }}>
-          <div style={{ fontSize: 10, color: C.ok, fontWeight: 700, marginBottom: 6 }}>✓ TRANSACTION CONFIRMED</div>
-          {resultTxId && (
-            <>
-              <div style={{ fontSize: 8, color: C.dim, marginBottom: 3 }}>Transaction ID</div>
-              <div style={{ fontSize: 8, color: C.text, wordBreak: "break-all", marginBottom: 8 }}>{resultTxId}</div>
-              <button onClick={() => chrome.tabs.create({ url: `${explorerBase}/txs/${resultTxId}` })} style={{ background: "none", border: "none", color: C.accent, fontSize: 8, cursor: "pointer", ...mono }}>View on Explorer ↗</button>
-            </>
-          )}
-          <button onClick={resetSend} style={{ ...submitBtn(true), marginTop: 10, background: `${C.ok}20`, color: C.ok }}>DONE</button>
-        </div>
-      )}
-
-      {/* Error */}
-      {sendStep === "error" && (
-        <div style={{ ...panel(), background: C.dLow, borderColor: `${C.danger}40` }}>
-          <div style={{ fontSize: 9, color: C.danger, fontWeight: 700, marginBottom: 6 }}>TRANSACTION FAILED</div>
-          {errorMsg && <div style={{ fontSize: 8, color: C.dim, marginBottom: 6, lineHeight: 1.5 }}>{errorMsg}</div>}
-          {dryRunErrors.map((e, i) => <div key={i} style={{ fontSize: 8, color: C.danger, marginBottom: 2 }}>• {e}</div>)}
-          <button onClick={resetSend} style={{ ...submitBtn(true), marginTop: 8, background: C.dLow, border: `1px solid ${C.danger}50`, color: C.danger }}>TRY AGAIN</button>
-        </div>
-      )}
-
-      {/* Receive */}
-      {showReceive && address && (
-        <div style={panel()}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-            <div style={sectionTitle}>RECEIVE KAS</div>
-            <button onClick={() => setShowReceive(false)} style={{ background: "none", border: "none", color: C.dim, fontSize: 8, cursor: "pointer", ...mono }}>✕</button>
-          </div>
-          <div style={{ ...insetCard(), display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-            <div style={{ fontSize: 8, color: onChainVerified ? C.ok : C.warn, fontWeight: 700, letterSpacing: "0.06em" }}>
-              {verificationLabel}
-            </div>
-            <button
-              onClick={() => chrome.tabs.create({ url: explorerUrl })}
-              style={{ ...outlineButton(C.accent, true), padding: "4px 7px", fontSize: 8, color: C.accent, flexShrink: 0 }}
-            >
-              EXPLORER ↗
-            </button>
-          </div>
-          <div style={{ ...insetCard(), display: "flex", justifyContent: "center", alignItems: "center", minHeight: 140, marginBottom: 6 }}>
-            {receiveQrDataUrl ? (
-              <img
-                src={receiveQrDataUrl}
-                alt="Wallet receive QR"
-                style={{ width: 138, height: 138, borderRadius: 8, border: `1px solid ${C.border}` }}
-              />
-            ) : (
-              <div style={{ fontSize: 8, color: receiveQrError ? C.danger : C.dim }}>
-                {receiveQrError ? "QR ERROR" : "GENERATING QR…"}
-              </div>
-            )}
-          </div>
-          <div style={{ fontSize: 8, color: C.muted, letterSpacing: "0.08em" }}>CONNECTED WALLET ADDRESS</div>
-          <div style={{ ...insetCard(), fontSize: 8, color: C.dim, lineHeight: 1.6, wordBreak: "break-all", marginBottom: 6 }}>{address}</div>
-          <button onClick={copyAddress} style={{ ...outlineButton(addrCopied ? C.ok : C.dim, true), padding: "7px 8px", color: addrCopied ? C.ok : C.dim, width: "100%" }}>
-            {addrCopied ? "✓ COPIED" : "COPY ADDRESS"}
-          </button>
-          <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginTop: 4 }}>
-            Send KAS to this address from any Kaspa wallet. Funds and UTXO state are verified against live on-chain data.
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -702,6 +727,28 @@ const submitBtn = (active: boolean): React.CSSProperties => ({
   padding: "9px",
   width: "100%",
 });
+
+const overlayBackdrop: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 50,
+  background: "rgba(3, 7, 12, 0.78)",
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "center",
+  padding: "12px 10px 14px",
+  backdropFilter: "blur(1px)",
+};
+
+const overlayCard: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 420,
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  maxHeight: "calc(100vh - 26px)",
+  overflowY: "auto",
+};
 
 function StatusCard({ icon, title, sub, color }: { icon: string; title: string; sub: string; color: string }) {
   return (
