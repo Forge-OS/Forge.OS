@@ -9,10 +9,16 @@ export interface KrcMarketSnapshot {
 
 export interface KrcChainStatsSnapshot {
   holders: number | null;
+  owners: number | null;
   supply: string | null;
   txCount24h: number | null;
+  sales24h: number | null;
+  listedCount: number | null;
+  collectionItems: number | null;
   volume24hUsd: number | null;
   floorPriceUsd: number | null;
+  floorChange24hPct: number | null;
+  marketCapUsd: number | null;
   updatedAt: number;
   source: string;
 }
@@ -20,6 +26,7 @@ export interface KrcChainStatsSnapshot {
 export interface KrcCandlePoint {
   ts: number;
   valueUsd: number;
+  volumeUsd: number | null;
 }
 
 export interface KrcPortfolioToken {
@@ -35,4 +42,3 @@ export interface KrcPortfolioToken {
   valueUsd: number | null;
   updatedAt: number;
 }
-

@@ -119,6 +119,7 @@ export function WalletTab({
   const [krcPortfolioLoading, setKrcPortfolioLoading] = useState(false);
   const [krcPortfolioError, setKrcPortfolioError] = useState<string | null>(null);
   const [selectedKrcToken, setSelectedKrcToken] = useState<KrcPortfolioToken | null>(null);
+  const [krc721ChartMode, setKrc721ChartMode] = useState<"floor" | "volume">("floor");
 
   // Open send/receive panel when triggered from parent (hero buttons)
   useEffect(() => {
@@ -462,11 +463,13 @@ export function WalletTab({
   const openKrcTokenDetails = (token: KrcPortfolioToken) => {
     setSelectedTokenId(null);
     setSelectedKrcToken(token);
+    setKrc721ChartMode("floor");
   };
 
   const closeTokenDetails = () => {
     setSelectedTokenId(null);
     setSelectedKrcToken(null);
+    setKrc721ChartMode("floor");
   };
 
   const resolveMetadataToken = async () => {
@@ -563,6 +566,29 @@ export function WalletTab({
     ?? selectedPortfolioToken?.chain?.floorPriceUsd
     ?? null;
   const selectedPortfolioTokenValueUsd = selectedPortfolioToken?.valueUsd ?? null;
+  const selectedPortfolioSessionChangePct = selectedPortfolioToken?.market?.change24hPct
+    ?? selectedPortfolioToken?.chain?.floorChange24hPct
+    ?? null;
+  const selectedPortfolioChartPoints = selectedPortfolioToken
+    ? selectedPortfolioToken.candles.map((point) => ({
+      ts: point.ts,
+      price: selectedPortfolioToken.standard === "krc721" && krc721ChartMode === "volume"
+        ? Math.max(0, point.volumeUsd ?? 0)
+        : point.valueUsd,
+    }))
+    : [];
+  const selectedPortfolioChartLabel = selectedPortfolioToken?.standard === "krc721"
+    ? (krc721ChartMode === "volume" ? "24H VOLUME TREND" : "FLOOR PRICE TREND")
+    : "PRICE TREND";
+  const selectedPortfolioChartUnit = selectedPortfolioToken?.standard === "krc721" && krc721ChartMode === "volume"
+    ? "USD VOL"
+    : "USD";
+  const selectedPortfolioChartHigh = selectedPortfolioChartPoints.length > 0
+    ? Math.max(...selectedPortfolioChartPoints.map((point) => point.price))
+    : null;
+  const selectedPortfolioChartLow = selectedPortfolioChartPoints.length > 0
+    ? Math.min(...selectedPortfolioChartPoints.map((point) => point.price))
+    : null;
   const chartSeries = isStableSelectedToken
     ? (displayedKasSeries.length > 0
       ? displayedKasSeries.map((point) => ({ ...point, price: 1 }))
@@ -1001,12 +1027,12 @@ export function WalletTab({
         <MetricTile
           label="SESSION Δ"
           value={
-            selectedPortfolioToken.market?.change24hPct != null
-              ? `${hideBalances ? "••••" : `${selectedPortfolioToken.market.change24hPct >= 0 ? "+" : ""}${fmt(selectedPortfolioToken.market.change24hPct, 2)}%`}`
+            selectedPortfolioSessionChangePct != null
+              ? `${hideBalances ? "••••" : `${selectedPortfolioSessionChangePct >= 0 ? "+" : ""}${fmt(selectedPortfolioSessionChangePct, 2)}%`}`
               : "—"
           }
-          tone={selectedPortfolioToken.market?.change24hPct != null
-            ? (selectedPortfolioToken.market.change24hPct >= 0 ? C.ok : C.danger)
+          tone={selectedPortfolioSessionChangePct != null
+            ? (selectedPortfolioSessionChangePct >= 0 ? C.ok : C.danger)
             : C.dim}
         />
         <MetricTile
@@ -1024,13 +1050,48 @@ export function WalletTab({
       <div style={insetCard()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.08em" }}>
-            {selectedPortfolioToken.standard === "krc721" ? "FLOOR / VOLUME TREND" : "PRICE TREND"}
+            {selectedPortfolioChartLabel}
           </div>
-          <div style={{ fontSize: 8, color: C.muted }}>
-            {selectedPortfolioToken.candles.length} pts
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {selectedPortfolioToken.standard === "krc721" && (
+              <>
+                <button
+                  onClick={() => setKrc721ChartMode("floor")}
+                  style={{
+                    ...outlineButton(krc721ChartMode === "floor" ? C.accent : C.dim, true),
+                    padding: "3px 6px",
+                    fontSize: 8,
+                    color: krc721ChartMode === "floor" ? C.accent : C.dim,
+                  }}
+                >
+                  FLOOR
+                </button>
+                <button
+                  onClick={() => setKrc721ChartMode("volume")}
+                  style={{
+                    ...outlineButton(krc721ChartMode === "volume" ? C.accent : C.dim, true),
+                    padding: "3px 6px",
+                    fontSize: 8,
+                    color: krc721ChartMode === "volume" ? C.accent : C.dim,
+                  }}
+                >
+                  VOLUME
+                </button>
+              </>
+            )}
+            <div style={{ fontSize: 8, color: C.muted }}>
+              {selectedPortfolioToken.candles.length} pts
+            </div>
           </div>
         </div>
-        <LiveLineChart points={selectedPortfolioToken.candles.map((point) => ({ ts: point.ts, price: point.valueUsd }))} color={C.accent} />
+        <LiveLineChart points={selectedPortfolioChartPoints} color={C.accent} />
+        <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", fontSize: 8, color: C.dim }}>
+          <span>LOW {selectedPortfolioChartLow != null ? maskedUsd(selectedPortfolioChartLow, 4) : "—"}</span>
+          <span>HIGH {selectedPortfolioChartHigh != null ? maskedUsd(selectedPortfolioChartHigh, 4) : "—"}</span>
+        </div>
+        <div style={{ marginTop: 4, fontSize: 8, color: C.muted }}>
+          UNIT: {selectedPortfolioChartUnit}
+        </div>
       </div>
 
       <div style={insetCard()}>
@@ -1042,7 +1103,15 @@ export function WalletTab({
           Holders: <span style={{ color: C.accent }}>{selectedPortfolioToken.chain?.holders ?? "—"}</span>
         </div>
         <div style={{ fontSize: 8, color: C.text, lineHeight: 1.55 }}>
+          Owners: <span style={{ color: C.accent }}>{selectedPortfolioToken.chain?.owners ?? "—"}</span> · Listed:{" "}
+          <span style={{ color: C.accent }}>{selectedPortfolioToken.chain?.listedCount ?? "—"}</span>
+        </div>
+        <div style={{ fontSize: 8, color: C.text, lineHeight: 1.55 }}>
           Supply: <span style={{ color: C.accent }}>{selectedPortfolioToken.chain?.supply ?? "—"}</span>
+        </div>
+        <div style={{ fontSize: 8, color: C.text, lineHeight: 1.55 }}>
+          Collection Items: <span style={{ color: C.accent }}>{selectedPortfolioToken.chain?.collectionItems ?? "—"}</span> · 24h Sales:{" "}
+          <span style={{ color: C.accent }}>{selectedPortfolioToken.chain?.sales24h ?? "—"}</span>
         </div>
         <div style={{ fontSize: 8, color: C.text, lineHeight: 1.55 }}>
           24h Tx: <span style={{ color: C.accent }}>{selectedPortfolioToken.chain?.txCount24h ?? "—"}</span> · 24h Volume USD:{" "}
@@ -1054,6 +1123,24 @@ export function WalletTab({
           Floor USD:{" "}
           <span style={{ color: C.accent }}>
             {selectedPortfolioToken.chain?.floorPriceUsd != null ? fmt(selectedPortfolioToken.chain.floorPriceUsd, 4) : "—"}
+          </span>
+          {" "}· Floor Δ 24h:{" "}
+          <span
+            style={{
+              color: selectedPortfolioToken.chain?.floorChange24hPct == null
+                ? C.accent
+                : selectedPortfolioToken.chain.floorChange24hPct >= 0 ? C.ok : C.danger,
+            }}
+          >
+            {selectedPortfolioToken.chain?.floorChange24hPct != null
+              ? `${selectedPortfolioToken.chain.floorChange24hPct >= 0 ? "+" : ""}${fmt(selectedPortfolioToken.chain.floorChange24hPct, 2)}%`
+              : "—"}
+          </span>
+        </div>
+        <div style={{ fontSize: 8, color: C.text, lineHeight: 1.55 }}>
+          Market Cap USD:{" "}
+          <span style={{ color: C.accent }}>
+            {selectedPortfolioToken.chain?.marketCapUsd != null ? fmt(selectedPortfolioToken.chain.marketCapUsd, 2) : "—"}
           </span>
         </div>
       </div>

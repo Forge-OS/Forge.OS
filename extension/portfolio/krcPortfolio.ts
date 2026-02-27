@@ -428,23 +428,41 @@ function parseChainStats(raw: unknown, source: string): KrcChainStatsSnapshot | 
   const candidate = extractObjects(raw)[0];
   if (!candidate) return null;
   const holders = pickNumber(candidate, ["holders", "holderCount"]);
+  const owners = pickNumber(candidate, ["owners", "ownerCount", "uniqueOwners"]);
   const supplyStr = pickString(candidate, ["supply", "totalSupply", "circulatingSupply"]);
   const txCount24h = pickNumber(candidate, ["txCount24h", "transactions24h", "tx24h"]);
+  const sales24h = pickNumber(candidate, ["sales24h", "salesCount24h", "trades24h"]);
+  const listedCount = pickNumber(candidate, ["listedCount", "listed", "listings", "activeListings"]);
+  const collectionItems = pickNumber(candidate, ["collectionItems", "items", "itemCount"]);
   const volume24hUsd = pickNumber(candidate, ["volume24hUsd", "volumeUsd24h", "volume24h"]);
   const floorPriceUsd = pickNumber(candidate, ["floorPriceUsd", "floorPrice"]);
+  const floorChange24hPct = pickNumber(candidate, ["floorChange24hPct", "floor24hChangePct", "floorChangePct24h", "floorChange24h"]);
+  const marketCapUsd = pickNumber(candidate, ["marketCapUsd", "marketCap", "fdvUsd", "fullyDilutedValueUsd"]);
   if (
     holders === null
+    && owners === null
     && !supplyStr
     && txCount24h === null
+    && sales24h === null
+    && listedCount === null
+    && collectionItems === null
     && volume24hUsd === null
     && floorPriceUsd === null
+    && floorChange24hPct === null
+    && marketCapUsd === null
   ) return null;
   return {
     holders: Number.isFinite(holders) ? Number(holders) : null,
+    owners: Number.isFinite(owners) ? Number(owners) : null,
     supply: supplyStr || null,
     txCount24h: Number.isFinite(txCount24h) ? Number(txCount24h) : null,
+    sales24h: Number.isFinite(sales24h) ? Number(sales24h) : null,
+    listedCount: Number.isFinite(listedCount) ? Number(listedCount) : null,
+    collectionItems: Number.isFinite(collectionItems) ? Number(collectionItems) : null,
     volume24hUsd: Number.isFinite(volume24hUsd) ? Number(volume24hUsd) : null,
     floorPriceUsd: Number.isFinite(floorPriceUsd) ? Number(floorPriceUsd) : null,
+    floorChange24hPct: Number.isFinite(floorChange24hPct) ? Number(floorChange24hPct) : null,
+    marketCapUsd: Number.isFinite(marketCapUsd) ? Number(marketCapUsd) : null,
     updatedAt: now,
     source,
   };
@@ -455,8 +473,13 @@ function parseCandles(raw: unknown): KrcCandlePoint[] {
   const tryPush = (entry: Record<string, unknown>) => {
     const ts = pickNumber(entry, ["ts", "timestamp", "time", "t"]);
     const value = pickNumber(entry, ["close", "priceUsd", "price", "floorPriceUsd", "value"]);
+    const volume = pickNumber(entry, ["volumeUsd", "volume", "quoteVolumeUsd", "volUsd", "v"]);
     if (!Number.isFinite(ts) || !Number.isFinite(value)) return;
-    out.push({ ts: Math.floor(Number(ts)), valueUsd: Number(value) });
+    out.push({
+      ts: Math.floor(Number(ts)),
+      valueUsd: Number(value),
+      volumeUsd: Number.isFinite(volume) ? Number(volume) : null,
+    });
   };
   if (Array.isArray(raw)) {
     for (const item of raw) {
@@ -554,7 +577,10 @@ async function fetchCandles(
   }
   const now = Date.now();
   const fallbackValue = fallbackPrice && fallbackPrice > 0 ? fallbackPrice : 1;
-  const synthetic = [{ ts: now - 60_000, valueUsd: fallbackValue }, { ts: now, valueUsd: fallbackValue }];
+  const synthetic = [
+    { ts: now - 60_000, valueUsd: fallbackValue, volumeUsd: 0 },
+    { ts: now, valueUsd: fallbackValue, volumeUsd: 0 },
+  ];
   cacheSet(candlesCache, key, synthetic, candlesTtlMs(), 256);
   return synthetic;
 }
@@ -686,4 +712,3 @@ export async function prefetchKrcPortfolioForAddress(address: string, network: s
   const entries = await fetchKrcPortfolio(normalized, network);
   await savePrefetchedKrcPortfolio(normalized, network, entries);
 }
-
