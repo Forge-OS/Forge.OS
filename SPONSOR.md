@@ -1,6 +1,8 @@
-<p align="center">
-  <img alt="FORGE-OS" src="https://raw.githubusercontent.com/kaspa-org/BRD/main/brd-mobile/assets/logos/kaspa-logo-full.png" width="200" />
+
   <h1>Support FORGE-OS</h1>
+  
+  <img width="1024" height="1024" alt="forge-os-icon3" src="https://github.com/user-attachments/assets/679e4975-ac02-4718-9a3a-597065b37d16" />
+
   <p>Kaspa-Native Quant / AI Control Plane</p>
 </p>
 
