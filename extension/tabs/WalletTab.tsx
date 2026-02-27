@@ -16,6 +16,12 @@ import { broadcastAndPoll } from "../tx/broadcast";
 import { addPendingTx, updatePendingTx } from "../tx/store";
 import { getOrSyncUtxos, sompiToKas, syncUtxos } from "../utxo/utxoSync";
 import { getAllTokens } from "../tokens/registry";
+import {
+  fetchKrcPortfolio,
+  loadPrefetchedKrcPortfolio,
+  savePrefetchedKrcPortfolio,
+} from "../portfolio/krcPortfolio";
+import type { KrcPortfolioToken } from "../portfolio/types";
 import { resolveTokenFromAddress, resolveTokenFromQuery } from "../swap/tokenResolver";
 import type { KaspaTokenStandard, SwapCustomToken } from "../swap/types";
 import type { PendingTx } from "../tx/types";
@@ -109,11 +115,16 @@ export function WalletTab({
   const [resolvedMetadata, setResolvedMetadata] = useState<SwapCustomToken | null>(null);
   const [metadataResolveBusy, setMetadataResolveBusy] = useState(false);
   const [metadataResolveError, setMetadataResolveError] = useState<string | null>(null);
+  const [krcPortfolioTokens, setKrcPortfolioTokens] = useState<KrcPortfolioToken[]>([]);
+  const [krcPortfolioLoading, setKrcPortfolioLoading] = useState(false);
+  const [krcPortfolioError, setKrcPortfolioError] = useState<string | null>(null);
+  const [selectedKrcToken, setSelectedKrcToken] = useState<KrcPortfolioToken | null>(null);
 
   // Open send/receive panel when triggered from parent (hero buttons)
   useEffect(() => {
     if (!mode) return;
     setSelectedTokenId(null);
+    setSelectedKrcToken(null);
     if (mode === "send") {
       setShowReceive(false);
       setSendStep("form");
@@ -276,6 +287,61 @@ export function WalletTab({
     setMetadataResolveError(null);
   }, [selectedTokenId, network]);
 
+  useEffect(() => {
+    let alive = true;
+    const owner = String(address || "").trim();
+    if (!owner) {
+      setKrcPortfolioTokens([]);
+      setKrcPortfolioError(null);
+      setKrcPortfolioLoading(false);
+      return;
+    }
+
+    chrome.runtime.sendMessage({ type: "FORGEOS_PREFETCH_KRC" }).catch(() => {});
+
+    const syncPortfolio = async (allowStale = true) => {
+      if (!alive) return;
+      setKrcPortfolioLoading(true);
+      if (!allowStale) setKrcPortfolioError(null);
+      try {
+        if (allowStale) {
+          const prefetched = await loadPrefetchedKrcPortfolio(owner, network);
+          if (alive && prefetched && prefetched.length > 0) {
+            setKrcPortfolioTokens(prefetched);
+          }
+        }
+        const entries = await fetchKrcPortfolio(owner, network);
+        if (!alive) return;
+        setKrcPortfolioTokens(entries);
+        setKrcPortfolioError(null);
+        await savePrefetchedKrcPortfolio(owner, network, entries);
+      } catch (err) {
+        if (!alive) return;
+        setKrcPortfolioError(err instanceof Error ? err.message : "Failed to sync KRC portfolio.");
+      } finally {
+        if (alive) setKrcPortfolioLoading(false);
+      }
+    };
+
+    syncPortfolio(true).catch(() => {});
+    const pollId = window.setInterval(() => {
+      syncPortfolio(false).catch(() => {});
+    }, 2_500);
+
+    return () => {
+      alive = false;
+      clearInterval(pollId);
+    };
+  }, [address, network]);
+
+  useEffect(() => {
+    setSelectedKrcToken((prev) => {
+      if (!prev) return null;
+      const refreshed = krcPortfolioTokens.find((item) => item.key === prev.key);
+      return refreshed ?? null;
+    });
+  }, [krcPortfolioTokens]);
+
   const session = getSession();
   const isManaged = Boolean(session?.mnemonic);
 
@@ -389,11 +455,18 @@ export function WalletTab({
   };
 
   const openTokenDetails = (tokenId: TokenId) => {
+    setSelectedKrcToken(null);
     setSelectedTokenId(tokenId);
+  };
+
+  const openKrcTokenDetails = (token: KrcPortfolioToken) => {
+    setSelectedTokenId(null);
+    setSelectedKrcToken(token);
   };
 
   const closeTokenDetails = () => {
     setSelectedTokenId(null);
+    setSelectedKrcToken(null);
   };
 
   const resolveMetadataToken = async () => {
@@ -473,7 +546,9 @@ export function WalletTab({
   const maskedKas = (amount: number, digits: number) => (hideBalances ? "•••• KAS" : `${fmt(amount, digits)} KAS`);
   const maskedUsd = (amount: number, digits: number) => (hideBalances ? "$••••" : `$${fmt(amount, digits)}`);
   const selectedToken = selectedTokenId ? displayTokens.find((t) => t.id === selectedTokenId) ?? null : null;
-  const showTokenOverlay = Boolean(selectedToken);
+  const selectedPortfolioToken = selectedKrcToken;
+  const isStableSelectedToken = selectedToken?.id === "USDT" || selectedToken?.id === "USDC";
+  const showTokenOverlay = Boolean(selectedToken || selectedPortfolioToken);
   const showActionOverlay = sendStep !== "idle" || showReceive;
   const kasSeries = kasPriceSeries.length > 0
     ? kasPriceSeries
@@ -481,15 +556,27 @@ export function WalletTab({
       ? [{ ts: Date.now(), price: liveKasPrice }]
       : [];
   const displayedKasSeries = kasSeries.slice(-Math.max(2, kasChartWindow));
-  const kasFirstPrice = displayedKasSeries.length > 0 ? displayedKasSeries[0].price : 0;
-  const kasLastPrice = displayedKasSeries.length > 0 ? displayedKasSeries[displayedKasSeries.length - 1].price : 0;
-  const kasPriceDeltaPct = kasFirstPrice > 0
-    ? ((kasLastPrice - kasFirstPrice) / kasFirstPrice) * 100
-    : 0;
-  const kasSeriesHigh = displayedKasSeries.length > 0 ? Math.max(...displayedKasSeries.map((p) => p.price)) : 0;
-  const kasSeriesLow = displayedKasSeries.length > 0 ? Math.min(...displayedKasSeries.map((p) => p.price)) : 0;
   const kasWalletBalance = balance ?? 0;
   const kasWalletUsdValue = kasWalletBalance * (liveKasPrice > 0 ? liveKasPrice : 0);
+  const selectedTokenBalance = selectedToken ? (tokenBalanceById[selectedToken.id as TokenId] ?? 0) : 0;
+  const selectedPortfolioTokenPriceUsd = selectedPortfolioToken?.market?.priceUsd
+    ?? selectedPortfolioToken?.chain?.floorPriceUsd
+    ?? null;
+  const selectedPortfolioTokenValueUsd = selectedPortfolioToken?.valueUsd ?? null;
+  const chartSeries = isStableSelectedToken
+    ? (displayedKasSeries.length > 0
+      ? displayedKasSeries.map((point) => ({ ...point, price: 1 }))
+      : [{ ts: Date.now() - 60_000, price: 1 }, { ts: Date.now(), price: 1 }])
+    : displayedKasSeries;
+  const chartFirstPrice = chartSeries.length > 0 ? chartSeries[0].price : 0;
+  const chartLastPrice = chartSeries.length > 0 ? chartSeries[chartSeries.length - 1].price : 0;
+  const chartPriceDeltaPct = chartFirstPrice > 0
+    ? ((chartLastPrice - chartFirstPrice) / chartFirstPrice) * 100
+    : 0;
+  const chartSeriesHigh = chartSeries.length > 0 ? Math.max(...chartSeries.map((point) => point.price)) : 0;
+  const chartSeriesLow = chartSeries.length > 0 ? Math.min(...chartSeries.map((point) => point.price)) : 0;
+  const selectedTokenPriceUsd = isStableSelectedToken ? 1 : (liveKasPrice || usdPrice || 0);
+  const selectedTokenUsdValue = selectedTokenBalance * selectedTokenPriceUsd;
   const canDismissSendOverlay = sendStep === "form" || sendStep === "error" || sendStep === "done";
   const canDismissOverlay = showTokenOverlay || showReceive || canDismissSendOverlay;
   const dismissOverlay = () => {
@@ -674,40 +761,46 @@ export function WalletTab({
         </div>
         <div
           style={{
-            ...outlineButton(selectedToken.id === "KAS" ? C.ok : C.warn, true),
+            ...outlineButton(selectedToken.id === "KAS" || isStableSelectedToken ? C.ok : C.warn, true),
             padding: "4px 7px",
             fontSize: 8,
-            color: selectedToken.id === "KAS" ? C.ok : C.warn,
+            color: selectedToken.id === "KAS" || isStableSelectedToken ? C.ok : C.warn,
           }}
         >
-          {selectedToken.id === "KAS" ? "LIVE FEED" : "METADATA FEED"}
+          {selectedToken.id === "KAS" ? "LIVE FEED" : isStableSelectedToken ? "STABLE PEG" : "METADATA FEED"}
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
         <MetricTile
-          label={selectedToken.id === "KAS" ? "LIVE PRICE" : "TOKEN STATUS"}
-          value={selectedToken.id === "KAS" ? maskedUsd(liveKasPrice || usdPrice || 0, 4) : (selectedToken.enabled ? "ENABLED" : "READ-ONLY")}
-          tone={selectedToken.id === "KAS" ? C.accent : selectedToken.enabled ? C.ok : C.warn}
+          label={selectedToken.id === "KAS" || isStableSelectedToken ? "LIVE PRICE" : "TOKEN STATUS"}
+          value={selectedToken.id === "KAS" || isStableSelectedToken
+            ? maskedUsd(selectedTokenPriceUsd, 4)
+            : (selectedToken.enabled ? "ENABLED" : "READ-ONLY")}
+          tone={selectedToken.id === "KAS" || isStableSelectedToken ? C.accent : selectedToken.enabled ? C.ok : C.warn}
         />
         <MetricTile
-          label={selectedToken.id === "KAS" ? "SESSION Δ" : "DECIMALS"}
-          value={selectedToken.id === "KAS" ? `${hideBalances ? "••••" : `${kasPriceDeltaPct >= 0 ? "+" : ""}${fmt(kasPriceDeltaPct, 2)}%`}` : String(selectedToken.decimals)}
-          tone={selectedToken.id === "KAS" ? (kasPriceDeltaPct >= 0 ? C.ok : C.danger) : C.text}
+          label={selectedToken.id === "KAS" || isStableSelectedToken ? "SESSION Δ" : "DECIMALS"}
+          value={selectedToken.id === "KAS" || isStableSelectedToken
+            ? `${hideBalances ? "••••" : isStableSelectedToken ? "0.00%" : `${chartPriceDeltaPct >= 0 ? "+" : ""}${fmt(chartPriceDeltaPct, 2)}%`}`
+            : String(selectedToken.decimals)}
+          tone={selectedToken.id === "KAS" || isStableSelectedToken ? (chartPriceDeltaPct >= 0 ? C.ok : C.danger) : C.text}
         />
         <MetricTile
-          label={selectedToken.id === "KAS" ? "BALANCE" : "TOKEN ID"}
+          label={selectedToken.id === "KAS" || isStableSelectedToken ? "BALANCE" : "TOKEN ID"}
           value={selectedToken.id === "KAS"
             ? maskedKas(kasWalletBalance, 4)
-            : selectedToken.id}
+            : isStableSelectedToken
+              ? `${masked(fmt(selectedTokenBalance, 2))} ${selectedToken.symbol}`
+              : selectedToken.id}
           tone={C.text}
         />
         <MetricTile
-          label={selectedToken.id === "KAS" ? "USD VALUE" : "FEED UPDATE"}
-          value={selectedToken.id === "KAS"
-            ? maskedUsd(kasWalletUsdValue, 2)
+          label={selectedToken.id === "KAS" || isStableSelectedToken ? "USD VALUE" : "FEED UPDATE"}
+          value={selectedToken.id === "KAS" || isStableSelectedToken
+            ? maskedUsd(selectedToken.id === "KAS" ? kasWalletUsdValue : selectedTokenUsdValue, 2)
             : (kasFeedUpdatedAt ? new Date(kasFeedUpdatedAt).toLocaleTimeString([], { hour12: false }) : "—")}
-          tone={selectedToken.id === "KAS" ? C.accent : C.dim}
+          tone={selectedToken.id === "KAS" || isStableSelectedToken ? C.accent : C.dim}
         />
       </div>
 
@@ -723,7 +816,7 @@ export function WalletTab({
                 boxShadow: kasFeedError ? `0 0 6px ${C.danger}` : `0 0 6px ${C.ok}`,
               }}
             />
-            {selectedToken.id === "KAS" ? "REAL-TIME KAS/USD CHART" : "BASE LAYER LIVE CHART"}
+            {selectedToken.id === "KAS" ? "REAL-TIME KAS/USD CHART" : isStableSelectedToken ? "STABLECOIN PEG CHART" : "BASE LAYER LIVE CHART"}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {([60, 300, KAS_CHART_MAX_POINTS] as const).map((windowSize) => (
@@ -748,18 +841,20 @@ export function WalletTab({
             </button>
           </div>
         </div>
-        <LiveLineChart points={displayedKasSeries} color={C.accent} />
+        <LiveLineChart points={chartSeries} color={C.accent} />
         <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", fontSize: 8, color: C.dim }}>
-          <span>LOW {maskedUsd(kasSeriesLow, 4)}</span>
-          <span>HIGH {maskedUsd(kasSeriesHigh, 4)}</span>
+          <span>LOW {maskedUsd(chartSeriesLow, 4)}</span>
+          <span>HIGH {maskedUsd(chartSeriesHigh, 4)}</span>
         </div>
         <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 8, color: C.muted }}>
           <span>{kasFeedUpdatedAt ? `updated ${new Date(kasFeedUpdatedAt).toLocaleTimeString([], { hour12: false })}` : "awaiting feed"}</span>
-          <span>{displayedKasSeries.length} ticks · 1s cadence</span>
+          <span>{chartSeries.length} ticks · 1s cadence</span>
         </div>
         {selectedToken.id !== "KAS" && (
           <div style={{ marginTop: 6, fontSize: 8, color: C.dim, lineHeight: 1.45 }}>
-            Spot chart reflects live Kaspa base feed. Token-specific pricing requires a trusted market route.
+            {isStableSelectedToken
+              ? "Stablecoin chart is pegged to $1.00 in-wallet by design for USDT/USDC analytics."
+              : "Spot chart reflects live Kaspa base feed. Token-specific pricing requires a trusted market route."}
           </div>
         )}
       </div>
@@ -864,6 +959,107 @@ export function WalletTab({
     </div>
   ) : null;
 
+  const krcTokenDetailsPanel = selectedPortfolioToken ? (
+    <div style={panel()}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={sectionTitle}>KRC TOKEN ANALYTICS</div>
+        <button
+          onClick={closeTokenDetails}
+          style={{ background: "none", border: "none", color: C.dim, fontSize: 9, cursor: "pointer", ...mono }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <div style={{ ...insetCard(), display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <img
+            src={selectedPortfolioToken.token.logoUri}
+            alt={`${selectedPortfolioToken.token.symbol} logo`}
+            style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", border: `1px solid ${C.border}` }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: C.text, fontWeight: 700, letterSpacing: "0.05em", ...mono }}>
+              {selectedPortfolioToken.token.symbol}
+            </div>
+            <div style={{ fontSize: 8, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 220 }}>
+              {selectedPortfolioToken.token.name} · {selectedPortfolioToken.standard.toUpperCase()} · {network.toUpperCase()}
+            </div>
+          </div>
+        </div>
+        <div style={{ ...outlineButton(C.ok, true), padding: "4px 7px", fontSize: 8, color: C.ok }}>
+          LIVE
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+        <MetricTile
+          label="PRICE USD"
+          value={selectedPortfolioTokenPriceUsd != null ? maskedUsd(selectedPortfolioTokenPriceUsd, 6) : "—"}
+          tone={selectedPortfolioTokenPriceUsd != null ? C.accent : C.dim}
+        />
+        <MetricTile
+          label="SESSION Δ"
+          value={
+            selectedPortfolioToken.market?.change24hPct != null
+              ? `${hideBalances ? "••••" : `${selectedPortfolioToken.market.change24hPct >= 0 ? "+" : ""}${fmt(selectedPortfolioToken.market.change24hPct, 2)}%`}`
+              : "—"
+          }
+          tone={selectedPortfolioToken.market?.change24hPct != null
+            ? (selectedPortfolioToken.market.change24hPct >= 0 ? C.ok : C.danger)
+            : C.dim}
+        />
+        <MetricTile
+          label="BALANCE"
+          value={`${masked(selectedPortfolioToken.balanceDisplay)} ${selectedPortfolioToken.token.symbol}`}
+          tone={C.text}
+        />
+        <MetricTile
+          label="USD VALUE"
+          value={selectedPortfolioTokenValueUsd != null ? maskedUsd(selectedPortfolioTokenValueUsd, 2) : "—"}
+          tone={selectedPortfolioTokenValueUsd != null ? C.accent : C.dim}
+        />
+      </div>
+
+      <div style={insetCard()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.08em" }}>
+            {selectedPortfolioToken.standard === "krc721" ? "FLOOR / VOLUME TREND" : "PRICE TREND"}
+          </div>
+          <div style={{ fontSize: 8, color: C.muted }}>
+            {selectedPortfolioToken.candles.length} pts
+          </div>
+        </div>
+        <LiveLineChart points={selectedPortfolioToken.candles.map((point) => ({ ts: point.ts, price: point.valueUsd }))} color={C.accent} />
+      </div>
+
+      <div style={insetCard()}>
+        <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.08em", marginBottom: 5 }}>CHAIN INFO</div>
+        <div style={{ fontSize: 8, color: C.text, lineHeight: 1.55, wordBreak: "break-all" }}>
+          Address: <span style={{ color: C.accent }}>{selectedPortfolioToken.token.address}</span>
+        </div>
+        <div style={{ fontSize: 8, color: C.text, lineHeight: 1.55 }}>
+          Holders: <span style={{ color: C.accent }}>{selectedPortfolioToken.chain?.holders ?? "—"}</span>
+        </div>
+        <div style={{ fontSize: 8, color: C.text, lineHeight: 1.55 }}>
+          Supply: <span style={{ color: C.accent }}>{selectedPortfolioToken.chain?.supply ?? "—"}</span>
+        </div>
+        <div style={{ fontSize: 8, color: C.text, lineHeight: 1.55 }}>
+          24h Tx: <span style={{ color: C.accent }}>{selectedPortfolioToken.chain?.txCount24h ?? "—"}</span> · 24h Volume USD:{" "}
+          <span style={{ color: C.accent }}>
+            {selectedPortfolioToken.chain?.volume24hUsd != null ? fmt(selectedPortfolioToken.chain.volume24hUsd, 2) : "—"}
+          </span>
+        </div>
+        <div style={{ fontSize: 8, color: C.text, lineHeight: 1.55 }}>
+          Floor USD:{" "}
+          <span style={{ color: C.accent }}>
+            {selectedPortfolioToken.chain?.floorPriceUsd != null ? fmt(selectedPortfolioToken.chain.floorPriceUsd, 4) : "—"}
+          </span>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div style={{ ...popupTabStack, position: "relative" }}>
       {(showActionOverlay || showTokenOverlay) && (
@@ -876,7 +1072,7 @@ export function WalletTab({
           }}
         >
           <div style={overlayCard}>
-            {showTokenOverlay ? tokenDetailsPanel : actionPanels}
+            {showTokenOverlay ? (selectedPortfolioToken ? krcTokenDetailsPanel : tokenDetailsPanel) : actionPanels}
           </div>
         </div>
       )}
@@ -997,6 +1193,74 @@ export function WalletTab({
             <div style={{ fontSize: 10, color: C.dim, ...mono }}>→</div>
           </button>
         )})}
+
+        {krcPortfolioLoading && (
+          <div style={{ ...insetCard(), marginTop: 8, fontSize: 8, color: C.dim }}>
+            Syncing KRC holdings…
+          </div>
+        )}
+
+        {krcPortfolioError && (
+          <div style={{ ...insetCard(), marginTop: 8, fontSize: 8, color: C.warn, lineHeight: 1.45 }}>
+            KRC feed warning: {krcPortfolioError}
+          </div>
+        )}
+
+        {krcPortfolioTokens.map((token, idx) => (
+          <button
+            key={token.key}
+            onClick={() => openKrcTokenDetails(token)}
+            style={{
+              width: "100%",
+              border: "none",
+              textAlign: "left",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              background: "linear-gradient(160deg, rgba(13,22,34,0.9), rgba(7,12,20,0.9))",
+              borderRadius: 12,
+              padding: "10px 11px",
+              marginTop: idx > 0 || displayTokens.length > 0 ? 8 : 0,
+              position: "relative",
+              zIndex: 1,
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                border: `1px solid ${selectedKrcToken?.key === token.key ? `${C.accent}75` : C.border}`,
+                borderRadius: 12,
+                pointerEvents: "none",
+              }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <img
+                src={token.token.logoUri}
+                alt={`${token.token.symbol} logo`}
+                style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: `1px solid ${C.border}`, flexShrink: 0 }}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.text, letterSpacing: "0.05em", ...mono }}>
+                  {token.token.symbol}
+                </div>
+                <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.03em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 190 }}>
+                  {token.token.name} · {token.standard.toUpperCase()}
+                </div>
+              </div>
+            </div>
+            <div style={{ textAlign: "right", paddingRight: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.text, ...mono }}>
+                {masked(token.balanceDisplay)}
+              </div>
+              <div style={{ fontSize: 8, color: token.valueUsd != null ? C.accent : C.dim }}>
+                {token.valueUsd != null ? maskedUsd(token.valueUsd, 2) : "no spot"}
+              </div>
+            </div>
+            <div style={{ fontSize: 10, color: C.dim, ...mono }}>→</div>
+          </button>
+        ))}
 
         {address && (
           <div style={{ marginTop: 11, textAlign: "right", position: "relative", zIndex: 1 }}>

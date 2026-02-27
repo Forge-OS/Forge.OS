@@ -1,5 +1,6 @@
 /// <reference path="../chrome.d.ts" />
 import { EXTENSION_POPUP_WINDOW_HEIGHT, EXTENSION_POPUP_WINDOW_WIDTH } from "../popup/layout";
+import { prefetchKrcPortfolioForAddress } from "../portfolio/krcPortfolio";
 import { sanitizeAgentsSnapshot } from "../shared/agentSync";
 import {
   countOriginRequests,
@@ -42,6 +43,7 @@ const KAS_SOMPI = 1e8;
 const BALANCE_ALARM = "forgeos-balance-poll";
 const AUTOLOCK_ALARM = "forgeos-autolock";
 const PENDING_SWEEP_ALARM = "forgeos-pending-sweep";
+const KRC_PREFETCH_ALARM = "forgeos-krc-prefetch";
 
 // Pending site-request queue hardening
 const ENV = (import.meta as any)?.env ?? {};
@@ -203,6 +205,13 @@ async function updateBadge(): Promise<void> {
     chrome.action.setBadgeText({ text: label });
     chrome.action.setBadgeBackgroundColor({ color: "#39DDB6" });
   } catch { /* non-fatal — badge stays as-is */ }
+}
+
+async function prefetchKrcPortfolioFromMeta(): Promise<void> {
+  const meta = await getStoredWalletMeta();
+  if (!meta?.address) return;
+  const network = typeof meta.network === "string" && meta.network ? meta.network : "mainnet";
+  await prefetchKrcPortfolioForAddress(meta.address, network);
 }
 
 function senderOrigin(sender: any): string | undefined {
@@ -382,6 +391,12 @@ function ensurePendingSweepAlarm(): void {
   });
 }
 
+function ensureKrcPrefetchAlarm(): void {
+  chrome.alarms.get(KRC_PREFETCH_ALARM, (alarm) => {
+    if (!alarm) chrome.alarms.create(KRC_PREFETCH_ALARM, { periodInMinutes: 1 });
+  });
+}
+
 function scheduleAutoLock(minutes: number): void {
   chrome.alarms.clear(AUTOLOCK_ALARM, () => {
     chrome.alarms.create(AUTOLOCK_ALARM, { delayInMinutes: minutes });
@@ -397,13 +412,17 @@ function cancelAutoLock(): void {
 chrome.runtime.onInstalled.addListener(() => {
   ensureBalanceAlarm();
   ensurePendingSweepAlarm();
+  ensureKrcPrefetchAlarm();
   updatePendingBadge().catch(() => {});
+  prefetchKrcPortfolioFromMeta().catch(() => {});
 });
 
 chrome.runtime.onStartup.addListener(() => {
   ensureBalanceAlarm();
   ensurePendingSweepAlarm();
+  ensureKrcPrefetchAlarm();
   updatePendingBadge().catch(() => {});
+  prefetchKrcPortfolioFromMeta().catch(() => {});
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -427,10 +446,15 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     return;
   }
 
+  if (alarm.name === KRC_PREFETCH_ALARM) {
+    prefetchKrcPortfolioFromMeta().catch(() => {});
+    return;
+  }
+
   if (alarm.name === AUTOLOCK_ALARM) {
     chrome.runtime.sendMessage({ type: "AUTOLOCK_FIRED" }).catch(() => {});
-    chrome.action.setBadgeText({ text: "🔒" });
-    setTimeout(() => { updatePendingBadge().catch(() => {}); }, 3_000);
+    chrome.action.setBadgeText({ text: "OFF" });
+    chrome.action.setBadgeBackgroundColor({ color: "#888888" });
   }
 });
 
@@ -463,6 +487,7 @@ chrome.runtime.onMessage.addListener((message: any, sender: any) => {
       chrome.storage.local.set(updates);
       if (agents) notifyAgentsUpdated(agents.count);
       updatePendingBadge().catch(() => {});
+      prefetchKrcPortfolioFromMeta().catch(() => {});
     }
     return;
   }
@@ -481,6 +506,11 @@ chrome.runtime.onMessage.addListener((message: any, sender: any) => {
   // ── Open popup (simple, no connect flow) ────────────────────────────────
   if (message?.type === "FORGEOS_OPEN_POPUP") {
     openExtensionPopup().catch(() => {});
+    return;
+  }
+
+  if (message?.type === "FORGEOS_PREFETCH_KRC") {
+    prefetchKrcPortfolioFromMeta().catch(() => {});
     return;
   }
 
