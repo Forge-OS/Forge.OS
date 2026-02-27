@@ -5,6 +5,25 @@ const METADATA_TIMEOUT_MS = 3_500;
 const METADATA_CACHE_TTL_DEFAULT_MS = 20_000;
 const METADATA_CACHE_MAX_ENTRIES = 512;
 const tokenMetadataCache = new Map<string, { token: SwapCustomToken; expiresAt: number }>();
+const ENDPOINT_HEALTH_BASE_SCORE = 100;
+const ENDPOINT_HEALTH_MIN_SCORE = 0;
+const ENDPOINT_HEALTH_MAX_SCORE = 200;
+const ENDPOINT_HEALTH_SUCCESS_REWARD_DEFAULT = 12;
+const ENDPOINT_HEALTH_FAILURE_PENALTY_DEFAULT = 35;
+const ENDPOINT_HEALTH_TIMEOUT_PENALTY_DEFAULT = 55;
+const ENDPOINT_HEALTH_MISS_PENALTY_DEFAULT = 8;
+const ENDPOINT_HEALTH_LATENCY_PENALTY_PER_100MS_DEFAULT = 2;
+const ENDPOINT_HEALTH_DECAY_TAU_MS_DEFAULT = 120_000;
+const ENDPOINT_HEALTH_BACKOFF_BASE_MS_DEFAULT = 1_500;
+const ENDPOINT_HEALTH_BACKOFF_MAX_MS_DEFAULT = 30_000;
+const endpointHealthState = new Map<string, {
+  score: number;
+  consecutiveFailures: number;
+  backoffUntil: number;
+  lastUpdatedAt: number;
+}>();
+
+type EndpointFetchOutcome = "success" | "miss" | "failure" | "timeout";
 
 function parseCsvEnv(name: string): string[] {
   const raw = String(ENV?.[name] ?? "").trim();
@@ -24,8 +43,55 @@ function parsePositiveIntEnv(name: string, fallback: number): number {
   return Math.max(0, Math.floor(value));
 }
 
+function parseNonNegativeNumberEnv(name: string, fallback: number): number {
+  const raw = String(ENV?.[name] ?? "").trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(0, value);
+}
+
 function metadataCacheTtlMs(): number {
   return parsePositiveIntEnv("VITE_SWAP_KRC_TOKEN_METADATA_CACHE_TTL_MS", METADATA_CACHE_TTL_DEFAULT_MS);
+}
+
+function metadataCacheMaxEntries(): number {
+  return Math.max(1, parsePositiveIntEnv("VITE_SWAP_KRC_TOKEN_METADATA_CACHE_MAX_ENTRIES", METADATA_CACHE_MAX_ENTRIES));
+}
+
+function endpointHealthSuccessReward(): number {
+  return parseNonNegativeNumberEnv("VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_SUCCESS_REWARD", ENDPOINT_HEALTH_SUCCESS_REWARD_DEFAULT);
+}
+
+function endpointHealthFailurePenalty(): number {
+  return parseNonNegativeNumberEnv("VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_FAILURE_PENALTY", ENDPOINT_HEALTH_FAILURE_PENALTY_DEFAULT);
+}
+
+function endpointHealthTimeoutPenalty(): number {
+  return parseNonNegativeNumberEnv("VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_TIMEOUT_PENALTY", ENDPOINT_HEALTH_TIMEOUT_PENALTY_DEFAULT);
+}
+
+function endpointHealthMissPenalty(): number {
+  return parseNonNegativeNumberEnv("VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_MISS_PENALTY", ENDPOINT_HEALTH_MISS_PENALTY_DEFAULT);
+}
+
+function endpointHealthLatencyPenaltyPer100Ms(): number {
+  return parseNonNegativeNumberEnv(
+    "VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_LATENCY_PENALTY_PER_100MS",
+    ENDPOINT_HEALTH_LATENCY_PENALTY_PER_100MS_DEFAULT,
+  );
+}
+
+function endpointHealthDecayTauMs(): number {
+  return parsePositiveIntEnv("VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_DECAY_TAU_MS", ENDPOINT_HEALTH_DECAY_TAU_MS_DEFAULT);
+}
+
+function endpointHealthBackoffBaseMs(): number {
+  return parsePositiveIntEnv("VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_BACKOFF_BASE_MS", ENDPOINT_HEALTH_BACKOFF_BASE_MS_DEFAULT);
+}
+
+function endpointHealthBackoffMaxMs(): number {
+  return parsePositiveIntEnv("VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_BACKOFF_MAX_MS", ENDPOINT_HEALTH_BACKOFF_MAX_MS_DEFAULT);
 }
 
 function toNetworkBucket(network: string): "MAINNET" | "TN10" | "TN11" | "TN12" {
@@ -101,21 +167,114 @@ function readMetadataCache(key: string): SwapCustomToken | null {
     tokenMetadataCache.delete(key);
     return null;
   }
+  // True LRU: mark hit as most-recently used.
+  tokenMetadataCache.delete(key);
+  tokenMetadataCache.set(key, entry);
   return cloneToken(entry.token);
 }
 
 function writeMetadataCache(key: string, token: SwapCustomToken): void {
   const ttlMs = metadataCacheTtlMs();
   if (ttlMs <= 0) return;
+  if (tokenMetadataCache.has(key)) tokenMetadataCache.delete(key);
   tokenMetadataCache.set(key, {
     token: cloneToken(token),
     expiresAt: Date.now() + ttlMs,
   });
-  while (tokenMetadataCache.size > METADATA_CACHE_MAX_ENTRIES) {
+  const maxEntries = metadataCacheMaxEntries();
+  while (tokenMetadataCache.size > maxEntries) {
     const firstKey = tokenMetadataCache.keys().next().value;
     if (typeof firstKey !== "string") break;
     tokenMetadataCache.delete(firstKey);
   }
+}
+
+function clampEndpointScore(score: number): number {
+  return Math.max(ENDPOINT_HEALTH_MIN_SCORE, Math.min(ENDPOINT_HEALTH_MAX_SCORE, score));
+}
+
+function getEndpointHealth(endpoint: string, now = Date.now()) {
+  let state = endpointHealthState.get(endpoint);
+  if (!state) {
+    state = {
+      score: ENDPOINT_HEALTH_BASE_SCORE,
+      consecutiveFailures: 0,
+      backoffUntil: 0,
+      lastUpdatedAt: now,
+    };
+    endpointHealthState.set(endpoint, state);
+    return state;
+  }
+
+  const elapsedMs = Math.max(0, now - state.lastUpdatedAt);
+  const tauMs = endpointHealthDecayTauMs();
+  if (tauMs > 0 && elapsedMs > 0) {
+    const decayFactor = 1 - Math.exp(-elapsedMs / tauMs);
+    state.score = clampEndpointScore(
+      state.score + (ENDPOINT_HEALTH_BASE_SCORE - state.score) * decayFactor,
+    );
+  }
+  state.lastUpdatedAt = now;
+  return state;
+}
+
+function latencyPenalty(latencyMs: number): number {
+  const weight = endpointHealthLatencyPenaltyPer100Ms();
+  if (weight <= 0) return 0;
+  return (Math.max(0, latencyMs) / 100) * weight;
+}
+
+function updateEndpointHealth(endpoint: string, outcome: EndpointFetchOutcome, elapsedMs: number, now = Date.now()): void {
+  const state = getEndpointHealth(endpoint, now);
+  const latencyCost = latencyPenalty(elapsedMs);
+
+  if (outcome === "success") {
+    state.consecutiveFailures = 0;
+    state.backoffUntil = 0;
+    state.score = clampEndpointScore(state.score + endpointHealthSuccessReward() - latencyCost);
+    return;
+  }
+
+  if (outcome === "miss") {
+    state.score = clampEndpointScore(state.score - endpointHealthMissPenalty() - latencyCost * 0.5);
+    state.consecutiveFailures = Math.max(0, state.consecutiveFailures - 1);
+    return;
+  }
+
+  const failurePenalty = outcome === "timeout"
+    ? endpointHealthTimeoutPenalty()
+    : endpointHealthFailurePenalty();
+  state.consecutiveFailures += 1;
+  state.score = clampEndpointScore(state.score - failurePenalty - latencyCost);
+
+  const backoffBaseMs = endpointHealthBackoffBaseMs();
+  const backoffMaxMs = endpointHealthBackoffMaxMs();
+  const backoffMs = Math.min(
+    backoffMaxMs,
+    backoffBaseMs * Math.pow(2, Math.max(0, state.consecutiveFailures - 1)),
+  );
+  state.backoffUntil = now + backoffMs;
+}
+
+function rankEndpoints(endpoints: string[], now = Date.now()): string[] {
+  const active: Array<{ endpoint: string; score: number }> = [];
+  const backedOff: Array<{ endpoint: string; score: number; backoffUntil: number }> = [];
+
+  for (const endpoint of endpoints) {
+    const state = getEndpointHealth(endpoint, now);
+    if (state.backoffUntil > now) {
+      backedOff.push({ endpoint, score: state.score, backoffUntil: state.backoffUntil });
+    } else {
+      active.push({ endpoint, score: state.score });
+    }
+  }
+
+  active.sort((a, b) => b.score - a.score);
+  if (active.length > 0) return active.map((item) => item.endpoint);
+
+  backedOff.sort((a, b) => a.backoffUntil - b.backoffUntil || b.score - a.score);
+  // If every endpoint is backed off, probe only the endpoint nearest to recovery.
+  return backedOff.length > 0 ? [backedOff[0].endpoint] : [];
 }
 
 function clampDecimals(value: number, standard: KaspaTokenStandard): number {
@@ -260,26 +419,44 @@ async function fetchRemoteMetadata(
   endpoint: string,
   address: string,
   standard: KaspaTokenStandard,
-): Promise<SwapCustomToken | null> {
+): Promise<{ token: SwapCustomToken | null; outcome: EndpointFetchOutcome; elapsedMs: number }> {
+  const startedAt = Date.now();
   const base = endpoint.replace(/\/+$/, "");
   const paths = quotePathCandidates(address, standard);
+  let sawFailure = false;
+  let sawTimeout = false;
 
   for (const path of paths) {
     try {
       const res = await withTimeout(`${base}${path}`, { method: "GET" });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        if (res.status >= 500 || res.status === 429) sawFailure = true;
+        continue;
+      }
       const raw = await res.json().catch(() => null);
-      if (!raw) continue;
+      if (!raw) {
+        sawFailure = true;
+        continue;
+      }
       const candidates = extractObjectCandidates(raw);
       if (candidates.length === 0) continue;
       const candidate = findMatchingCandidate(candidates, address);
       if (!candidate) continue;
-      return normalizeMetadata(candidate, address, standard);
-    } catch {
-      // try next candidate path/endpoint
+      return {
+        token: normalizeMetadata(candidate, address, standard),
+        outcome: "success",
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+      };
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === "AbortError") sawTimeout = true;
+      else sawFailure = true;
     }
   }
-  return null;
+  return {
+    token: null,
+    outcome: sawTimeout ? "timeout" : sawFailure ? "failure" : "miss",
+    elapsedMs: Math.max(0, Date.now() - startedAt),
+  };
 }
 
 export async function resolveTokenFromAddress(
@@ -294,12 +471,13 @@ export async function resolveTokenFromAddress(
   const cached = readMetadataCache(key);
   if (cached) return cached;
 
-  const endpoints = metadataEndpointsForNetwork(network);
+  const endpoints = rankEndpoints(metadataEndpointsForNetwork(network));
   for (const endpoint of endpoints) {
-    const resolved = await fetchRemoteMetadata(endpoint, address, standard);
-    if (resolved) {
-      writeMetadataCache(key, resolved);
-      return cloneToken(resolved);
+    const result = await fetchRemoteMetadata(endpoint, address, standard);
+    updateEndpointHealth(endpoint, result.outcome, result.elapsedMs);
+    if (result.token) {
+      writeMetadataCache(key, result.token);
+      return cloneToken(result.token);
     }
   }
 
@@ -318,4 +496,21 @@ export async function resolveTokenFromAddress(
 
 export function __clearTokenMetadataCacheForTests(): void {
   tokenMetadataCache.clear();
+  endpointHealthState.clear();
+}
+
+export function __getTokenMetadataEndpointHealthForTests(): Record<string, {
+  score: number;
+  consecutiveFailures: number;
+  backoffUntil: number;
+}> {
+  const out: Record<string, { score: number; consecutiveFailures: number; backoffUntil: number }> = {};
+  for (const [endpoint, state] of endpointHealthState.entries()) {
+    out[endpoint] = {
+      score: state.score,
+      consecutiveFailures: state.consecutiveFailures,
+      backoffUntil: state.backoffUntil,
+    };
+  }
+  return out;
 }

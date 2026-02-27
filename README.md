@@ -318,6 +318,15 @@ Create `.env` from `.env.example`.
 - `VITE_SWAP_DEFAULT_SLIPPAGE_BPS`
 - `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINTS`
 - `VITE_SWAP_KRC_TOKEN_METADATA_CACHE_TTL_MS`
+- `VITE_SWAP_KRC_TOKEN_METADATA_CACHE_MAX_ENTRIES`
+- `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_SUCCESS_REWARD`
+- `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_FAILURE_PENALTY`
+- `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_TIMEOUT_PENALTY`
+- `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_MISS_PENALTY`
+- `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_LATENCY_PENALTY_PER_100MS`
+- `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_DECAY_TAU_MS`
+- `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_BACKOFF_BASE_MS`
+- `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_BACKOFF_MAX_MS`
 - `VITE_SWAP_EVM_CHAIN_IDS`
 - `VITE_SWAP_REQUIRE_EXTERNAL_EVM_SIGNER`
 - `VITE_SWAP_ZEROX_QUOTE_ENDPOINT`
@@ -403,7 +412,10 @@ The extension is a separate runtime surface under `extension/*`:
 - Token metadata resolver is **env-driven** and network-scoped:
   - `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINTS`
   - `VITE_KASPA_KASPLEX_*_API_ENDPOINTS` (+ generic `VITE_KASPA_KASPLEX_API_ENDPOINTS`)
-- Resolver uses a short in-memory TTL cache (`VITE_SWAP_KRC_TOKEN_METADATA_CACHE_TTL_MS`) for repeated lookups and safely fails open for UI preview (fallback icon/label), while quote/execution paths remain fail-closed.
+- Resolver now uses:
+  - in-memory **TTL + LRU** cache (`VITE_SWAP_KRC_TOKEN_METADATA_CACHE_TTL_MS`, `VITE_SWAP_KRC_TOKEN_METADATA_CACHE_MAX_ENTRIES`)
+  - endpoint health scoring (latency/error weighted with decay + temporary backoff) via `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINT_*` knobs
+- UI metadata preview remains fail-open (fallback icon/label), while quote/execution paths remain fail-closed.
 - EVM `0x` route stays signer-isolated via external sidecar requirements.
 
 ## Covenant UTXO Policy (Default-Safe)
