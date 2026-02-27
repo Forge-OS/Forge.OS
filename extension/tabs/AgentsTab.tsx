@@ -125,7 +125,7 @@ export function AgentsTab({ network }: Props) {
                   style={{
                     ...outlineButton(active ? C.accent : C.dim),
                     padding: "5px 7px",
-                    fontSize: 7,
+                    fontSize: 8,
                     background: active ? `${C.accent}20` : "rgba(16,25,35,0.45)",
                     borderColor: active ? `${C.accent}55` : C.border,
                   }}
@@ -145,7 +145,7 @@ export function AgentsTab({ network }: Props) {
                   style={{
                     ...outlineButton(active ? C.ok : C.dim),
                     padding: "5px 7px",
-                    fontSize: 7,
+                    fontSize: 8,
                     background: active ? `${C.ok}20` : "rgba(16,25,35,0.45)",
                     borderColor: active ? `${C.ok}55` : C.border,
                   }}
@@ -164,7 +164,7 @@ export function AgentsTab({ network }: Props) {
             <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.6, maxWidth: 220 }}>
               Live refresh runs every 5 seconds. Switch filters or deploy a new bot on Forge-OS.
             </div>
-            <div style={{ fontSize: 7, color: C.muted, marginTop: 7 }}>
+            <div style={{ fontSize: 8, color: C.muted, marginTop: 7 }}>
               Last sync {lastSyncAt > 0 ? formatTimeAgo(lastSyncAt, now) : "never"}
             </div>
           </div>
@@ -188,19 +188,19 @@ export function AgentsTab({ network }: Props) {
         <div style={{ ...sectionKicker, marginBottom: 7 }}>LIVE AGENT FEED · TESTNET/MAINNET OPTIONS</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, marginBottom: 8 }}>
           <div style={{ background: "rgba(16,25,35,0.45)", border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 7px" }}>
-            <div style={{ fontSize: 7, color: C.dim }}>VISIBLE</div>
+            <div style={{ fontSize: 8, color: C.dim }}>VISIBLE</div>
             <div style={{ fontSize: 10, color: C.text, fontWeight: 700 }}>{summary.total}</div>
           </div>
           <div style={{ background: "rgba(16,25,35,0.45)", border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 7px" }}>
-            <div style={{ fontSize: 7, color: C.dim }}>BOTS</div>
+            <div style={{ fontSize: 8, color: C.dim }}>BOTS</div>
             <div style={{ fontSize: 10, color: C.accent, fontWeight: 700 }}>{summary.bots}</div>
           </div>
           <div style={{ background: "rgba(16,25,35,0.45)", border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 7px" }}>
-            <div style={{ fontSize: 7, color: C.dim }}>ACTIVE</div>
+            <div style={{ fontSize: 8, color: C.dim }}>ACTIVE</div>
             <div style={{ fontSize: 10, color: C.ok, fontWeight: 700 }}>{summary.active}</div>
           </div>
           <div style={{ background: "rgba(16,25,35,0.45)", border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 7px" }}>
-            <div style={{ fontSize: 7, color: C.dim }}>P&L USD</div>
+            <div style={{ fontSize: 8, color: C.dim }}>P&L USD</div>
             <div style={{ fontSize: 10, color: summary.pnlUsd >= 0 ? C.ok : C.danger, fontWeight: 700 }}>
               {summary.pnlUsd >= 0 ? "+" : "-"}${fmt(Math.abs(summary.pnlUsd), 2)}
             </div>
@@ -217,7 +217,7 @@ export function AgentsTab({ network }: Props) {
                 style={{
                   ...outlineButton(active ? C.accent : C.dim),
                   padding: "5px 7px",
-                  fontSize: 7,
+                  fontSize: 8,
                   background: active ? `${C.accent}20` : "rgba(16,25,35,0.45)",
                   borderColor: active ? `${C.accent}55` : C.border,
                 }}
@@ -238,7 +238,7 @@ export function AgentsTab({ network }: Props) {
                 style={{
                   ...outlineButton(active ? C.ok : C.dim),
                   padding: "5px 7px",
-                  fontSize: 7,
+                  fontSize: 8,
                   background: active ? `${C.ok}20` : "rgba(16,25,35,0.45)",
                   borderColor: active ? `${C.ok}55` : C.border,
                 }}
@@ -278,17 +278,17 @@ export function AgentsTab({ network }: Props) {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <span style={{
-                  fontSize: 7, color: C.dim, ...mono,
+                  fontSize: 8, color: C.dim, ...mono,
                   background: "rgba(16,25,35,0.65)", border: `1px solid ${C.border}`, borderRadius: 3, padding: "2px 5px",
                 }}>{networkBadgeLabel(agent.network)}</span>
                 <span style={{
-                  fontSize: 7, color: agent.isBot ? C.accent : C.dim, ...mono,
+                  fontSize: 8, color: agent.isBot ? C.accent : C.dim, ...mono,
                   background: agent.isBot ? `${C.accent}18` : "rgba(16,25,35,0.65)",
                   border: `1px solid ${agent.isBot ? `${C.accent}50` : C.border}`,
                   borderRadius: 3, padding: "2px 5px",
                 }}>{agent.isBot ? "BOT" : "MANUAL"}</span>
                 <span style={{
-                  fontSize: 7, color: agent.isActive ? C.ok : C.warn, fontWeight: 700, ...mono,
+                  fontSize: 8, color: agent.isActive ? C.ok : C.warn, fontWeight: 700, ...mono,
                   background: agent.isActive ? `${C.ok}15` : `${C.warn}15`,
                   border: `1px solid ${agent.isActive ? C.ok : C.warn}30`,
                   borderRadius: 3, padding: "2px 5px",
@@ -298,27 +298,27 @@ export function AgentsTab({ network }: Props) {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
               <div>
-                <div style={{ fontSize: 7, color: C.dim, marginBottom: 1 }}>STRATEGY</div>
+                <div style={{ fontSize: 8, color: C.dim, marginBottom: 1 }}>STRATEGY</div>
                 <div style={{ fontSize: 8, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{agent.strategy}</div>
               </div>
               <div>
-                <div style={{ fontSize: 7, color: C.dim, marginBottom: 1 }}>P&L (USD)</div>
+                <div style={{ fontSize: 8, color: C.dim, marginBottom: 1 }}>P&L (USD)</div>
                 <div style={{ fontSize: 8, color: pnlPositive ? C.ok : C.danger, fontWeight: 700 }}>
                   {pnlPositive ? "+" : ""}${fmt(Math.abs(agent.pnlUsd), 2)}
                 </div>
               </div>
               {agent.capitalLimitKas && (
                 <div>
-                  <div style={{ fontSize: 7, color: C.dim, marginBottom: 1 }}>CAPITAL</div>
+                  <div style={{ fontSize: 8, color: C.dim, marginBottom: 1 }}>CAPITAL</div>
                   <div style={{ fontSize: 8, color: C.text }}>{agent.capitalLimitKas} KAS</div>
                 </div>
               )}
               <div>
-                <div style={{ fontSize: 7, color: C.dim, marginBottom: 1 }}>LAST HEARTBEAT</div>
+                <div style={{ fontSize: 8, color: C.dim, marginBottom: 1 }}>LAST HEARTBEAT</div>
                 <div style={{ fontSize: 8, color: C.text }}>{formatTimeAgo(agent.updatedAt, now)}</div>
               </div>
               <div>
-                <div style={{ fontSize: 7, color: C.dim, marginBottom: 1 }}>RISK</div>
+                <div style={{ fontSize: 8, color: C.dim, marginBottom: 1 }}>RISK</div>
                 <div style={{ fontSize: 8, color: C.text }}>{String(agent.risk || "—").toUpperCase()}</div>
               </div>
             </div>

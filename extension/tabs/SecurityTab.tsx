@@ -264,14 +264,14 @@ export function SecurityTab({
         <div style={{ ...sectionKicker, marginBottom: 8 }}>CONNECTION STATUS</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <div>
-            <div style={{ fontSize: 7, color: C.dim, marginBottom: 3 }}>PROVIDER</div>
+            <div style={{ fontSize: 8, color: C.dim, marginBottom: 3 }}>PROVIDER</div>
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
               <div style={{ width: 5, height: 5, borderRadius: "50%", background: address ? C.ok : C.warn }} />
               <span style={{ fontSize: 9, color: C.text, fontWeight: 700 }}>{provider.toUpperCase()}</span>
             </div>
           </div>
           <div>
-            <div style={{ fontSize: 7, color: C.dim, marginBottom: 3 }}>NETWORK</div>
+            <div style={{ fontSize: 8, color: C.dim, marginBottom: 3 }}>NETWORK</div>
             <span style={{
               fontSize: 8, color: network === "mainnet" ? C.warn : C.ok, fontWeight: 700,
               background: network === "mainnet" ? `${C.warn}15` : `${C.ok}15`,
@@ -281,7 +281,7 @@ export function SecurityTab({
           </div>
           {address && (
             <div style={{ gridColumn: "1 / -1" }}>
-              <div style={{ fontSize: 7, color: C.dim, marginBottom: 3 }}>ADDRESS</div>
+              <div style={{ fontSize: 8, color: C.dim, marginBottom: 3 }}>ADDRESS</div>
               <div style={{ ...insetCard(), fontSize: 8, color: C.text, padding: "7px 9px" }}>{shortAddr(address)}</div>
             </div>
           )}
@@ -290,7 +290,7 @@ export function SecurityTab({
 
       <div style={sectionCard("default")}>
         <div style={{ ...sectionKicker, marginBottom: 8 }}>KASPA RPC ENDPOINT</div>
-        <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5, marginBottom: 7 }}>
+        <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginBottom: 7 }}>
           Active network: <span style={{ color: C.text, fontWeight: 700 }}>{network.toUpperCase()}</span>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
@@ -354,12 +354,12 @@ export function SecurityTab({
           </button>
         </div>
         {customRpcError && (
-          <div style={{ fontSize: 7, color: C.danger, marginTop: 6 }}>{customRpcError}</div>
+          <div style={{ fontSize: 8, color: C.danger, marginTop: 6 }}>{customRpcError}</div>
         )}
         {!customRpcError && customRpcSaved && (
-          <div style={{ fontSize: 7, color: C.ok, marginTop: 6 }}>Saved RPC settings for this network.</div>
+          <div style={{ fontSize: 8, color: C.ok, marginTop: 6 }}>Saved RPC settings for this network.</div>
         )}
-        <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5, marginTop: 6 }}>
+        <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginTop: 6 }}>
           Presets are stored per network. Igra/Kasplex pools read from env (`VITE_KASPA_IGRA_*` / `VITE_KASPA_KASPLEX_*`) and fall back to Official if unset.
         </div>
       </div>
@@ -369,7 +369,7 @@ export function SecurityTab({
           <div style={{ ...sectionKicker, marginBottom: 8 }}>SESSION SETTINGS</div>
 
           <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 7, color: C.dim, marginBottom: 5, letterSpacing: "0.08em" }}>AUTO-LOCK</div>
+            <div style={{ fontSize: 8, color: C.dim, marginBottom: 5, letterSpacing: "0.08em" }}>AUTO-LOCK</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {autoLockOptions.map((opt) => (
                 <button
@@ -404,7 +404,7 @@ export function SecurityTab({
           >
             {persistUnlockSessionEnabled ? "✓ KEEP UNLOCKED WHEN POPUP CLOSES" : "KEEP UNLOCKED WHEN POPUP CLOSES"}
           </button>
-          <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5, marginTop: 6 }}>
+          <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginTop: 6 }}>
             Stores an unlocked session only in browser session memory; lock manually on shared devices.
           </div>
         </div>
@@ -438,7 +438,7 @@ export function SecurityTab({
 
               {revealWords.length === 0 ? (
                 <form onSubmit={handleReveal}>
-                  <div style={{ fontSize: 7, color: C.dim, marginBottom: 6, lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 8, color: C.dim, marginBottom: 6, lineHeight: 1.5 }}>
                     Enter your password to view your seed phrase.
                     Never share it — anyone with this phrase controls your wallet.
                   </div>
@@ -450,7 +450,7 @@ export function SecurityTab({
                     disabled={revealLoading}
                     style={{ ...inputStyle(Boolean(revealErr)), marginBottom: 6 }}
                   />
-                  {revealErr && <div style={{ fontSize: 7, color: C.danger, marginBottom: 6 }}>{revealErr}</div>}
+                  {revealErr && <div style={{ fontSize: 8, color: C.danger, marginBottom: 6 }}>{revealErr}</div>}
                   <button
                     type="submit"
                     disabled={!revealPw || revealLoading}
@@ -472,12 +472,12 @@ export function SecurityTab({
                         borderRadius: 4, padding: "5px 4px",
                         display: "flex", alignItems: "center", gap: 3,
                       }}>
-                        <span style={{ fontSize: 6, color: C.dim, flexShrink: 0 }}>{i + 1}.</span>
-                        <span style={{ fontSize: 7, color: C.text, fontWeight: 600 }}>{word}</span>
+                        <span style={{ fontSize: 8, color: C.dim, flexShrink: 0 }}>{i + 1}.</span>
+                        <span style={{ fontSize: 8, color: C.text, fontWeight: 600 }}>{word}</span>
                       </div>
                     ))}
                   </div>
-                  <div style={{ fontSize: 7, color: C.warn, lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 8, color: C.warn, lineHeight: 1.4 }}>
                     ⚠ Store offline. Never photograph or share digitally.
                   </div>
                 </>
@@ -505,7 +505,7 @@ export function SecurityTab({
                     placeholder="New password (min 8 chars)" disabled={changePwLoading} style={inputStyle()} />
                   <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
                     placeholder="Confirm new password" disabled={changePwLoading} style={inputStyle()} />
-                  {changePwErr && <div style={{ fontSize: 7, color: C.danger }}>{changePwErr}</div>}
+                  {changePwErr && <div style={{ fontSize: 8, color: C.danger }}>{changePwErr}</div>}
                   <button
                     type="submit"
                     disabled={!oldPw || !newPw || !confirmPw || changePwLoading}
@@ -527,7 +527,7 @@ export function SecurityTab({
                 <span style={{ ...sectionTitle, color: C.danger }}>⚠ RESET WALLET</span>
                 <button onClick={closePanel} style={{ background: "none", border: "none", color: C.dim, fontSize: 8, cursor: "pointer", ...mono }}>✕ cancel</button>
               </div>
-              <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5, marginBottom: 10 }}>
+              <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginBottom: 10 }}>
                 This will permanently delete your encrypted vault from this extension.
                 Your on-chain funds are NOT affected. You can re-import using your seed phrase.
                 <strong style={{ color: C.warn }}> Make sure your seed phrase is backed up before proceeding.</strong>
@@ -543,7 +543,7 @@ export function SecurityTab({
                 }}
               >{resetConfirm ? "⚠ CONFIRM — PERMANENTLY DELETE VAULT" : "RESET WALLET"}</button>
               {resetConfirm && (
-                <div style={{ fontSize: 7, color: C.danger, marginTop: 5, textAlign: "center" }}>
+                <div style={{ fontSize: 8, color: C.danger, marginTop: 5, textAlign: "center" }}>
                   This cannot be undone. Your seed phrase is your only recovery option.
                 </div>
               )}
@@ -563,7 +563,7 @@ export function SecurityTab({
         ].map((note, i, arr) => (
           <div key={i} style={{ display: "flex", gap: 6, marginBottom: i < arr.length - 1 ? 4 : 0 }}>
             <span style={{ color: C.ok, fontSize: 8, flexShrink: 0 }}>✓</span>
-            <span style={{ fontSize: 7, color: C.dim, lineHeight: 1.5 }}>{note}</span>
+            <span style={{ fontSize: 8, color: C.dim, lineHeight: 1.5 }}>{note}</span>
           </div>
         ))}
       </div>

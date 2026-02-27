@@ -278,7 +278,22 @@ export async function signMessage(
   const { privKey } = derivePrivateKeyFromContext(ctx, options.derivation);
 
   const bytes = new TextEncoder().encode(message);
-  // kaspa-wasm PrivateKey.sign() is present at runtime but not in the published types
-  const sig = (privKey as any).sign(bytes) as Uint8Array;
-  return Array.from(sig, (b) => b.toString(16).padStart(2, "0")).join("");
+
+  // receiveKey()/changeKey() returns an HD-derived key object.
+  // We need a PrivateKey with .sign() — mirror the signer.ts pattern:
+  // 1. toKeypair() → get keypair
+  // 2. extract raw private key string → new PrivateKey(raw) → .sign()
+  const { PrivateKey } = ctx.kaspa;
+  const keypair = privKey.toKeypair();
+  let signingKey: any;
+  try {
+    const raw: unknown = (keypair as any).privateKey ?? (keypair as any).toPrivateKey?.();
+    signingKey = new PrivateKey(raw);
+  } catch {
+    // Fallback: maybe privKey is already a PrivateKey in this wasm build
+    signingKey = privKey;
+  }
+
+  const sig = signingKey.sign(bytes) as Uint8Array;
+  return Array.from(sig, (b: number) => b.toString(16).padStart(2, "0")).join("");
 }

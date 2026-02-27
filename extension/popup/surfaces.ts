@@ -22,10 +22,10 @@ const TONE_GLOW: Record<Tone, string> = {
 };
 
 export const popupTabStack: CSSProperties = {
-  padding: "12px 14px 14px",
+  padding: "13px 15px 15px",
   display: "flex",
   flexDirection: "column",
-  gap: 10,
+  gap: 11,
   minWidth: 0,
 };
 
@@ -78,7 +78,7 @@ export function insetCard(): CSSProperties {
 }
 
 export const sectionKicker: CSSProperties = {
-  fontSize: 7,
+  fontSize: 8,
   color: C.dim,
   letterSpacing: "0.14em",
   fontWeight: 700,
@@ -86,7 +86,7 @@ export const sectionKicker: CSSProperties = {
 };
 
 export const sectionTitle: CSSProperties = {
-  fontSize: 9,
+  fontSize: 10,
   color: C.text,
   fontWeight: 700,
   letterSpacing: "0.08em",
@@ -109,7 +109,7 @@ export function outlineButton(color = C.dim, strong = false): CSSProperties {
     borderRadius: 8,
     color,
     cursor: "pointer",
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: 700,
     letterSpacing: "0.08em",
     ...mono,
@@ -129,7 +129,7 @@ export function primaryButton(active = true): CSSProperties {
     border: "none",
     borderRadius: 8,
     cursor: active ? "pointer" : "not-allowed",
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: 700,
     letterSpacing: "0.08em",
     ...mono,
@@ -147,9 +147,9 @@ export function monoInput(hasError = false): CSSProperties {
     background: "linear-gradient(180deg, rgba(8,13,20,0.82), rgba(9,14,21,0.9))",
     border: `1px solid ${hasError ? C.danger : C.border}`,
     borderRadius: 8,
-    padding: "8px 10px",
+    padding: "9px 11px",
     color: C.text,
-    fontSize: 9,
+    fontSize: 10,
     ...mono,
     outline: "none",
     boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
@@ -167,7 +167,7 @@ export function chip(color: string, filled = false): CSSProperties {
     borderRadius: 999,
     padding: "2px 7px",
     color,
-    fontSize: 7,
+    fontSize: 8,
     fontWeight: 700,
     letterSpacing: "0.08em",
     ...mono,

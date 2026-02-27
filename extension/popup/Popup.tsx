@@ -459,8 +459,8 @@ export function Popup() {
       requestId: pendingSign.requestId,
       error: "Signing rejected by user",
     }).catch(() => {});
-    setPendingSign(null);
-    setSiteSignError(null);
+    // Close the popup immediately — avoids a flash of the wallet UI before the window closes.
+    window.close();
   };
 
   // ── Screen renders ────────────────────────────────────────────────────────────
@@ -483,7 +483,7 @@ export function Popup() {
         <div style={{ position: "absolute", top: "30%", left: "50%", transform: "translate(-50%,-50%)", width: 260, height: 260, borderRadius: "50%", background: `radial-gradient(ellipse, ${C.accent}12 0%, transparent 70%)`, pointerEvents: "none" }} />
         <div style={{ textAlign: "center", position: "relative" }}>
           <img src="../icons/icon48.png" alt="" style={{ width: 36, height: 36, objectFit: "contain", opacity: 0.7, filter: "drop-shadow(0 0 10px rgba(57,221,182,0.5))" }} />
-          <div style={{ fontSize: 8, color: C.dim, marginTop: 10, letterSpacing: "0.14em" }}>LOADING…</div>
+          <div style={{ fontSize: 9, color: C.dim, marginTop: 10, letterSpacing: "0.14em" }}>LOADING…</div>
         </div>
       </div>
     );
@@ -544,7 +544,7 @@ export function Popup() {
             type: "FORGEOS_CONNECT_REJECT",
             requestId: pendingConnect.requestId,
           }).catch(() => {});
-          setPendingConnect(null);
+          window.close();
         }}
       />
     );
@@ -615,7 +615,7 @@ export function Popup() {
             onClick={handleCycleNetwork}
             title="Click to switch network"
             style={{
-              fontSize: 8, color: netColor, fontWeight: 700, letterSpacing: "0.1em",
+              fontSize: 9, color: netColor, fontWeight: 700, letterSpacing: "0.1em",
               background: `${netColor}15`,
               border: `1px solid ${netColor}35`,
               borderRadius: 4, padding: "3px 8px", cursor: "pointer", ...mono,
@@ -629,7 +629,7 @@ export function Popup() {
               style={{
                 background: "rgba(33,48,67,0.5)", border: `1px solid ${C.border}`,
                 borderRadius: 4, padding: "3px 8px",
-                color: C.dim, fontSize: 9, cursor: "pointer", ...mono,
+                color: C.dim, fontSize: 10, cursor: "pointer", ...mono,
               }}
             >🔒</button>
           )}
@@ -642,13 +642,13 @@ export function Popup() {
           {/* Address row */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 16 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.ok, flexShrink: 0, boxShadow: `0 0 6px ${C.ok}` }} />
-            <span style={{ fontSize: 9, color: C.dim, letterSpacing: "0.04em" }}>{shortAddr(address)}</span>
+            <span style={{ fontSize: 10, color: C.dim, letterSpacing: "0.04em" }}>{shortAddr(address)}</span>
             <button
               onClick={copyAddress}
               style={{
                 ...outlineButton(copied ? C.ok : C.dim, true),
                 padding: "3px 8px",
-                fontSize: 8,
+                fontSize: 9,
                 letterSpacing: "0.08em",
                 color: copied ? C.ok : C.dim,
                 minWidth: 56,
@@ -659,7 +659,7 @@ export function Popup() {
               style={{
                 ...outlineButton(hidePortfolioBalances ? C.warn : C.dim, true),
                 padding: "3px 8px",
-                fontSize: 8,
+                fontSize: 9,
                 letterSpacing: "0.08em",
                 color: hidePortfolioBalances ? C.warn : C.dim,
                 minWidth: 56,
@@ -669,7 +669,7 @@ export function Popup() {
 
           {/* Portfolio value (fiat primary) */}
           <div style={{ marginBottom: 6 }}>
-            <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.1em", marginBottom: 6 }}>
+            <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.1em", marginBottom: 6 }}>
               TOTAL PORTFOLIO VALUE
             </div>
             <div style={{ fontSize: 38, fontWeight: 700, color: C.text, letterSpacing: "0.005em", lineHeight: 1 }}>
@@ -692,7 +692,7 @@ export function Popup() {
                   background: `linear-gradient(145deg, ${C.accent}1A, rgba(8,13,20,0.7))`,
                   border: `1px solid ${C.accent}40`,
                   borderRadius: 10, padding: "9px 0",
-                  color: C.accent, fontSize: 9, fontWeight: 700, cursor: "pointer", ...mono,
+                  color: C.accent, fontSize: 10, fontWeight: 700, cursor: "pointer", ...mono,
                   letterSpacing: "0.1em",
                   transition: "background 0.15s, border-color 0.15s",
                 }}
@@ -702,12 +702,12 @@ export function Popup() {
         </div>
       ) : (
         <div style={{ padding: "28px 16px", textAlign: "center", borderBottom: `1px solid ${C.border}`, position: "relative", zIndex: 1 }}>
-          <div style={{ fontSize: 10, color: C.dim, marginBottom: 12 }}>No wallet connected</div>
+          <div style={{ fontSize: 11, color: C.dim, marginBottom: 12 }}>No wallet connected</div>
           <button
             onClick={() => chrome.tabs.create({ url: "https://forge-os.xyz" })}
             style={{
               background: `linear-gradient(90deg, ${C.accent}, #7BE9CF)`, color: "#04110E",
-              border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 10,
+              border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 11,
               fontWeight: 700, cursor: "pointer", ...mono, letterSpacing: "0.08em",
             }}
           >OPEN FORGE-OS →</button>
@@ -724,7 +724,7 @@ export function Popup() {
               flex: 1, background: tab === t ? `${C.accent}08` : "none", border: "none",
               borderBottom: `2px solid ${tab === t ? C.accent : "transparent"}`,
               color: tab === t ? C.accent : C.dim,
-              fontSize: 9, fontWeight: 700, cursor: "pointer",
+              fontSize: 10, fontWeight: 700, cursor: "pointer",
               padding: "9px 0", letterSpacing: "0.1em", ...mono,
               textTransform: "uppercase", transition: "color 0.15s, border-color 0.15s, background 0.15s",
               boxShadow: tab === t ? `0 2px 12px ${C.accent}25` : "none",
@@ -767,29 +767,29 @@ export function Popup() {
       {/* Footer — live DAG info */}
       <div style={{ padding: "7px 16px", borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative", zIndex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 7, color: C.muted, letterSpacing: "0.06em" }}>FORGE-OS</span>
-          <span style={{ fontSize: 7, color: feedColor, letterSpacing: "0.05em", fontWeight: 700 }}>
+          <span style={{ fontSize: 8, color: C.muted, letterSpacing: "0.06em" }}>FORGE-OS</span>
+          <span style={{ fontSize: 8, color: feedColor, letterSpacing: "0.05em", fontWeight: 700 }}>
             · {feedLabel}
           </span>
           {dagScore && (
-            <span style={{ fontSize: 7, color: C.dim, letterSpacing: "0.04em" }}>
+            <span style={{ fontSize: 8, color: C.dim, letterSpacing: "0.04em" }}>
               · {NETWORK_BPS[network] ?? 10} BPS · DAA {(parseInt(dagScore, 10) / 1_000_000).toFixed(1)}M
             </span>
           )}
-          <span style={{ fontSize: 7, color: C.dim, letterSpacing: "0.04em" }}>
+          <span style={{ fontSize: 8, color: C.dim, letterSpacing: "0.04em" }}>
             · RPC {activeEndpointLabel}
           </span>
-          <span style={{ fontSize: 7, color: C.dim, letterSpacing: "0.04em" }}>
+          <span style={{ fontSize: 8, color: C.dim, letterSpacing: "0.04em" }}>
             · UPDATE {feedUpdatedLabel}
           </span>
         </div>
         <button
           onClick={() => chrome.tabs.create({ url: "https://forge-os.xyz" })}
-          style={{ background: "none", border: "none", color: C.accent, fontSize: 7, cursor: "pointer", ...mono, letterSpacing: "0.06em" }}
+          style={{ background: "none", border: "none", color: C.accent, fontSize: 8, cursor: "pointer", ...mono, letterSpacing: "0.06em" }}
         >OPEN SITE ↗</button>
       </div>
       {feedStatusMessage && (
-        <div style={{ padding: "0 16px 7px", fontSize: 7, color: C.warn, letterSpacing: "0.03em", position: "relative", zIndex: 1 }}>
+        <div style={{ padding: "0 16px 7px", fontSize: 8, color: C.warn, letterSpacing: "0.03em", position: "relative", zIndex: 1 }}>
           {feedStatusMessage}
         </div>
       )}

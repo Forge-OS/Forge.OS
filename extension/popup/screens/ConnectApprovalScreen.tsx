@@ -54,7 +54,7 @@ export function ConnectApprovalScreen({ address, network, origin, onApprove, onR
           <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>
             Connect to Site
           </div>
-          <div style={{ fontSize: 9, color: C.dim, letterSpacing: "0.06em", wordBreak: "break-word", overflowWrap: "anywhere" }}>
+          <div style={{ fontSize: 10, color: C.dim, letterSpacing: "0.06em", wordBreak: "break-word", overflowWrap: "anywhere" }}>
             {displayOrigin}
           </div>
         </div>
@@ -66,28 +66,28 @@ export function ConnectApprovalScreen({ address, network, origin, onApprove, onR
           borderRadius: 10,
           padding: "12px 14px",
         }}>
-          <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.12em", marginBottom: 10 }}>
+          <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.12em", marginBottom: 10 }}>
             THIS SITE WILL BE ABLE TO
           </div>
           {[
             { icon: "◆", label: "View your wallet address" },
             { icon: "◆", label: "Request message signatures" },
           ].map((item) => (
-            <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 9, color: C.text }}>
-              <span style={{ color: C.ok, fontSize: 8, flexShrink: 0 }}>{item.icon}</span>
+            <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 10, color: C.text }}>
+              <span style={{ color: C.ok, fontSize: 9, flexShrink: 0 }}>{item.icon}</span>
               {item.label}
             </div>
           ))}
           <div style={{ height: 1, background: C.border, margin: "10px 0" }} />
-          <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.12em", marginBottom: 6 }}>
+          <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.12em", marginBottom: 6 }}>
             THIS SITE WILL NOT BE ABLE TO
           </div>
           {[
             { icon: "✕", label: "Access your private keys or seed phrase" },
             { icon: "✕", label: "Send transactions without your approval" },
           ].map((item) => (
-            <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, fontSize: 9, color: C.muted }}>
-              <span style={{ color: C.danger, fontSize: 8, flexShrink: 0 }}>{item.icon}</span>
+            <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, fontSize: 10, color: C.muted }}>
+              <span style={{ color: C.danger, fontSize: 9, flexShrink: 0 }}>{item.icon}</span>
               {item.label}
             </div>
           ))}
@@ -105,9 +105,9 @@ export function ConnectApprovalScreen({ address, network, origin, onApprove, onR
         }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.ok, flexShrink: 0 }} />
           <div>
-            <div style={{ fontSize: 8, color: C.dim, marginBottom: 2 }}>CONNECTING WITH</div>
-            <div style={{ fontSize: 10, color: C.text, fontWeight: 600 }}>{shortAddr(address)}</div>
-            <div style={{ fontSize: 7, color: C.dim }}>{network}</div>
+            <div style={{ fontSize: 9, color: C.dim, marginBottom: 2 }}>CONNECTING WITH</div>
+            <div style={{ fontSize: 11, color: C.text, fontWeight: 600 }}>{shortAddr(address)}</div>
+            <div style={{ fontSize: 8, color: C.dim }}>{network}</div>
           </div>
         </div>
       </div>
@@ -123,7 +123,7 @@ export function ConnectApprovalScreen({ address, network, origin, onApprove, onR
             borderRadius: 8,
             padding: "10px 0",
             color: C.dim,
-            fontSize: 9,
+            fontSize: 10,
             fontWeight: 700,
             cursor: "pointer",
             letterSpacing: "0.08em",
@@ -141,7 +141,7 @@ export function ConnectApprovalScreen({ address, network, origin, onApprove, onR
             borderRadius: 8,
             padding: "10px 0",
             color: "#04110E",
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 700,
             cursor: "pointer",
             letterSpacing: "0.08em",

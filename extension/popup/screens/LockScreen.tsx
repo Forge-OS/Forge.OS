@@ -82,7 +82,7 @@ export function LockScreen({
           <span style={{ color: C.accent }}>FORGE</span>
           <span style={{ color: C.text }}>-OS</span>
         </div>
-        <div style={{ fontSize: 9, color: C.dim, marginTop: 5, letterSpacing: "0.12em" }}>
+        <div style={{ fontSize: 10, color: C.dim, marginTop: 5, letterSpacing: "0.12em" }}>
           {walletAddress ? "WELCOME BACK" : "WALLET LOCKED"}
         </div>
       </div>
@@ -95,7 +95,7 @@ export function LockScreen({
           borderRadius: 20, padding: "6px 14px",
         }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: C.ok, flexShrink: 0 }} />
-          <span style={{ fontSize: 10, color: C.text, fontWeight: 600 }}>{shortAddr(walletAddress)}</span>
+          <span style={{ fontSize: 11, color: C.text, fontWeight: 600 }}>{shortAddr(walletAddress)}</span>
         </div>
       )}
 
@@ -112,7 +112,7 @@ export function LockScreen({
       {/* Unlock form */}
       <form onSubmit={handleUnlock} style={{ width: "100%" }}>
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.1em", marginBottom: 6 }}>
+          <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.1em", marginBottom: 6 }}>
             {walletAddress ? "ENTER PASSWORD TO SIGN IN" : "PASSWORD"}
           </div>
           <input
@@ -171,10 +171,10 @@ export function LockScreen({
             background: C.dLow, border: `1px solid ${C.danger}40`,
             borderRadius: 8, padding: "12px 14px", marginTop: 4,
           }}>
-            <div style={{ fontSize: 8, color: C.warn, fontWeight: 700, marginBottom: 6, letterSpacing: "0.08em" }}>
+            <div style={{ fontSize: 9, color: C.warn, fontWeight: 700, marginBottom: 6, letterSpacing: "0.08em" }}>
               ⚠ RESET WALLET
             </div>
-            <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5, marginBottom: 10 }}>
+            <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginBottom: 10 }}>
               This will permanently delete your encrypted vault. Make sure you have your seed phrase backed up before proceeding.
             </div>
             <div style={{ display: "flex", gap: 8 }}>

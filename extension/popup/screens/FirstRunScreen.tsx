@@ -109,7 +109,7 @@ function PasswordForm({
 
   return (
     <form onSubmit={handleSubmit}>
-      <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.1em", marginBottom: 8 }}>CREATE PASSWORD</div>
+      <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.1em", marginBottom: 8 }}>CREATE PASSWORD</div>
       <input type="password" placeholder="Password (min 8 characters)" value={pw}
         onChange={e => setPw(e.target.value)} disabled={loading} style={inp()} />
       <input type="password" placeholder="Confirm password" value={confirm}
@@ -485,7 +485,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" as const, marginBottom: 14 }}>
           {["KASPA L1 · L2", "NON-CUSTODIAL", "BIP44"].map(badge => (
             <span key={badge} style={{
-              fontSize: 6, color: C.accent, fontWeight: 700, letterSpacing: "0.08em",
+              fontSize: 8, color: C.accent, fontWeight: 700, letterSpacing: "0.08em",
               background: `${C.accent}10`, border: `1px solid ${C.accent}22`,
               borderRadius: 4, padding: "3px 7px",
             }}>{badge}</span>
@@ -519,7 +519,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
               <div style={{ fontSize: 11, fontWeight: 700, color: C.accent, marginBottom: 4, letterSpacing: "0.06em" }}>
                 {loading ? "GENERATING…" : "CREATE NEW WALLET"}
               </div>
-              <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.6 }}>
                 Generate a new wallet · 24-word seed phrase · fully encrypted locally
               </div>
             </div>
@@ -552,7 +552,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
             </div>
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 4, letterSpacing: "0.06em" }}>IMPORT WALLET</div>
-              <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.6 }}>
                 Restore from a BIP39 seed phrase · supports 12/15/18/21/24 words
               </div>
             </div>
@@ -567,7 +567,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
           ].map((note, i) => (
             <div key={i} style={{ display: "flex", gap: 6, marginBottom: i === 0 ? 4 : 0 }}>
               <span style={{ color: C.ok, fontSize: 8, flexShrink: 0 }}>✓</span>
-              <span style={{ fontSize: 7, color: C.dim, lineHeight: 1.5 }}>{note}</span>
+              <span style={{ fontSize: 8, color: C.dim, lineHeight: 1.5 }}>{note}</span>
             </div>
           ))}
         </div>
@@ -591,7 +591,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
         />
 
         <div style={{ background: C.wLow, border: `1px solid ${C.warn}40`, borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
-          <div style={{ fontSize: 7, color: C.warn, fontWeight: 700 }}>
+          <div style={{ fontSize: 8, color: C.warn, fontWeight: 700 }}>
             ⚠ NEVER share this phrase. Forge-OS will never ask for it.
           </div>
         </div>
@@ -604,8 +604,8 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
               borderRadius: 5, padding: "5px 4px",
               display: "flex", alignItems: "center", gap: 3,
             }}>
-              <span style={{ fontSize: 6, color: C.dim, flexShrink: 0 }}>{i + 1}.</span>
-              <span style={{ fontSize: 7, color: C.text, fontWeight: 600 }}>{word}</span>
+              <span style={{ fontSize: 8, color: C.dim, flexShrink: 0 }}>{i + 1}.</span>
+              <span style={{ fontSize: 8, color: C.text, fontWeight: 600 }}>{word}</span>
             </div>
           ))}
         </div>
@@ -659,7 +659,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
         />
         {error && <div style={{ fontSize: 8, color: C.danger, marginBottom: 10 }}>{error}</div>}
 
-        <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.1em", marginBottom: 7 }}>SEED PHRASE</div>
+        <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.1em", marginBottom: 7 }}>SEED PHRASE</div>
         <textarea
           value={importPhrase}
           onChange={e => {
@@ -679,7 +679,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
           }}
         />
 
-        <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.1em", marginBottom: 7 }}>BIP39 PASSPHRASE (OPTIONAL)</div>
+        <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.1em", marginBottom: 7 }}>BIP39 PASSPHRASE (OPTIONAL)</div>
         <input
           type="password"
           value={importPassphrase}
@@ -703,7 +703,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
           const wc = importPhrase.trim().split(/\s+/).filter(Boolean).length;
           const valid = [12, 15, 18, 21, 24].includes(wc);
           return (
-            <div style={{ fontSize: 7, color: valid ? C.ok : C.warn, marginBottom: 8 }}>
+            <div style={{ fontSize: 8, color: valid ? C.ok : C.warn, marginBottom: 8 }}>
               {wc} words {valid ? "✓" : "(need 12/15/18/21/24)"}
             </div>
           );
@@ -716,11 +716,11 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
           padding: "9px 10px",
           marginBottom: 10,
         }}>
-          <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.08em", marginBottom: 6 }}>
+          <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.08em", marginBottom: 6 }}>
             DISCOVERY SCAN OPTIONS
           </div>
 
-          <div style={{ fontSize: 7, color: C.dim, marginBottom: 5 }}>BASE PATH ROOTS (ONE PER LINE)</div>
+          <div style={{ fontSize: 8, color: C.dim, marginBottom: 5 }}>BASE PATH ROOTS (ONE PER LINE)</div>
           <textarea
             value={scanBasePathsText}
             onChange={(e) => setScanBasePathsText(e.target.value)}
@@ -735,7 +735,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
             <div>
-              <div style={{ fontSize: 7, color: C.dim, marginBottom: 4 }}>ACCOUNT RANGE</div>
+              <div style={{ fontSize: 8, color: C.dim, marginBottom: 4 }}>ACCOUNT RANGE</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                 <input
                   type="number"
@@ -767,7 +767,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
             </div>
 
             <div>
-              <div style={{ fontSize: 7, color: C.dim, marginBottom: 4 }}>INDEX RANGE</div>
+              <div style={{ fontSize: 8, color: C.dim, marginBottom: 4 }}>INDEX RANGE</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                 <input
                   type="number"
@@ -801,9 +801,9 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <div>
-              <div style={{ fontSize: 7, color: C.dim, marginBottom: 5 }}>CHAINS</div>
+              <div style={{ fontSize: 8, color: C.dim, marginBottom: 5 }}>CHAINS</div>
               <div style={{ display: "flex", gap: 10 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 7, color: C.dim, cursor: "pointer" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 8, color: C.dim, cursor: "pointer" }}>
                   <input
                     type="checkbox"
                     checked={scanIncludeReceive}
@@ -812,7 +812,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
                   />
                   RECEIVE (0)
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 7, color: C.dim, cursor: "pointer" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 8, color: C.dim, cursor: "pointer" }}>
                   <input
                     type="checkbox"
                     checked={scanIncludeChange}
@@ -825,7 +825,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
             </div>
 
             <div>
-              <div style={{ fontSize: 7, color: C.dim, marginBottom: 4 }}>RESULT LIMIT</div>
+              <div style={{ fontSize: 8, color: C.dim, marginBottom: 4 }}>RESULT LIMIT</div>
               <input
                 type="number"
                 min={1}
@@ -850,7 +850,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
           padding: "9px 10px",
           marginBottom: 10,
         }}>
-          <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.08em", marginBottom: 6 }}>
+          <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.08em", marginBottom: 6 }}>
             MANUAL DERIVATION PATH
           </div>
           <input
@@ -948,11 +948,11 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
           padding: "8px 10px",
           marginBottom: 10,
         }}>
-          <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5 }}>
             Showing common derivation candidates for your phrase/passphrase. If unsure, compare with the
             address shown in your current wallet app and select the exact match.
           </div>
-          <div style={{ fontSize: 7, color: C.dim, marginTop: 6 }}>
+          <div style={{ fontSize: 8, color: C.dim, marginTop: 6 }}>
             Remembered candidates for this mnemonic fingerprint: {rememberedKeys.length}
           </div>
         </div>
@@ -993,7 +993,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     {remembered && (
                       <span style={{
-                        fontSize: 6,
+                        fontSize: 8,
                         color: C.accent,
                         border: `1px solid ${C.accent}44`,
                         background: `${C.accent}14`,
@@ -1004,7 +1004,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
                         REMEMBERED
                       </span>
                     )}
-                    <span style={{ fontSize: 7, color: C.dim }}>
+                    <span style={{ fontSize: 8, color: C.dim }}>
                       {candidate.derivation.account === 0 ? "acct 0" : `acct ${candidate.derivation.account}`}
                     </span>
                   </div>
@@ -1012,7 +1012,7 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
                 <div style={{ fontSize: 8, color: C.text, lineHeight: 1.45, wordBreak: "break-all", marginBottom: 4 }}>
                   {candidate.address}
                 </div>
-                <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.4, wordBreak: "break-all" }}>
+                <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.4, wordBreak: "break-all" }}>
                   {candidate.derivationPath}
                 </div>
               </button>
@@ -1056,11 +1056,11 @@ export function FirstRunScreen({ network: _defaultNetwork, onComplete }: Props) 
           padding: "8px 10px",
           marginBottom: 10,
         }}>
-          <div style={{ fontSize: 7, color: C.dim, marginBottom: 4, letterSpacing: "0.08em" }}>SELECTED ADDRESS</div>
+          <div style={{ fontSize: 8, color: C.dim, marginBottom: 4, letterSpacing: "0.08em" }}>SELECTED ADDRESS</div>
           <div style={{ fontSize: 8, color: C.text, lineHeight: 1.4, wordBreak: "break-all", marginBottom: 4 }}>
             {importAddress}
           </div>
-          <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.4, wordBreak: "break-all" }}>
+          <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.4, wordBreak: "break-all" }}>
             {formatKaspaDerivationPath(importDerivation)}
           </div>
         </div>

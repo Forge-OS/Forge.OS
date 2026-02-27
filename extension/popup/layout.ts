@@ -1,5 +1,6 @@
 // Use real dimensions instead of zoom-based scaling so Chrome popup sizing
 // stays accurate and inputs/cards do not overflow horizontally.
+// Keep global zoom neutral; readability is handled via targeted typography sizes.
 export const EXTENSION_POPUP_UI_SCALE = 1;
 
 export const EXTENSION_POPUP_BASE_WIDTH = 440;

@@ -370,7 +370,7 @@ export function WalletTab({
               </div>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: C.text, letterSpacing: "0.05em", ...mono }}>{token.symbol}</div>
-                <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.03em" }}>{token.name}</div>
+                <div style={{ fontSize: 9, color: C.dim, letterSpacing: "0.03em" }}>{token.name}</div>
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
@@ -378,7 +378,7 @@ export function WalletTab({
                 {tokenAmountLabel}
               </div>
               {!token.enabled && token.disabledReason && (
-                <div style={{ fontSize: 7, color: C.dim, maxWidth: 140, lineHeight: 1.35, marginTop: 3 }}>
+                <div style={{ fontSize: 8, color: C.dim, maxWidth: 140, lineHeight: 1.35, marginTop: 3 }}>
                   {token.disabledReason}
                 </div>
               )}
@@ -390,7 +390,7 @@ export function WalletTab({
           <div style={{ marginTop: 11, textAlign: "right", position: "relative", zIndex: 1 }}>
             <button
               onClick={() => chrome.tabs.create({ url: explorerUrl })}
-              style={{ ...outlineButton(C.accent, true), padding: "6px 9px", fontSize: 8, color: C.accent }}
+              style={{ ...outlineButton(C.accent, true), padding: "6px 9px", fontSize: 9, color: C.accent }}
             >
               EXPLORER ↗
             </button>
@@ -405,7 +405,7 @@ export function WalletTab({
           <button
             onClick={() => setUtxoReloadNonce((v) => v + 1)}
             disabled={utxoLoading}
-            style={{ ...outlineButton(C.accent, true), padding: "5px 8px", fontSize: 7, color: C.accent }}
+            style={{ ...outlineButton(C.accent, true), padding: "5px 8px", fontSize: 8, color: C.accent }}
           >
             {utxoLoading ? "SYNC…" : "REFRESH"}
           </button>
@@ -413,39 +413,39 @@ export function WalletTab({
 
         <div style={{ display: "flex", gap: 6, marginBottom: 9 }}>
           <div style={{ ...insetCard(), flex: 1, padding: "6px 7px" }}>
-            <div style={{ fontSize: 6, color: C.muted, letterSpacing: "0.08em" }}>COUNT</div>
-            <div style={{ fontSize: 10, color: C.text, fontWeight: 700, ...mono }}>{utxos.length}</div>
+            <div style={{ fontSize: 8, color: C.muted, letterSpacing: "0.08em" }}>COUNT</div>
+            <div style={{ fontSize: 11, color: C.text, fontWeight: 700, ...mono }}>{utxos.length}</div>
           </div>
           <div style={{ ...insetCard(), flex: 1, padding: "6px 7px" }}>
-            <div style={{ fontSize: 6, color: C.muted, letterSpacing: "0.08em" }}>TOTAL</div>
-            <div style={{ fontSize: 10, color: C.text, fontWeight: 700, ...mono }}>{maskedKas(utxoTotalKas, 4)}</div>
+            <div style={{ fontSize: 8, color: C.muted, letterSpacing: "0.08em" }}>TOTAL</div>
+            <div style={{ fontSize: 11, color: C.text, fontWeight: 700, ...mono }}>{maskedKas(utxoTotalKas, 4)}</div>
           </div>
           <div style={{ ...insetCard(), flex: 1, padding: "6px 7px" }}>
-            <div style={{ fontSize: 6, color: C.muted, letterSpacing: "0.08em" }}>LARGEST</div>
-            <div style={{ fontSize: 10, color: C.text, fontWeight: 700, ...mono }}>{maskedKas(utxoLargestKas, 4)}</div>
+            <div style={{ fontSize: 8, color: C.muted, letterSpacing: "0.08em" }}>LARGEST</div>
+            <div style={{ fontSize: 11, color: C.text, fontWeight: 700, ...mono }}>{maskedKas(utxoLargestKas, 4)}</div>
           </div>
         </div>
 
         {covenantUtxoCount > 0 && (
-          <div style={{ ...insetCard(), fontSize: 7, color: C.warn, padding: "8px 10px", marginBottom: 8, lineHeight: 1.45 }}>
+          <div style={{ ...insetCard(), fontSize: 8, color: C.warn, padding: "8px 10px", marginBottom: 8, lineHeight: 1.45 }}>
             Covenant outputs detected: {covenantUtxoCount}. Standard send currently uses spendable UTXOs only ({standardUtxoCount} available).
           </div>
         )}
 
         {utxoLoading && utxos.length === 0 && (
-          <div style={{ ...insetCard(), fontSize: 7, color: C.dim, padding: "9px 10px" }}>
+          <div style={{ ...insetCard(), fontSize: 8, color: C.dim, padding: "9px 10px" }}>
             Fetching UTXOs from {network}…
           </div>
         )}
 
         {!utxoLoading && utxos.length === 0 && !utxoError && (
-          <div style={{ ...insetCard(), fontSize: 7, color: C.dim, padding: "9px 10px" }}>
+          <div style={{ ...insetCard(), fontSize: 8, color: C.dim, padding: "9px 10px" }}>
             No UTXOs found for this wallet on {network}.
           </div>
         )}
 
         {utxoError && (
-          <div style={{ ...insetCard(), fontSize: 7, color: C.danger, padding: "9px 10px", marginBottom: utxos.length ? 8 : 0 }}>
+          <div style={{ ...insetCard(), fontSize: 8, color: C.danger, padding: "9px 10px", marginBottom: utxos.length ? 8 : 0 }}>
             {utxoError}
           </div>
         )}
@@ -458,14 +458,14 @@ export function WalletTab({
                 <div key={`${u.txId}:${u.outputIndex}`} style={{ ...insetCard(), padding: "8px 9px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 7, color: C.dim, ...mono, letterSpacing: "0.04em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <div style={{ fontSize: 8, color: C.dim, ...mono, letterSpacing: "0.04em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         #{idx + 1} {u.txId.slice(0, 16)}…:{u.outputIndex}
                       </div>
-                      <div style={{ fontSize: 6, color: C.muted, marginTop: 2 }}>
+                      <div style={{ fontSize: 8, color: C.muted, marginTop: 2 }}>
                         DAA {u.blockDaaScore.toString()} {u.isCoinbase ? "· COINBASE" : ""} {(u.scriptClass ?? "standard") === "covenant" ? "· COVENANT" : ""}
                       </div>
                     </div>
-                    <div style={{ fontSize: 10, color: C.accent, fontWeight: 700, ...mono }}>
+                    <div style={{ fontSize: 11, color: C.accent, fontWeight: 700, ...mono }}>
                       {maskedKas(utxoKas, 4)}
                     </div>
                   </div>
@@ -474,7 +474,7 @@ export function WalletTab({
             })}
 
             {utxos.length > 6 && (
-              <div style={{ fontSize: 7, color: C.dim, textAlign: "right", paddingTop: 1 }}>
+              <div style={{ fontSize: 8, color: C.dim, textAlign: "right", paddingTop: 1 }}>
                 +{utxos.length - 6} more UTXOs
               </div>
             )}
@@ -482,7 +482,7 @@ export function WalletTab({
         )}
 
         <div style={{ ...divider(), margin: "9px 0 6px" }} />
-        <div style={{ fontSize: 6, color: C.muted, letterSpacing: "0.06em", textAlign: "right" }}>
+        <div style={{ fontSize: 8, color: C.muted, letterSpacing: "0.06em", textAlign: "right" }}>
           UPDATED {utxoUpdatedLabel}
         </div>
       </div>
@@ -503,7 +503,7 @@ export function WalletTab({
             <div style={sectionTitle}>SEND KAS</div>
             <div style={{ display: "flex", gap: 8 }}>
               {balance !== null && (
-                <div style={{ fontSize: 7, color: C.dim }}>
+                <div style={{ fontSize: 8, color: C.dim }}>
                   Bal: {maskedKas(balance, 2)}
                   {usdPrice > 0 ? ` ≈ ${maskedUsd(balance * usdPrice, 2)}` : ""}
                 </div>
@@ -511,9 +511,9 @@ export function WalletTab({
               <button onClick={() => setSendStep("idle")} style={{ background: "none", border: "none", color: C.dim, fontSize: 8, cursor: "pointer", ...mono }}>✕</button>
             </div>
           </div>
-          {!isManaged && <div style={{ ...insetCard(), fontSize: 7, color: C.dim, marginBottom: 6, lineHeight: 1.4 }}>External wallet: signing opens in Forge-OS.</div>}
+          {!isManaged && <div style={{ ...insetCard(), fontSize: 8, color: C.dim, marginBottom: 6, lineHeight: 1.4 }}>External wallet: signing opens in Forge-OS.</div>}
           <input value={sendTo} onChange={(e) => setSendTo(e.target.value)} placeholder={`Recipient ${networkPrefix}qp…`} style={inputStyle(Boolean(sendTo && !addressValid))} />
-          {sendTo && !addressValid && <div style={{ fontSize: 7, color: C.danger }}>{!sendTo.toLowerCase().startsWith(networkPrefix) ? `Must start with "${networkPrefix}" on ${network}` : "Invalid Kaspa address"}</div>}
+          {sendTo && !addressValid && <div style={{ fontSize: 8, color: C.danger }}>{!sendTo.toLowerCase().startsWith(networkPrefix) ? `Must start with "${networkPrefix}" on ${network}` : "Invalid Kaspa address"}</div>}
           {/* Amount input + MAX button */}
           <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
             <input
@@ -534,14 +534,14 @@ export function WalletTab({
                 style={{
                   position: "absolute", right: 6, background: `${C.accent}20`,
                   border: `1px solid ${C.accent}50`, borderRadius: 4, padding: "2px 6px",
-                  color: C.accent, fontSize: 7, fontWeight: 700, cursor: "pointer", ...mono,
+                  color: C.accent, fontSize: 8, fontWeight: 700, cursor: "pointer", ...mono,
                   letterSpacing: "0.06em",
                 }}
               >MAX</button>
             )}
           </div>
           {amountNum > 0 && usdPrice > 0 && (
-            <div style={{ fontSize: 7, color: C.dim }}>
+            <div style={{ fontSize: 8, color: C.dim }}>
               ≈ {maskedUsd(amountNum * usdPrice, 2)}
             </div>
           )}
@@ -575,8 +575,8 @@ export function WalletTab({
           <div style={{ fontSize: 10, color: C.ok, fontWeight: 700, marginBottom: 6 }}>✓ TRANSACTION CONFIRMED</div>
           {resultTxId && (
             <>
-              <div style={{ fontSize: 7, color: C.dim, marginBottom: 3 }}>Transaction ID</div>
-              <div style={{ fontSize: 7, color: C.text, wordBreak: "break-all", marginBottom: 8 }}>{resultTxId}</div>
+              <div style={{ fontSize: 8, color: C.dim, marginBottom: 3 }}>Transaction ID</div>
+              <div style={{ fontSize: 8, color: C.text, wordBreak: "break-all", marginBottom: 8 }}>{resultTxId}</div>
               <button onClick={() => chrome.tabs.create({ url: `${explorerBase}/txs/${resultTxId}` })} style={{ background: "none", border: "none", color: C.accent, fontSize: 8, cursor: "pointer", ...mono }}>View on Explorer ↗</button>
             </>
           )}
@@ -589,7 +589,7 @@ export function WalletTab({
         <div style={{ ...panel(), background: C.dLow, borderColor: `${C.danger}40` }}>
           <div style={{ fontSize: 9, color: C.danger, fontWeight: 700, marginBottom: 6 }}>TRANSACTION FAILED</div>
           {errorMsg && <div style={{ fontSize: 8, color: C.dim, marginBottom: 6, lineHeight: 1.5 }}>{errorMsg}</div>}
-          {dryRunErrors.map((e, i) => <div key={i} style={{ fontSize: 7, color: C.danger, marginBottom: 2 }}>• {e}</div>)}
+          {dryRunErrors.map((e, i) => <div key={i} style={{ fontSize: 8, color: C.danger, marginBottom: 2 }}>• {e}</div>)}
           <button onClick={resetSend} style={{ ...submitBtn(true), marginTop: 8, background: C.dLow, border: `1px solid ${C.danger}50`, color: C.danger }}>TRY AGAIN</button>
         </div>
       )}
@@ -605,7 +605,7 @@ export function WalletTab({
           <button onClick={copyAddress} style={{ ...outlineButton(addrCopied ? C.ok : C.dim, true), padding: "7px 8px", color: addrCopied ? C.ok : C.dim, width: "100%" }}>
             {addrCopied ? "✓ COPIED" : "COPY ADDRESS"}
           </button>
-          <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5, marginTop: 4 }}>Send KAS to this address from any Kaspa wallet. Transactions confirm at BlockDAG speed.</div>
+          <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginTop: 4 }}>Send KAS to this address from any Kaspa wallet. Transactions confirm at BlockDAG speed.</div>
         </div>
       )}
     </div>
@@ -642,7 +642,7 @@ function StatusCard({ icon, title, sub, color }: { icon: string; title: string; 
     <div style={{ ...panel(), textAlign: "center" as const }}>
       <div style={{ fontSize: 20 }}>{icon}</div>
       <div style={{ fontSize: 9, color, fontWeight: 700, letterSpacing: "0.1em" }}>{title}</div>
-      <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5 }}>{sub}</div>
+      <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5 }}>{sub}</div>
     </div>
   );
 }
@@ -657,11 +657,11 @@ function ConfirmPanel({ tx, usdPrice, onConfirm, onCancel }: { tx: PendingTx; us
 
   const row = (label: string, value: string, color = C.text, sub?: string) => (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
-      <span style={{ fontSize: 7, color: C.dim }}>
+      <span style={{ fontSize: 8, color: C.dim }}>
         {label}
-        {sub && <span style={{ fontSize: 6, color: C.muted, marginLeft: 4 }}>{sub}</span>}
+        {sub && <span style={{ fontSize: 8, color: C.muted, marginLeft: 4 }}>{sub}</span>}
       </span>
-      <span style={{ fontSize: 8, color, fontWeight: 700 }}>{value}</span>
+      <span style={{ fontSize: 9, color, fontWeight: 700 }}>{value}</span>
     </div>
   );
 
@@ -677,7 +677,7 @@ function ConfirmPanel({ tx, usdPrice, onConfirm, onCancel }: { tx: PendingTx; us
         <div style={{ ...divider(), margin: "6px 0" }} />
         {row("TOTAL COST", `${fmt(totalCost, 4)} KAS`, C.accent)}
       </div>
-      <div style={{ fontSize: 7, color: C.warn, lineHeight: 1.5 }}>⚠ Kaspa transactions are irreversible once confirmed.</div>
+      <div style={{ fontSize: 8, color: C.warn, lineHeight: 1.5 }}>⚠ Kaspa transactions are irreversible once confirmed.</div>
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={onCancel} style={{ ...outlineButton(C.dim, true), flex: 1, padding: "8px 0" }}>CANCEL</button>
         <button onClick={onConfirm} style={{ ...primaryButton(true), flex: 2, padding: "8px 0" }}>SIGN & SEND →</button>

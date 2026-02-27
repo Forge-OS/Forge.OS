@@ -2,6 +2,9 @@ import type { KaspaTokenStandard, SwapCustomToken } from "./types";
 
 const ENV = (import.meta as any)?.env ?? {};
 const METADATA_TIMEOUT_MS = 3_500;
+const METADATA_CACHE_TTL_DEFAULT_MS = 20_000;
+const METADATA_CACHE_MAX_ENTRIES = 512;
+const tokenMetadataCache = new Map<string, { token: SwapCustomToken; expiresAt: number }>();
 
 function parseCsvEnv(name: string): string[] {
   const raw = String(ENV?.[name] ?? "").trim();
@@ -11,6 +14,18 @@ function parseCsvEnv(name: string): string[] {
     .map((v) => v.trim().replace(/\/+$/, ""))
     .filter(Boolean);
   return [...new Set(out)];
+}
+
+function parsePositiveIntEnv(name: string, fallback: number): number {
+  const raw = String(ENV?.[name] ?? "").trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.floor(value));
+}
+
+function metadataCacheTtlMs(): number {
+  return parsePositiveIntEnv("VITE_SWAP_KRC_TOKEN_METADATA_CACHE_TTL_MS", METADATA_CACHE_TTL_DEFAULT_MS);
 }
 
 function toNetworkBucket(network: string): "MAINNET" | "TN10" | "TN11" | "TN12" {
@@ -69,6 +84,38 @@ function pickNumber(obj: Record<string, unknown>, keys: string[]): number | null
 
 function normalizeAddress(address: string): string {
   return String(address || "").trim().toLowerCase();
+}
+
+function cacheKey(address: string, standard: KaspaTokenStandard, network: string): string {
+  return `${network}|${standard}|${normalizeAddress(address)}`;
+}
+
+function cloneToken(token: SwapCustomToken): SwapCustomToken {
+  return { ...token };
+}
+
+function readMetadataCache(key: string): SwapCustomToken | null {
+  const entry = tokenMetadataCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    tokenMetadataCache.delete(key);
+    return null;
+  }
+  return cloneToken(entry.token);
+}
+
+function writeMetadataCache(key: string, token: SwapCustomToken): void {
+  const ttlMs = metadataCacheTtlMs();
+  if (ttlMs <= 0) return;
+  tokenMetadataCache.set(key, {
+    token: cloneToken(token),
+    expiresAt: Date.now() + ttlMs,
+  });
+  while (tokenMetadataCache.size > METADATA_CACHE_MAX_ENTRIES) {
+    const firstKey = tokenMetadataCache.keys().next().value;
+    if (typeof firstKey !== "string") break;
+    tokenMetadataCache.delete(firstKey);
+  }
 }
 
 function clampDecimals(value: number, standard: KaspaTokenStandard): number {
@@ -243,14 +290,21 @@ export async function resolveTokenFromAddress(
   const address = String(addressInput || "").trim();
   if (!address) throw new Error("Token address is required.");
 
+  const key = cacheKey(address, standard, network);
+  const cached = readMetadataCache(key);
+  if (cached) return cached;
+
   const endpoints = metadataEndpointsForNetwork(network);
   for (const endpoint of endpoints) {
     const resolved = await fetchRemoteMetadata(endpoint, address, standard);
-    if (resolved) return resolved;
+    if (resolved) {
+      writeMetadataCache(key, resolved);
+      return cloneToken(resolved);
+    }
   }
 
   // Fail-open for UI preview (logo + address always shown) while swaps still fail-closed on quote validation.
-  return {
+  const fallback: SwapCustomToken = {
     address,
     standard,
     symbol: address.slice(0, 6).toUpperCase(),
@@ -258,4 +312,10 @@ export async function resolveTokenFromAddress(
     decimals: standard === "krc721" ? 0 : 8,
     logoUri: buildFallbackLogo(address, standard),
   };
+  writeMetadataCache(key, fallback);
+  return cloneToken(fallback);
+}
+
+export function __clearTokenMetadataCacheForTests(): void {
+  tokenMetadataCache.clear();
 }

@@ -63,7 +63,7 @@ export function SignApprovalScreen({
           <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 3 }}>
             Signature Request
           </div>
-          <div style={{ fontSize: 9, color: C.dim, letterSpacing: "0.06em" }}>
+          <div style={{ fontSize: 10, color: C.dim, letterSpacing: "0.06em" }}>
             {displayOrigin}
           </div>
         </div>
@@ -75,7 +75,7 @@ export function SignApprovalScreen({
           padding: "10px 12px",
           minWidth: 0,
         }}>
-          <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.12em", marginBottom: 6 }}>
+          <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.12em", marginBottom: 6 }}>
             MESSAGE TO SIGN
           </div>
           <div style={{
@@ -85,7 +85,7 @@ export function SignApprovalScreen({
             border: `1px solid ${C.border}`,
             borderRadius: 8,
             padding: "10px",
-            fontSize: 8,
+            fontSize: 9,
             color: C.text,
             lineHeight: 1.5,
             whiteSpace: "pre-wrap",
@@ -108,14 +108,14 @@ export function SignApprovalScreen({
         }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.ok, flexShrink: 0 }} />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 8, color: C.dim, marginBottom: 2 }}>SIGNING WITH</div>
-            <div style={{ fontSize: 10, color: C.text, fontWeight: 600 }}>{shortAddr(address)}</div>
-            <div style={{ fontSize: 7, color: C.dim }}>{network}</div>
+            <div style={{ fontSize: 9, color: C.dim, marginBottom: 2 }}>SIGNING WITH</div>
+            <div style={{ fontSize: 11, color: C.text, fontWeight: 600 }}>{shortAddr(address)}</div>
+            <div style={{ fontSize: 8, color: C.dim }}>{network}</div>
           </div>
         </div>
 
         {error && (
-          <div style={{ fontSize: 8, color: C.danger, lineHeight: 1.5, textAlign: "center" }}>
+          <div style={{ fontSize: 9, color: C.danger, lineHeight: 1.5, textAlign: "center" }}>
             {error}
           </div>
         )}
@@ -132,7 +132,7 @@ export function SignApprovalScreen({
             borderRadius: 8,
             padding: "10px 0",
             color: C.dim,
-            fontSize: 9,
+            fontSize: 10,
             fontWeight: 700,
             cursor: loading ? "not-allowed" : "pointer",
             letterSpacing: "0.08em",
@@ -151,7 +151,7 @@ export function SignApprovalScreen({
             borderRadius: 8,
             padding: "10px 0",
             color: loading ? C.dim : "#04110E",
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 700,
             cursor: loading ? "not-allowed" : "pointer",
             letterSpacing: "0.08em",

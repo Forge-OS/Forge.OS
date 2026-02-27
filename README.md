@@ -39,7 +39,10 @@ It is built for operators who want:
 <summary><strong>Quick Jump (Operator Index)</strong></summary>
 
 - [Quick Start](#quick-start)
+- [Browser Extension (MV3)](#browser-extension-mv3)
 - [Mainnet / Testnet Runtime Switching](#mainnet--testnet-runtime-switching)
+- [Kaspa Network Coverage](#kaspa-network-coverage)
+- [Swap + KRC Token Metadata](#swap--krc-token-metadata)
 - [Wallet Support (Current)](#wallet-support-current)
 - [Transaction Lifecycle + Receipts](#transaction-lifecycle--receipts)
 - [Scaling Modules (Backend Starters)](#scaling-modules-backend-starters)
@@ -58,6 +61,7 @@ It is built for operators who want:
 | **Decision** | Deterministic quant core -> real AI overlay -> guarded fusion | Keeps the AI useful, but bounded by math + risk rules |
 | **Execution** | Wallet-native signing, queueing, lifecycle state machine, treasury routing | No seed storage, explicit approval paths, auditable tx flow |
 | **Truth / Audit** | Receipts, provenance badges, consistency checks, audit signatures | Operators can tell what is estimated vs confirmed vs verified |
+| **Extension** | Managed vault popup, UTXO sync, dry-run checks, in-extension signing | Keeps signing local and enforces fail-closed pre-sign policies |
 | **Scale** | AI proxy, scheduler, shared cache, callback consumer, metrics | Browser stays control plane while backend handles orchestration |
 
 ### Runtime Loop (Mermaid)
@@ -77,7 +81,7 @@ flowchart LR
 ## Why FORGE-OS Is Different
 
 Most “AI trading dashboards” stop at UI. FORGE-OS implements the actual runtime stack:
-- **Wallet-native authorization** (Kasware, Kaspium, Demo) with no seed storage
+- **Wallet-native authorization** (site adapters + managed extension vault) with no insecure key handling
 - **Quant core first** (regime, volatility, Kelly/risk caps, EV sizing)
 - **AI overlay second** (bounded by quant envelope; can run every cycle)
 - **Execution lifecycle tracking** (submitted -> broadcasted -> pending confirm -> confirmed/failed/timeout)
@@ -101,6 +105,14 @@ WalletGate (Kasware / Kaspium / Demo)
      -> Alerts (Telegram / Discord / email-webhook)
      -> PnL Attribution (estimated + receipt-aware hybrid telemetry)
 
+Browser Extension (MV3)
+  -> Vault (AES-256-GCM + PBKDF2, auto-lock, optional session persistence)
+  -> Popup (Wallet / Swap / Agents / Security)
+     -> UTXO Sync (standard vs covenant classification)
+     -> Dry-Run Validator (5 hard checks, fail-closed)
+     -> Signer + Broadcaster (managed wallet path)
+  -> Site Bridge (forge-os domains only, popup approval for connect/sign)
+
 Scale Path (Server)
   -> AI Proxy (queueing, rate limits, retries, /health, /metrics)
   -> Scheduler + Shared Market Cache (multi-agent cycle dispatch, /metrics)
@@ -110,7 +122,8 @@ Scale Path (Server)
 
 ### Core Runtime
 - Wallet-gated access (`Kasware`, `Kaspium`, `Demo`)
-- Mainnet-first boot with runtime network switching (`?network=mainnet|testnet`)
+- Mainnet-first boot with runtime network switching (`?network=mainnet|testnet-10|testnet-11|testnet-12`)
+- Kaspa network resolver supports aliases (`testnet`, `tn10`, `tn11`, `tn12`)
 - Agent setup wizard with strategy templates:
   - DCA accumulator
   - Trend
@@ -129,6 +142,16 @@ Scale Path (Server)
 - Treasury panel + on-chain treasury payout flow
 - Wallet panel (balance, UTXO view, withdraw tools)
 
+### Extension Runtime (MV3 Wallet App)
+- Managed vault with AES-256-GCM encryption + PBKDF2 KDF, auto-lock alarm, and optional popup-reopen session persistence
+- Popup app tabs: `wallet`, `swap`, `agents`, `security`
+- Live feed health states (`LIVE FEED`, `PARTIAL FEED`, `FEED OFFLINE`) with active RPC endpoint visibility
+- Portfolio privacy toggle (`HIDE` / `SHOW`) persisted in extension storage
+- Network cycling in popup (`MAINNET`, `TN10`, `TN11`, `TN12`) with network-aware address normalization
+- UTXO pipeline classifies `standard` vs `covenant`; default coin selection only spends `standard` UTXOs
+- Dry-run hard gates before signing: UTXO availability, fee sufficiency, value conservation, address validity, and network-prefix match
+- Site provider bridge (`window.forgeos`) routes connect/sign requests through popup approval flow
+
 ### Reliability / Testing / Deployment
 - Typecheck + lint + unit tests + perf tests + build + smoke validation
 - Playwright E2E suite (wallet gate, queue sign/reject, treasury second tx, network switch, controls)
@@ -140,8 +163,10 @@ Scale Path (Server)
 ### Prerequisites
 - Node.js 18+
 - npm 9+
+- Chromium browser (for extension loading)
 - Optional: Kasware extension
 - Optional: Kaspium mobile wallet
+- Optional: Firefox (alternate extension build target)
 
 ### Install
 ```bash
@@ -185,6 +210,20 @@ npm run test:e2e
 npm run build
 npm run preview
 ```
+
+### Build Browser Extension (MV3)
+```bash
+# Chromium package
+npm run build:ext
+
+# Firefox package
+npm run build:ext:firefox
+
+# Dev watch build for localhost extension testing
+npm run dev:ext
+```
+
+Load unpacked from `dist-extension/extension` in your browser's extension developer mode.
 
 ## Operator Recipes (Copy/Paste)
 
@@ -248,6 +287,13 @@ Create `.env` from `.env.example`.
 - `VITE_KAS_NETWORK` (mainnet default in `.env.example`)
 - `VITE_KAS_ENFORCE_WALLET_NETWORK`
 - `VITE_KASPIUM_DEEP_LINK_SCHEME`
+- `VITE_KASPA_MAINNET_API_ENDPOINTS`
+- `VITE_KASPA_TN10_API_ENDPOINTS`
+- `VITE_KASPA_TN11_API_ENDPOINTS`
+- `VITE_KASPA_TN12_API_ENDPOINTS`
+- `VITE_KASPA_IGRA_MAINNET_API_ENDPOINTS`, `VITE_KASPA_IGRA_TN10_API_ENDPOINTS`, `VITE_KASPA_IGRA_TN11_API_ENDPOINTS`, `VITE_KASPA_IGRA_TN12_API_ENDPOINTS`
+- `VITE_KASPA_KASPLEX_MAINNET_API_ENDPOINTS`, `VITE_KASPA_KASPLEX_TN10_API_ENDPOINTS`, `VITE_KASPA_KASPLEX_TN11_API_ENDPOINTS`, `VITE_KASPA_KASPLEX_TN12_API_ENDPOINTS`
+- `VITE_KASPA_KASPLEX_API_ENDPOINTS` (generic metadata pool fallback)
 
 ### Wallet / Execution / Treasury
 - `VITE_ACCUMULATE_ONLY`
@@ -259,6 +305,28 @@ Create `.env` from `.env.example`.
 - `VITE_ACCUMULATION_ADDRESS_MAINNET`
 - `VITE_ACCUMULATION_ADDRESS_TESTNET`
 - `VITE_TREASURY_FEE_ONCHAIN_ENABLED`
+
+### Extension Swap / KRC Metadata
+- `VITE_SWAP_ENABLED`
+- `VITE_SWAP_ROUTE_SOURCE` (`blocked` | `kaspa_native` | `evm_0x`)
+- `VITE_SWAP_DEX_ENDPOINT`
+- `VITE_SWAP_KASPA_NATIVE_QUOTE_PATH`
+- `VITE_SWAP_KASPA_NATIVE_EXECUTE_PATH`
+- `VITE_SWAP_KASPA_NATIVE_STATUS_PATH`
+- `VITE_SWAP_KASPA_NATIVE_TIMEOUT_MS`
+- `VITE_SWAP_MAX_SLIPPAGE_BPS`
+- `VITE_SWAP_DEFAULT_SLIPPAGE_BPS`
+- `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINTS`
+- `VITE_SWAP_KRC_TOKEN_METADATA_CACHE_TTL_MS`
+- `VITE_SWAP_EVM_CHAIN_IDS`
+- `VITE_SWAP_REQUIRE_EXTERNAL_EVM_SIGNER`
+- `VITE_SWAP_ZEROX_QUOTE_ENDPOINT`
+- `VITE_SWAP_ZEROX_API_KEY`
+- `VITE_SWAP_ZEROX_EXPECTED_SETTLER_TO`
+- `VITE_SWAP_ZEROX_EXPECTED_ALLOWANCE_SPENDER`
+- `VITE_SWAP_SETTLEMENT_CONFIRMATIONS`
+- `VITE_SWAP_SETTLEMENT_POLL_MS`
+- `VITE_SWAP_SETTLEMENT_TIMEOUT_MS`
 
 ### AI / Quant Runtime
 - `VITE_AI_API_URL`
@@ -304,11 +372,51 @@ Runtime network selection precedence:
 
 Examples:
 - `https://forge-os.xyz/?network=mainnet`
-- `https://forge-os.xyz/?network=testnet`
+- `https://forge-os.xyz/?network=testnet` (alias for testnet profile)
+- `https://forge-os.xyz/?network=testnet-10`
+- `https://forge-os.xyz/?network=testnet-11`
+- `https://forge-os.xyz/?network=testnet-12`
 
 Address validation, explorer links, treasury routing, and accumulation vault routing all follow the active profile.
 
+## Kaspa Network Coverage
+
+| Surface | Coverage | Notes |
+| --- | --- | --- |
+| **forge-os.xyz app** | Mainnet + testnet profile | Query/env network resolver supports `testnet-10`, `testnet-11`, `testnet-12` aliases |
+| **Extension popup** | `mainnet`, `testnet-10`, `testnet-11`, `testnet-12` | Network badge cycles profiles; feed, swap, send, and dry-run logic follow active profile |
+| **Address safety** | `kaspa:` + `kaspatest:` | Prefix checks are enforced in send + dry-run validation |
+
+## Browser Extension (MV3)
+
+The extension is a separate runtime surface under `extension/*`:
+- Non-custodial managed wallet vault + signer path (no phrase export to site scripts)
+- Popup-only approval flow for `FORGEOS_CONNECT` and `FORGEOS_SIGN`
+- Content-script bridge forwards sanitized wallet metadata only (`address`, `network`)
+- Built for Chromium and Firefox targets from the same codebase
+- Compatibility boundary is explicit: extension provider interop is limited to `forge-os` domains configured in manifest/build config
+
+## Swap + KRC Token Metadata
+
+- Swap routing is fail-closed by default (`VITE_SWAP_ENABLED=false`, `VITE_SWAP_ROUTE_SOURCE=blocked`).
+- `kaspa_native` route supports custom token outputs by pasted address (`krc20`/`krc721`).
+- Token metadata resolver is **env-driven** and network-scoped:
+  - `VITE_SWAP_KRC_TOKEN_METADATA_ENDPOINTS`
+  - `VITE_KASPA_KASPLEX_*_API_ENDPOINTS` (+ generic `VITE_KASPA_KASPLEX_API_ENDPOINTS`)
+- Resolver uses a short in-memory TTL cache (`VITE_SWAP_KRC_TOKEN_METADATA_CACHE_TTL_MS`) for repeated lookups and safely fails open for UI preview (fallback icon/label), while quote/execution paths remain fail-closed.
+- EVM `0x` route stays signer-isolated via external sidecar requirements.
+
+## Covenant UTXO Policy (Default-Safe)
+
+- UTXOs are classified as `standard` or `covenant` during sync.
+- Standard send/swap coin selection only uses `standard` inputs.
+- Dry-run blocks covenant spends with `COVENANT_INPUT_UNSUPPORTED` unless a covenant-aware module is added.
+- This keeps default wallet behavior policy-safe while leaving room for future covenant spend modules.
+
 ## Wallet Support (Current)
+
+This matrix covers wallet adapters used by the **forge-os.xyz web control plane**.
+The extension runtime uses a managed non-custodial vault/signing path documented above.
 
 ### Capability Snapshot (Infographic Matrix)
 
@@ -737,6 +845,11 @@ npm run domain:watch
 - `src/tx/queueTx.ts` — tx validation/build/broadcast helpers
 - `src/runtime/*` — lifecycle, errors, persistence, alerts, quotas, portfolio state
 - `src/api/kaspaApi.ts` — Kaspa REST integration + receipt lookups
+- `extension/popup/Popup.tsx` — extension app shell (wallet/swap/agents/security + live feed states)
+- `extension/vault/vault.ts` — encrypted vault/session management for managed wallet mode
+- `extension/tx/*` — tx builder/dry-run/signer/broadcast pipeline (managed wallet path)
+- `extension/swap/*` — swap gating, route adapters, KRC metadata resolver, settlement tracking
+- `extension/content/*` — page provider + site bridge for connect/sign relay
 - `server/ai-proxy/*` — AI proxy starter + metrics
 - `server/scheduler/*` — scheduler/shared cache starter + metrics
 - `server/callback-consumer/*` — reference downstream callback receiver + receipt ingestion starter
@@ -747,6 +860,8 @@ npm run domain:watch
 - No seed phrase or private key storage in app/backend logic
 - Wallet-side signing only (Kasware / Kaspium)
 - Kaspa prefix validation enforced (`kaspa:` / `kaspatest:`)
+- Extension vault keeps signing session in-memory and supports auto-lock/session-expiry controls
+- Covenant UTXOs are not spent by default standard flows
 - Quant guardrails constrain AI decisions before execution
 - Explicit lifecycle states and error taxonomy for queue/receipt handling
 

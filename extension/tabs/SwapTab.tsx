@@ -223,7 +223,7 @@ export function SwapTab() {
             <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5 }}>
               {gating.reason ?? "Swap functionality not yet active on Kaspa."}
             </div>
-            <div style={{ fontSize: 7, color: C.muted, lineHeight: 1.4, marginTop: 6 }}>
+            <div style={{ fontSize: 8, color: C.muted, lineHeight: 1.4, marginTop: 6 }}>
               Route source: {routeInfo.label}
             </div>
           </div>
@@ -247,7 +247,7 @@ export function SwapTab() {
             </>
           ) : (
             <>
-              <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5, marginBottom: 7 }}>
+              <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginBottom: 7 }}>
                 Required for `0x` route. Kaspa managed signer remains isolated.
               </div>
               {!showConnectConsent ? (
@@ -260,7 +260,7 @@ export function SwapTab() {
                 </button>
               ) : (
                 <div style={{ ...insetCard(), padding: "8px 10px" }}>
-                  <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5, marginBottom: 6 }}>
+                  <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginBottom: 6 }}>
                     You are connecting an EVM signer domain. Forge-OS Kaspa wallet keys are not shared with this signer.
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
@@ -358,7 +358,7 @@ export function SwapTab() {
         </div>
 
         <div style={{ ...insetCard(), marginTop: 8, padding: "8px 10px" }}>
-          <div style={{ fontSize: 7, color: C.dim, letterSpacing: "0.08em", marginBottom: 6 }}>
+          <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.08em", marginBottom: 6 }}>
             PASTE KRC TOKEN ADDRESS (KRC20 / KRC721)
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
@@ -401,7 +401,7 @@ export function SwapTab() {
             </button>
           </div>
           {tokenResolveError && (
-            <div style={{ fontSize: 7, color: C.danger, marginTop: 6 }}>
+            <div style={{ fontSize: 8, color: C.danger, marginTop: 6 }}>
               {tokenResolveError}
             </div>
           )}
@@ -419,14 +419,14 @@ export function SwapTab() {
                     <div style={{ fontSize: 9, color: C.text, fontWeight: 700, letterSpacing: "0.06em" }}>
                       {resolvedToken.symbol} · {resolvedToken.standard.toUpperCase()}
                     </div>
-                    <div style={{ fontSize: 7, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <div style={{ fontSize: 8, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {resolvedToken.address}
                     </div>
                   </div>
                 </div>
                 <button
                   onClick={clearResolvedToken}
-                  style={{ ...outlineButton(C.dim), padding: "4px 7px", fontSize: 7 }}
+                  style={{ ...outlineButton(C.dim), padding: "4px 7px", fontSize: 8 }}
                 >
                   CLEAR
                 </button>
@@ -503,7 +503,7 @@ export function SwapTab() {
                 </button>
               ) : (
                 <div style={{ ...insetCard(), padding: "8px 10px" }}>
-                  <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.5, marginBottom: 6 }}>
+                  <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginBottom: 6 }}>
                     Confirm execution in the external EVM signer. Settlement is persisted and recovered after restart.
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
@@ -536,7 +536,7 @@ export function SwapTab() {
       )}
 
       {error && (
-        <div style={{ ...insetCard(), border: `1px solid ${C.danger}60`, color: C.danger, fontSize: 7 }}>
+        <div style={{ ...insetCard(), border: `1px solid ${C.danger}60`, color: C.danger, fontSize: 8 }}>
           {error}
         </div>
       )}
@@ -545,7 +545,7 @@ export function SwapTab() {
         <div style={{ ...insetCard(), padding: "9px 12px" }}>
           <div style={{ ...sectionKicker, marginBottom: 6 }}>SWAP SETTLEMENTS</div>
           {settlements.map((s, i) => (
-            <div key={s.id} style={{ marginBottom: i < settlements.length - 1 ? 4 : 0, fontSize: 7, color: C.dim }}>
+            <div key={s.id} style={{ marginBottom: i < settlements.length - 1 ? 4 : 0, fontSize: 8, color: C.dim }}>
               <span style={{ color: C.text }}>{s.state}</span>
               {" · "}
               {s.txHash ? `${s.txHash.slice(0, 10)}…` : "tx pending"}
@@ -572,7 +572,7 @@ export function SwapTab() {
         ].map((note, i) => (
           <div key={i} style={{ display: "flex", gap: 6, marginBottom: i < 6 ? 3 : 0 }}>
             <span style={{ color: isDisabled ? C.muted : C.ok, fontSize: 8, flexShrink: 0 }}>•</span>
-            <span style={{ fontSize: 7, color: C.muted, lineHeight: 1.4 }}>{note}</span>
+            <span style={{ fontSize: 8, color: C.muted, lineHeight: 1.4 }}>{note}</span>
           </div>
         ))}
       </div>

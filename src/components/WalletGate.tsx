@@ -87,22 +87,22 @@ export function WalletGate({ onConnect, onSignInClick }: { onConnect: (session: 
   };
 
   return (
-    <div className="forge-shell" style={{ display: "flex", flexDirection: "column", alignItems: "center", minHeight: "100vh", padding: "clamp(8px, 2vw, 12px)" }}>
+    <div className="forge-shell" style={{ display: "flex", flexDirection: "column", alignItems: "center", minHeight: "100vh", padding: "clamp(8px, 2vw, 12px)", backgroundColor: C.bg }}>
       <ForgeAtmosphere />
 
       {/* ── FULL-WIDTH CENTERED HERO ── */}
-      <div style={{ width: "100%", maxWidth: 860, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "clamp(24px,4vw,48px) clamp(8px,2vw,16px) clamp(20px,3vw,36px)" }}>
+      <div style={{ width: "100%", maxWidth: 1100, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "clamp(28px,5vw,56px) clamp(16px,3vw,32px) clamp(20px,3vw,36px)" }}>
         <div aria-hidden style={{ height: 12 }} />
-        <h1 style={{ font: `700 clamp(26px,4.5vw,52px)/1.1 'IBM Plex Mono',monospace`, letterSpacing: "0.03em", margin: 0, color: C.text, textWrap: "balance" as any }}>
+        <h1 style={{ font: `700 clamp(32px,5.5vw,64px)/1.1 'IBM Plex Mono',monospace`, letterSpacing: "0.03em", margin: 0, color: C.text, textWrap: "balance" as any }}>
           <span style={{ color: C.accent, textShadow: "0 0 30px rgba(57,221,182,0.55)" }}>KAS / USDC</span>
           <span style={{ color: C.text, fontWeight: 800 }}> AI TRADING</span>
           <br />
           <span style={{ color: C.dim, fontWeight: 500, fontSize: "0.65em", letterSpacing: "0.06em" }}>⚡ BLOCKDAG SPEED</span>
         </h1>
-        <p style={{ font: `500 13px/1.55 'Space Grotesk','Segoe UI',sans-serif`, color: "#9db0c6", maxWidth: "58ch", margin: 0 }}>
+        <p style={{ font: `500 15px/1.6 'Space Grotesk','Segoe UI',sans-serif`, color: "#9db0c6", maxWidth: "64ch", margin: 0 }}>
           Full-stack DeFi for Kaspa. Agents accumulate KAS today — and flip to active profit trading the moment stablecoins, KRC-20, and Kaspa 0x swaps go live.
         </p>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
           <Badge text={`${NETWORK_LABEL}`} color={C.ok} dot />
           <Badge text="KRC-20 READY" color={C.purple} dot />
           <Badge text="NON-CUSTODIAL" color={C.warn} dot />
@@ -111,61 +111,61 @@ export function WalletGate({ onConnect, onSignInClick }: { onConnect: (session: 
       </div>
 
       {/* ── MAIN CONTENT GRID ── */}
-      <div className="forge-content forge-gate-responsive" style={{ width: "100%", maxWidth: 1380, display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(300px,480px)", gap: "clamp(16px, 3vw, 32px)", alignItems: "flex-start" }}>
+      <div className="forge-content forge-gate-responsive" style={{ width: "100%", maxWidth: 1600, display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(360px,520px)", gap: "clamp(20px, 3vw, 40px)", alignItems: "flex-start", padding: "0 clamp(12px,2vw,24px)" }}>
 
         {/* ── INFO COLUMN ── */}
         <section style={{ display: "flex", flexDirection: "column", gap: 6, justifySelf: "center", width: "100%", maxWidth: 910, textAlign: "center" }}>
 
           {/* Protocol stack grid */}
           <div style={{ width: "100%" }}>
-            <div style={{ fontSize: 9, color: C.dim, ...mono, letterSpacing: "0.16em", marginBottom: 6, textAlign: "center" }}>PROTOCOL CAPABILITIES</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4 }}>
+            <div style={{ fontSize: 10, color: C.dim, ...mono, letterSpacing: "0.16em", marginBottom: 8, textAlign: "center" }}>PROTOCOL CAPABILITIES</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
               {PROTOCOL_STACK.map((item) => (
                 <div key={item.title}
                   style={{
                     background: `linear-gradient(145deg, ${item.iconColor}10 0%, rgba(8,13,20,0.55) 100%)`,
                     border: `1px solid ${item.iconColor}22`,
-                    borderRadius: 6, padding: "8px 10px",
+                    borderRadius: 8, padding: "12px 14px",
                   }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-                    <span style={{ fontSize: 14, color: item.iconColor, lineHeight: 1 }}>{item.icon}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                    <span style={{ fontSize: 18, color: item.iconColor, lineHeight: 1 }}>{item.icon}</span>
                     <span style={{
-                      fontSize: 7, color: item.statusColor, fontWeight: 700, ...mono,
-                      background: `${item.statusColor}15`, padding: "2px 4px", borderRadius: 2,
+                      fontSize: 8, color: item.statusColor, fontWeight: 700, ...mono,
+                      background: `${item.statusColor}15`, padding: "2px 6px", borderRadius: 3,
                       border: `1px solid ${item.statusColor}30`,
                     }}>{item.status}</span>
                   </div>
-                  <div style={{ fontSize: 9, color: C.text, fontWeight: 700, ...mono, marginBottom: 2 }}>{item.title}</div>
-                  <div style={{ fontSize: 7, color: C.dim, lineHeight: 1.3 }}>{item.desc}</div>
+                  <div style={{ fontSize: 11, color: C.text, fontWeight: 700, ...mono, marginBottom: 4 }}>{item.title}</div>
+                  <div style={{ fontSize: 9, color: C.dim, lineHeight: 1.4 }}>{item.desc}</div>
                 </div>
               ))}
             </div>
           </div>
 
           {/* Architecture strip */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, width: "100%" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, width: "100%" }}>
             {[
               ["EXECUTION", "Wallet-native signing + queue lifecycle management"],
               ["TRUTH", "Receipt-aware P&L attribution + consistency checks"],
               ["ROUTING", "DAG-aware capital allocation + Kelly-fraction sizing"],
             ].map(([k, v]) => (
-              <div key={k} style={{ border: `1px solid rgba(33,48,67,0.72)`, borderRadius: 8, background: "linear-gradient(180deg, rgba(11,20,30,0.78) 0%, rgba(9,15,23,0.7) 100%)", padding: "8px 10px" }}>
-                <div style={{ font: `700 9px/1.2 'IBM Plex Mono',monospace`, color: C.accent, letterSpacing: "0.1em", marginBottom: 2 }}>{k}</div>
-                <div style={{ font: `500 8px/1.3 'IBM Plex Mono',monospace`, color: C.dim }}>{v}</div>
+              <div key={k} style={{ border: `1px solid rgba(33,48,67,0.72)`, borderRadius: 10, background: "linear-gradient(180deg, rgba(11,20,30,0.78) 0%, rgba(9,15,23,0.7) 100%)", padding: "12px 14px" }}>
+                <div style={{ font: `700 11px/1.2 'IBM Plex Mono',monospace`, color: C.accent, letterSpacing: "0.1em", marginBottom: 4 }}>{k}</div>
+                <div style={{ font: `500 9px/1.4 'IBM Plex Mono',monospace`, color: C.dim }}>{v}</div>
               </div>
             ))}
           </div>
 
           {/* Key numbers */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, width: "100%" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, width: "100%" }}>
             {[
               { v: "BlockDAG", l: "Settlement speed" },
               { v: "Non-Custodial", l: "Keys stay in wallet" },
               { v: "KAS/USDC", l: "Pair architecture" },
             ].map(item => (
-              <div key={item.v} style={{ border: `1px solid rgba(33,48,67,0.82)`, borderRadius: 10, background: "rgba(10,17,24,0.72)", padding: "8px" }}>
-                <div style={{ font: `700 14px/1.2 'IBM Plex Mono',monospace`, color: C.accent, marginBottom: 2 }}>{item.v}</div>
-                <div style={{ font: `500 9px/1.3 'IBM Plex Mono',monospace`, letterSpacing: "0.08em", color: C.dim }}>{item.l}</div>
+              <div key={item.v} style={{ border: `1px solid rgba(33,48,67,0.82)`, borderRadius: 10, background: "rgba(10,17,24,0.72)", padding: "12px" }}>
+                <div style={{ font: `700 18px/1.2 'IBM Plex Mono',monospace`, color: C.accent, marginBottom: 4 }}>{item.v}</div>
+                <div style={{ font: `500 10px/1.3 'IBM Plex Mono',monospace`, letterSpacing: "0.08em", color: C.dim }}>{item.l}</div>
               </div>
             ))}
           </div>
@@ -196,12 +196,12 @@ export function WalletGate({ onConnect, onSignInClick }: { onConnect: (session: 
           <div aria-hidden style={{ height: "clamp(34px, 5vw, 52px)" }} />
 
           {/* Connect card */}
-          <Card p={16} style={{ border: `1px solid rgba(57,221,182,0.14)` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-              <div style={{ fontSize: 13, color: C.text, fontWeight: 700, ...mono }}>Connect Wallet</div>
+          <Card p={20} style={{ border: `1px solid rgba(57,221,182,0.14)` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ fontSize: 16, color: C.text, fontWeight: 700, ...mono }}>Connect Wallet</div>
               <Badge text={NETWORK_LABEL} color={C.ok} dot />
             </div>
-            <div style={{ fontSize: 10, color: C.dim, marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 16 }}>
               All operations are wallet-native. Forge-OS never stores private keys or signs on your behalf.
             </div>
 
@@ -212,16 +212,16 @@ export function WalletGate({ onConnect, onSignInClick }: { onConnect: (session: 
                 width: "100%",
                 background: `linear-gradient(90deg, ${C.accent}, #7BE9CF)`,
                 border: "none",
-                borderRadius: 8,
+                borderRadius: 10,
                 cursor: "pointer",
                 color: "#04110E",
-                fontSize: 12,
+                fontSize: 14,
                 ...mono,
                 fontWeight: 700,
                 letterSpacing: "0.08em",
-                padding: "12px 0",
+                padding: "16px 0",
                 boxShadow: "0 4px 20px rgba(57,221,182,0.28)",
-                marginBottom: 8,
+                marginBottom: 10,
                 transition: "box-shadow 0.15s",
               }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 6px 28px rgba(57,221,182,0.44)"; }}
@@ -284,30 +284,29 @@ export function WalletGate({ onConnect, onSignInClick }: { onConnect: (session: 
                 width: "100%",
                 background: "linear-gradient(135deg, rgba(57,221,182,0.06) 0%, rgba(8,13,20,0.55) 100%)",
                 border: `1px solid ${C.accent}28`,
-                borderRadius: 8,
+                borderRadius: 10,
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                padding: "10px 12px",
-                marginBottom: 12,
+                padding: "12px 16px",
+                marginBottom: 16,
                 transition: "border-color 0.15s",
               }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = `${C.accent}55`; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = `${C.accent}28`; }}
             >
               <div style={{ textAlign: "left" }}>
-                <div style={{ fontSize: 9, color: C.text, ...mono, fontWeight: 700, marginBottom: 1 }}>New to Kaspa?</div>
-                <div style={{ fontSize: 8, color: C.dim }}>Create or import a wallet</div>
+                <div style={{ fontSize: 11, color: C.text, ...mono, fontWeight: 700, marginBottom: 2 }}>New to Kaspa?</div>
+                <div style={{ fontSize: 10, color: C.dim }}>Create or import a wallet</div>
               </div>
-              <span style={{ fontSize: 9, color: C.accent, ...mono, fontWeight: 700, letterSpacing: "0.06em", flexShrink: 0, marginLeft: 8 }}>
+              <span style={{ fontSize: 11, color: C.accent, ...mono, fontWeight: 700, letterSpacing: "0.06em", flexShrink: 0, marginLeft: 8 }}>
                 CREATE ›
               </span>
             </button>
 
-
-            <Divider m={12} />
-            <div style={{ fontSize: 8, color: C.dim, ...mono, lineHeight: 1.5 }}>
+            <Divider m={14} />
+            <div style={{ fontSize: 10, color: C.dim, ...mono, lineHeight: 1.5 }}>
               Forge-OS never requests your private key · All signing happens inside your wallet · {NETWORK_LABEL}
             </div>
           </Card>
@@ -316,10 +315,10 @@ export function WalletGate({ onConnect, onSignInClick }: { onConnect: (session: 
           <div style={{
             background: `linear-gradient(135deg, ${C.purple}10 0%, rgba(8,13,20,0.5) 100%)`,
             border: `1px solid ${C.purple}28`,
-            borderRadius: 8, padding: "10px 14px",
+            borderRadius: 10, padding: "14px 18px",
           }}>
-            <div style={{ fontSize: 8, color: C.purple, fontWeight: 700, ...mono, letterSpacing: "0.12em", marginBottom: 4 }}>KASPA STABLECOIN UPGRADE · READY</div>
-            <div style={{ fontSize: 9, color: C.dim, lineHeight: 1.4 }}>
+            <div style={{ fontSize: 10, color: C.purple, fontWeight: 700, ...mono, letterSpacing: "0.12em", marginBottom: 6 }}>KASPA STABLECOIN UPGRADE · READY</div>
+            <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
               Agents accumulate KAS now. When Kaspa stablecoins launch at L1, agents automatically
               switch to active buy/sell — buying dips, selling strength, and booking profit in USD.
               KRC-20 tokens and Kaspa 0x swaps are already in the engine. No migration, no downtime.
@@ -330,8 +329,8 @@ export function WalletGate({ onConnect, onSignInClick }: { onConnect: (session: 
 
       {/* Responsive override */}
       <style>{`
-        @media (max-width: 1080px) {
-          .forge-gate-responsive { grid-template-columns: 1fr !important; max-width: 720px; }
+        @media (max-width: 1200px) {
+          .forge-gate-responsive { grid-template-columns: 1fr !important; max-width: 800px; }
           .forge-connect-column { margin-top: 10px !important; }
         }
       `}</style>
