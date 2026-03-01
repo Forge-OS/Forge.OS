@@ -74,5 +74,43 @@ describe("auto threshold calibration", () => {
     expect(out.multiplier).toBe(1);
     expect(out.thresholdKas).toBe(25);
   });
-});
 
+  it("skips decisions without sufficient lookahead instead of counting losses", () => {
+    const history = buildHistory(0.1, 0.25, 40);
+    const tailTs = history[history.length - 1].ts;
+    const nearTailTs = history[history.length - 2].ts;
+    const validTs = history[history.length - 8].ts;
+    const rolling = computeRollingWinRate({
+      decisions: [
+        { ts: tailTs, dec: { action: "ACCUMULATE" } },
+        { ts: nearTailTs, dec: { action: "ACCUMULATE" } },
+        { ts: validTs, dec: { action: "ACCUMULATE" } },
+      ],
+      marketHistory: history,
+      lookaheadSteps: 3,
+      maxSamples: 10,
+    });
+    expect(rolling.samples).toBe(1);
+    expect(rolling.wins).toBe(1);
+    expect(rolling.losses).toBe(0);
+  });
+
+  it("sorts decisions by timestamp before limiting samples", () => {
+    const history = buildHistory(0.1, 0.2, 80);
+    const rolling = computeRollingWinRate({
+      decisions: [
+        { ts: history[8].ts, dec: { action: "REDUCE" } },
+        { ts: history[42].ts, dec: { action: "ACCUMULATE" } },
+        { ts: history[34].ts, dec: { action: "ACCUMULATE" } },
+        { ts: history[26].ts, dec: { action: "ACCUMULATE" } },
+        { ts: history[18].ts, dec: { action: "ACCUMULATE" } },
+      ],
+      marketHistory: history,
+      lookaheadSteps: 3,
+      maxSamples: 4,
+    });
+    expect(rolling.samples).toBe(4);
+    expect(rolling.wins).toBe(4);
+    expect(rolling.losses).toBe(0);
+  });
+});

@@ -58,9 +58,11 @@ function subsequentPriceMovePct(history: MarketSnapshotLike[], ts: number, looka
   if (idx < 0) return null;
   const current = n(history[idx]?.priceUsd, 0);
   if (!(current > 0)) return null;
-  const nextIdx = Math.min(history.length - 1, idx + Math.max(1, lookaheadSteps));
+  const nextIdx = idx + Math.max(1, lookaheadSteps);
+  if (nextIdx >= history.length) return null;
   const next = n(history[nextIdx]?.priceUsd, 0);
   if (!(next > 0)) return null;
+  if (n(history[nextIdx]?.ts, 0) <= n(history[idx]?.ts, 0)) return null;
   return ((next - current) / current) * 100;
 }
 
@@ -80,6 +82,7 @@ export function computeRollingWinRate(params: {
       const action = String(row?.dec?.action || "").toUpperCase();
       return action === "ACCUMULATE" || action === "REDUCE" || action === "REBALANCE";
     })
+    .sort((a, b) => n(b?.ts, 0) - n(a?.ts, 0))
     .slice(0, maxSamples);
 
   let wins = 0;
@@ -184,4 +187,3 @@ export function deriveAdaptiveAutoApproveThreshold(params: {
     rolling,
   };
 }
-
