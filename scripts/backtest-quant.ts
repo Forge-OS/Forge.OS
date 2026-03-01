@@ -7,14 +7,15 @@ type CliArgs = {
   inputPath?: string;
   outputPath?: string;
   pretty: boolean;
+  includeGeneratedAt: boolean;
   help: boolean;
 };
 
 function usage() {
   return [
     "Usage:",
-    "  npm run backtest:quant -- --input ./data/backtest.json [--output ./out/result.json] [--pretty]",
-    "  cat ./data/backtest.json | npm run backtest:quant -- --pretty",
+    "  npm run backtest:quant -- --input ./data/backtest.json [--output ./out/result.json] [--pretty] [--include-generated-at]",
+    "  cat ./data/backtest.json | npm run backtest:quant -- --pretty [--include-generated-at]",
     "",
     "Input JSON shape:",
     '  { "agent": {...}, "snapshots": [...], "config": { "initialCashUsd": 10000, "feeBps": 8, "slippageBps": 6, "warmupSamples": 24, "maxLookback": 240 } }',
@@ -22,12 +23,15 @@ function usage() {
     "Notes:",
     "  - --input is optional; when omitted, stdin is used.",
     "  - --output is optional; when omitted, result JSON is printed to stdout.",
+    "  - Output is deterministic by default for a fixed payload.",
+    "  - Pass --include-generated-at to include wall-clock metadata.",
   ].join("\n");
 }
 
 function parseArgs(argv: string[]): CliArgs {
   const out: CliArgs = {
     pretty: false,
+    includeGeneratedAt: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -39,6 +43,10 @@ function parseArgs(argv: string[]): CliArgs {
     }
     if (arg === "--pretty") {
       out.pretty = true;
+      continue;
+    }
+    if (arg === "--include-generated-at") {
+      out.includeGeneratedAt = true;
       continue;
     }
     if (arg === "--input" || arg === "-i") {
@@ -108,14 +116,16 @@ async function main() {
   const payload = await readInputJson(args);
   const config = asBacktestConfig(payload);
   const result = runQuantBacktest(config);
-  const output = {
-    generatedAt: new Date().toISOString(),
+  const outputBase = {
     inputMeta: {
       snapshots: Array.isArray(config.snapshots) ? config.snapshots.length : 0,
       hasAgent: Boolean(config.agent),
     },
     result,
   };
+  const output = args.includeGeneratedAt
+    ? { generatedAt: new Date().toISOString(), ...outputBase }
+    : outputBase;
 
   const json = JSON.stringify(output, null, args.pretty ? 2 : 0);
   if (args.outputPath) {
@@ -134,4 +144,3 @@ main().catch((err: any) => {
   process.stderr.write(`${usage()}\n`);
   process.exitCode = 1;
 });
-

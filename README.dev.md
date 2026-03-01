@@ -135,6 +135,8 @@ Quant backtesting harness CLI (JSON in -> JSON out):
 npm run backtest:quant -- --input ./data/backtest.json --pretty
 # or
 cat ./data/backtest.json | npm run backtest:quant -- --pretty
+# include wall-clock metadata (non-deterministic):
+npm run backtest:quant -- --input ./data/backtest.json --pretty --include-generated-at
 ```
 
 Input shape:
