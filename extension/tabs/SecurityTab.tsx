@@ -1052,64 +1052,6 @@ export function SecurityTab({
             {providerProbeBusy ? "PROBING…" : "TEST LIVE FEED"}
           </button>
         </div>
-        {editablePoolPreset && (
-          <div style={{ ...insetCard(), marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.45 }}>
-              Editable preset pool override ({rpcPresetLabels[editablePoolPreset]}) · one endpoint per line.
-            </div>
-            <textarea
-              value={rpcPoolOverrideInput}
-              onChange={(event) => {
-                setRpcPoolOverrideInput(event.target.value);
-                setRpcPoolOverrideSaved(false);
-                setRpcPoolOverrideError(null);
-              }}
-              rows={3}
-              placeholder="rpc-endpoint-a\nrpc-endpoint-b"
-              disabled={rpcPoolOverrideLoading}
-              style={{
-                ...inputStyle(Boolean(rpcPoolOverrideError)),
-                minHeight: 68,
-                resize: "vertical",
-                marginBottom: 0,
-              }}
-            />
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                onClick={() => { void saveRpcPoolOverride(); }}
-                disabled={rpcPoolOverrideLoading}
-                style={{
-                  ...outlineButton(C.accent, true),
-                  flex: 1,
-                  padding: "7px 8px",
-                  color: C.accent,
-                  opacity: rpcPoolOverrideLoading ? 0.7 : 1,
-                }}
-              >
-                {rpcPoolOverrideLoading ? "SAVING…" : "SAVE POOL OVERRIDE"}
-              </button>
-              <button
-                onClick={() => { void clearRpcPoolOverride(); }}
-                disabled={rpcPoolOverrideLoading}
-                style={{
-                  ...outlineButton(C.dim, true),
-                  flex: 1,
-                  padding: "7px 8px",
-                  color: C.dim,
-                  opacity: rpcPoolOverrideLoading ? 0.7 : 1,
-                }}
-              >
-                CLEAR OVERRIDE
-              </button>
-            </div>
-            {rpcPoolOverrideError && (
-              <div style={{ fontSize: 8, color: C.danger, lineHeight: 1.45 }}>{rpcPoolOverrideError}</div>
-            )}
-            {!rpcPoolOverrideError && rpcPoolOverrideSaved && (
-              <div style={{ fontSize: 8, color: C.ok, lineHeight: 1.45 }}>Preset pool override saved.</div>
-            )}
-          </div>
-        )}
         {customRpcError && (
           <div style={{ fontSize: 8, color: C.danger, marginTop: 6 }}>{customRpcError}</div>
         )}
