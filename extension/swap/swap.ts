@@ -41,7 +41,6 @@ import {
   listSwapSettlements,
   upsertSwapSettlement,
 } from "./settlementStore";
-import { executeKaspaIntent } from "../tx/kernel";
 import { probeKaspaReceipt } from "../tx/receiptReconciler";
 
 export interface SwapGatingStatus {
@@ -66,6 +65,16 @@ function getActiveEvmSession(): EvmSidecarSession | null {
 
 const KASPA_NETWORKS = ["mainnet", "testnet-10", "testnet-11", "testnet-12"] as const;
 const SOMPI_PER_KAS = 100_000_000;
+
+type TxKernelModule = typeof import("../tx/kernel");
+let txKernelPromise: Promise<TxKernelModule> | null = null;
+
+async function loadTxKernel(): Promise<TxKernelModule> {
+  if (!txKernelPromise) {
+    txKernelPromise = import("../tx/kernel");
+  }
+  return txKernelPromise;
+}
 
 function kasFromSompi(sompi: bigint): number {
   const kas = Number(sompi) / SOMPI_PER_KAS;
@@ -522,7 +531,8 @@ async function executeKaspaNativeSwapQuote(quote: SwapQuote): Promise<SwapSettle
 
   let depositTxId = "";
   try {
-    const tx = await executeKaspaIntent(
+    const txKernel = await loadTxKernel();
+    const tx = await txKernel.executeKaspaIntent(
       {
         fromAddress,
         network,

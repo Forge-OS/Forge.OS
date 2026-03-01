@@ -9,11 +9,6 @@ import { fmt, isKaspaAddress } from "../../src/helpers";
 import { fetchKasUsdPrice } from "../shared/api";
 import { fetchDagInfo, NETWORK_BPS } from "../network/kaspaClient";
 import { getSession } from "../vault/vault";
-import {
-  buildAndValidateKaspaIntent,
-  DeterministicExecutionError,
-  signBroadcastAndReconcileKaspaTx,
-} from "../tx/kernel";
 import { createExecutionRunId } from "../tx/executionTelemetry";
 import { updatePendingTx } from "../tx/store";
 import { getOrSyncUtxos, sompiToKas, syncUtxos } from "../utxo/utxoSync";
@@ -110,6 +105,16 @@ const KRC721_CHART_RENDER_MAX_POINTS = Math.min(
 );
 
 type PricePoint = { ts: number; price: number };
+
+type TxKernelModule = typeof import("../tx/kernel");
+let txKernelPromise: Promise<TxKernelModule> | null = null;
+
+function loadTxKernel(): Promise<TxKernelModule> {
+  if (!txKernelPromise) {
+    txKernelPromise = import("../tx/kernel");
+  }
+  return txKernelPromise;
+}
 
 export function WalletTab({
   address,
@@ -400,8 +405,10 @@ export function WalletTab({
     const runId = createExecutionRunId("manual_send");
     setSendExecutionRunId(runId);
 
+    let kernel: TxKernelModule | null = null;
     try {
-      const validated = await buildAndValidateKaspaIntent({
+      kernel = await loadTxKernel();
+      const validated = await kernel.buildAndValidateKaspaIntent({
         fromAddress: address,
         network,
         recipients: [{ address: sendTo.trim(), amountKas: amountNum }],
@@ -425,7 +432,7 @@ export function WalletTab({
       setSendStep("confirm");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (err instanceof DeterministicExecutionError && err.stage === "validate") {
+      if (kernel && err instanceof kernel.DeterministicExecutionError && err.stage === "validate") {
         if (err.details.length > 0) setDryRunErrors(err.details);
       }
       setErrorMsg(
@@ -444,7 +451,8 @@ export function WalletTab({
     setSendStep("signing");
 
     try {
-      await signBroadcastAndReconcileKaspaTx(pendingTx, {
+      const kernel = await loadTxKernel();
+      await kernel.signBroadcastAndReconcileKaspaTx(pendingTx, {
         awaitConfirmation: true,
         telemetry: {
           channel: "manual",

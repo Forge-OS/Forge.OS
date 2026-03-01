@@ -390,6 +390,8 @@ export function SwapTab() {
   const fromTokenDecimals = fromToken?.decimals ?? 8;
   const toTokenDecimals = resolvedToken?.decimals ?? selectedListedTokenOut?.decimals ?? 8;
   const quoteAmountOutDisplay = quote ? formatUnitsDisplay(quote.amountOut, toTokenDecimals, 6) : "0.00";
+  const fromAvailableDisplay = `0.000000 ${(fromToken?.symbol ?? "KAS").toUpperCase()}`;
+  const toAvailableDisplay = toTokenMeta ? `0.000000 ${toTokenMeta.symbol.toUpperCase()}` : "—";
 
   // Filtered list for picker — shows all tokens by default, filters as user types
   const pickerResults = normalizedTokenSearch
@@ -433,6 +435,34 @@ export function SwapTab() {
     flexShrink: 0, whiteSpace: "nowrap" as const,
     ...mono,
   });
+  const balancePanel: React.CSSProperties = {
+    marginTop: 11,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    background: "rgba(12,18,26,0.78)",
+    border: "1px solid rgba(28,42,58,0.85)",
+    borderRadius: 11,
+    padding: "7px 10px",
+  };
+  const balanceKicker: React.CSSProperties = {
+    fontSize: 8,
+    color: C.muted,
+    letterSpacing: "0.1em",
+    ...mono,
+  };
+  const balanceValue: React.CSSProperties = {
+    fontSize: 12,
+    color: C.text,
+    fontWeight: 700,
+    letterSpacing: "0.03em",
+    lineHeight: 1.1,
+    textAlign: "center",
+    fontVariantNumeric: "tabular-nums",
+    ...mono,
+  };
 
   // ── Token picker overlay ──────────────────────────────────────────────────
   if (tokenSelectMode !== null) {
@@ -727,16 +757,24 @@ export function SwapTab() {
             ...mono,
           }}
         />
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-          <div style={{ fontSize: 10, color: C.dim }}>
-            Available: 0 {fromToken?.symbol ?? "KAS"}
-          </div>
+        <div style={balancePanel}>
+          <div style={balanceKicker}>TOKEN BALANCE</div>
+          <div style={balanceValue}>{fromAvailableDisplay}</div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginTop: 8 }}>
           <button
             onClick={() => {/* MAX — needs balance wired in */}}
             style={{
-              background: `${C.accent}12`, border: `1px solid ${C.accent}30`,
-              borderRadius: 6, color: C.accent, fontSize: 9, fontWeight: 700,
-              padding: "2px 8px", cursor: "pointer", letterSpacing: "0.06em", ...mono,
+              background: `${C.accent}14`,
+              border: `1px solid ${C.accent}35`,
+              borderRadius: 8,
+              color: C.accent,
+              fontSize: 9,
+              fontWeight: 700,
+              padding: "4px 12px",
+              cursor: "pointer",
+              letterSpacing: "0.08em",
+              ...mono,
             }}
           >MAX</button>
         </div>
@@ -786,8 +824,9 @@ export function SwapTab() {
         }}>
           {quoteAmountOutDisplay}
         </div>
-        <div style={{ fontSize: 10, color: C.dim, marginTop: 10 }}>
-          Available: 0 {toTokenMeta?.symbol ?? ""}
+        <div style={balancePanel}>
+          <div style={balanceKicker}>TOKEN BALANCE</div>
+          <div style={balanceValue}>{toAvailableDisplay}</div>
         </div>
       </div>
 
