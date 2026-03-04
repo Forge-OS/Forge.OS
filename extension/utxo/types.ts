@@ -5,10 +5,11 @@ export const SOMPI_PER_KAS = 100_000_000n;
 
 /**
  * Script classification used by send-path policy.
- * - standard: normal pay-to-pubkey outputs this wallet can spend directly.
- * - covenant: script-constrained outputs that require covenant-specific spend logic.
+ * - standard:        normal pay-to-pubkey (version=0, 34 bytes) — spendable directly.
+ * - vprog_covenant:  KIP-9 vProg introspection script — spendable via covenant-aware tx after KIP-9 upgrade.
+ * - covenant:        any other non-standard script (legacy escrow, OP_RETURN, P2SH-like).
  */
-export type UtxoScriptClass = "standard" | "covenant";
+export type UtxoScriptClass = "standard" | "vprog_covenant" | "covenant";
 
 export interface Utxo {
   txId: string;

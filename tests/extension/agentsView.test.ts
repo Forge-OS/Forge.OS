@@ -33,7 +33,7 @@ describe("agentsView model mapping", () => {
           strategyLabel: "DCA",
           execMode: "autonomous",
           status: "active",
-          wallet: { network: "testnet-11" },
+          wallet: { network: "testnet-11", address: "kaspatest:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" },
           pnlUsd: "12.5",
           updatedAt: Date.now(),
         },
@@ -46,6 +46,7 @@ describe("agentsView model mapping", () => {
     expect(rows[0].isBot).toBe(true);
     expect(rows[0].isActive).toBe(true);
     expect(rows[0].pnlUsd).toBe(12.5);
+    expect(rows[0].walletAddress).toMatch(/^kaspatest:/);
   });
 
   it("falls back to current network when legacy agent has no network field", () => {

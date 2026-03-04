@@ -9,10 +9,22 @@ type AiTransportConfig = {
   retryableStatuses: Set<number>;
 };
 
+export type AiOverlayExtra = {
+  krcPortfolioTokens?: Array<{ ticker: string; balanceKas?: number; balanceUsd?: number }>;
+  utxoCount?: number;
+  utxoTotalKas?: number;
+  recentDecisions?: Array<{ ts: number; action: string; confidence_score: number; rationale?: string }>;
+  /** Pre-formatted trade outcomes string from formatOutcomesForPrompt(). Injected verbatim. */
+  tradeOutcomesBlock?: string;
+  /** Pre-formatted on-chain analytics string (whale/miner activity). Injected verbatim. */
+  onChainAnalyticsBlock?: string;
+};
+
 type RequestAiDecisionParams = {
   agent: any;
   kasData: any;
   quantCoreDecision: any;
+  extra?: AiOverlayExtra;
   config: AiTransportConfig;
   sanitizeDecision: (raw: any, agent: any) => any;
 };
@@ -48,7 +60,7 @@ function buildHeaders(config: AiTransportConfig) {
   return headers;
 }
 
-export function buildAiOverlayPrompt(agent: any, kasData: any, quantCoreDecision: any) {
+export function buildAiOverlayPrompt(agent: any, kasData: any, quantCoreDecision: any, extra?: AiOverlayExtra) {
   const compactKasData = {
     fetched: toFinite(kasData?.fetched, 0),
     address: String(kasData?.address || ""),
@@ -76,6 +88,17 @@ Auto-Approve Threshold: ${agent.autoApproveThreshold} KAS
 
 KASPA SNAPSHOT:
 ${JSON.stringify(compactKasData)}
+${extra?.krcPortfolioTokens?.length ? `
+KRC PORTFOLIO (top tokens held):
+${extra.krcPortfolioTokens.slice(0, 8).map(t => `- ${t.ticker}: ${t.balanceKas != null ? t.balanceKas.toFixed(4) + " KAS" : "—"}${t.balanceUsd != null ? ` (~$${t.balanceUsd.toFixed(2)})` : ""}`).join("\n")}` : ""}
+${extra?.utxoTotalKas != null ? `
+UTXO HEALTH:
+- UTXO total: ${extra.utxoTotalKas.toFixed(4)} KAS${extra.utxoCount != null ? ` across ${extra.utxoCount} UTXOs` : ""}` : ""}
+${extra?.recentDecisions?.length ? `
+RECENT DECISIONS (last ${Math.min(5, extra.recentDecisions.length)}):
+${extra.recentDecisions.slice(0, 5).map((d, i) => `${i + 1}. [${new Date(d.ts).toISOString().slice(11, 19)} UTC] ${d.action} conf=${d.confidence_score}${d.rationale ? ` — ${String(d.rationale).slice(0, 80)}` : ""}`).join("\n")}` : ""}
+${extra?.tradeOutcomesBlock ? `\n${extra.tradeOutcomesBlock}` : ""}
+${extra?.onChainAnalyticsBlock ? `\n${extra.onChainAnalyticsBlock}` : ""}
 
 LOCAL QUANT CORE PRIOR (trust this as the primary signal unless you have a strong reason):
 ${JSON.stringify({
@@ -122,8 +145,8 @@ OUTPUT (strict JSON, all fields required):
 }
 
 export async function requestAiOverlayDecision(params: RequestAiDecisionParams) {
-  const { agent, kasData, quantCoreDecision, config, sanitizeDecision } = params;
-  const prompt = buildAiOverlayPrompt(agent, kasData, quantCoreDecision);
+  const { agent, kasData, quantCoreDecision, extra, config, sanitizeDecision } = params;
+  const prompt = buildAiOverlayPrompt(agent, kasData, quantCoreDecision, extra);
   const body = config.apiUrl.includes("api.anthropic.com")
     ? { model: config.model, max_tokens: 900, messages: [{ role: "user", content: prompt }] }
     : { prompt, agent, kasData, quantCore: quantCoreDecision };

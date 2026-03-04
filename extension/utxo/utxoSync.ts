@@ -8,20 +8,30 @@
 
 import type { Utxo, UtxoSet } from "./types";
 import type { KaspaUtxoResponse } from "../network/kaspaClient";
-import { fetchUtxos } from "../network/kaspaClient";
+import { fetchBatchUtxos } from "../network/kaspaClient";
 
 const STALE_THRESHOLD_MS = 30_000;
 
 // ── In-memory UTXO cache ──────────────────────────────────────────────────────
 const _cache = new Map<string, UtxoSet>();
 
+// ── In-flight deduplication ───────────────────────────────────────────────────
+// If two callers request syncUtxos for the same address+network concurrently,
+// share the single in-flight fetch instead of firing duplicate HTTP requests.
+const _inFlight = new Map<string, Promise<UtxoSet>>();
+const _inFlightBatch = new Map<string, Promise<Record<string, UtxoSet>>>();
+
+function cacheKey(address: string, network: string): string {
+  return `${String(address || "").trim().toLowerCase()}:${String(network || "").trim().toLowerCase()}`;
+}
+
 function normalizeScriptHex(scriptPublicKey: string): string {
   return String(scriptPublicKey || "").trim().toLowerCase();
 }
 
 /**
- * Kaspa standard receive outputs are currently version=0 P2PK scripts:
- *   0x20 <32-byte-pubkey> 0xac
+ * Kaspa standard receive outputs are version=0 P2PK scripts:
+ *   0x20 <32-byte-pubkey> 0xac   (34 bytes total)
  */
 function isStandardP2pkScript(scriptVersion: number, scriptPublicKey: string): boolean {
   if (scriptVersion !== 0) return false;
@@ -29,21 +39,74 @@ function isStandardP2pkScript(scriptVersion: number, scriptPublicKey: string): b
   return /^20[0-9a-f]{64}ac$/.test(normalized);
 }
 
-function classifyScript(scriptVersion: number, scriptPublicKey: string): "standard" | "covenant" {
-  return isStandardP2pkScript(scriptVersion, scriptPublicKey) ? "standard" : "covenant";
+/**
+ * Detects known vProg covenant script patterns (KIP-9).
+ *
+ * A KAS→KRC20 atomic swap covenant script built by buildCovenantScriptBytes()
+ * always starts with: OP_0 (0x00) OP_TXOUTPUTCOUNT (0xc1) OP_1 (0x51) OP_GREATERTHAN (0xa7) OP_VERIFY (0x69)
+ * and ends with OP_CHECKSIG (0xac).
+ *
+ * Any script whose first byte is a vProg introspection opcode (0xc0–0xc4)
+ * is also treated as covenant.
+ */
+function isVProgCovenantScript(scriptVersion: number, scriptPublicKey: string): boolean {
+  if (scriptVersion !== 0) return false;
+  const normalized = normalizeScriptHex(scriptPublicKey);
+  // Byte 0 is a vProg introspection opcode
+  if (/^c[0-4]/.test(normalized)) return true;
+  // Starts with OP_0 OP_TXOUTPUTCOUNT (our canonical covenant prefix = 00c1)
+  if (normalized.startsWith("00c1")) return true;
+  return false;
 }
 
-/** Return cached UTXO set, or null if missing / stale. */
-export function getCachedUtxoSet(address: string): UtxoSet | null {
-  const cached = _cache.get(address.toLowerCase());
+/**
+ * Classifies a script output into one of three categories:
+ *   "standard"        — version-0 P2PK (normal spend, 34 bytes)
+ *   "vprog_covenant"  — KIP-9 vProg covenant UTXO (introspection opcodes detected)
+ *   "covenant"        — any other non-standard script (legacy escrow, OP_RETURN, etc.)
+ */
+function classifyScript(scriptVersion: number, scriptPublicKey: string): "standard" | "vprog_covenant" | "covenant" {
+  if (isStandardP2pkScript(scriptVersion, scriptPublicKey)) return "standard";
+  if (isVProgCovenantScript(scriptVersion, scriptPublicKey)) return "vprog_covenant";
+  return "covenant";
+}
+
+/** Return cached UTXO set for an address+network, or null if missing / stale. */
+export function getCachedUtxoSet(address: string, network: string): UtxoSet | null {
+  const cached = _cache.get(cacheKey(address, network));
   if (!cached) return null;
   if (Date.now() - cached.lastSyncAt > STALE_THRESHOLD_MS) return null;
   return cached;
 }
 
-/** Manually invalidate the cache for an address (e.g. after broadcast). */
-export function invalidateUtxoCache(address: string): void {
-  _cache.delete(address.toLowerCase());
+/** Manually invalidate the cache for an address (e.g. after broadcast).
+ *  Also cancels any in-flight fetch so the next caller gets a fresh response. */
+export function invalidateUtxoCache(address: string, network?: string): void {
+  const addrLower = String(address || "").trim().toLowerCase();
+  const normalizedNetwork = typeof network === "string" ? network.trim().toLowerCase() : "";
+
+  if (!addrLower) return;
+  if (normalizedNetwork) {
+    _cache.delete(cacheKey(addrLower, normalizedNetwork));
+    _inFlight.delete(cacheKey(addrLower, normalizedNetwork));
+    for (const key of _inFlightBatch.keys()) {
+      if (key.startsWith(`${normalizedNetwork}:`) && key.includes(addrLower)) _inFlightBatch.delete(key);
+    }
+    return;
+  }
+
+  // Backward-compat path: invalidate this address across all networks.
+  for (const key of _cache.keys()) {
+    if (key.startsWith(`${addrLower}:`)) _cache.delete(key);
+  }
+  for (const key of _inFlight.keys()) {
+    if (key.startsWith(`${addrLower}:`)) _inFlight.delete(key);
+  }
+  for (const key of _inFlightBatch.keys()) {
+    const sep = key.indexOf(":");
+    const addressPart = sep >= 0 ? key.slice(sep + 1) : key;
+    if (addressPart.split(",").includes(addrLower)) _inFlightBatch.delete(key);
+  }
 }
 
 // ── Fetch + parse ─────────────────────────────────────────────────────────────
@@ -64,6 +127,32 @@ function parseRawUtxo(raw: KaspaUtxoResponse): Utxo {
   };
 }
 
+function normalizeAddressList(addresses: string[]): string[] {
+  const out: string[] = [];
+  for (const candidate of addresses) {
+    const normalized = String(candidate || "").trim().toLowerCase();
+    if (!normalized) continue;
+    if (!out.includes(normalized)) out.push(normalized);
+  }
+  return out;
+}
+
+function makeUtxoSet(
+  addressLower: string,
+  raws: KaspaUtxoResponse[],
+  pendingOutbound = 0n,
+): UtxoSet {
+  const utxos = raws.map(parseRawUtxo);
+  const confirmedBalance = utxos.reduce((acc, u) => acc + u.amount, 0n);
+  return {
+    address: addressLower,
+    utxos,
+    confirmedBalance,
+    pendingOutbound,
+    lastSyncAt: Date.now(),
+  };
+}
+
 /**
  * Fetch the latest UTXO set from the Kaspa REST API and update the cache.
  * Also reconciles any in-flight pending transactions passed in.
@@ -80,23 +169,75 @@ export async function syncUtxos(
   pendingInputs: Set<string> = new Set(),
   pendingOutbound: bigint = 0n,
 ): Promise<UtxoSet> {
-  const rawList = await fetchUtxos(address, network);
+  const key = cacheKey(address, network);
 
-  const utxos: Utxo[] = rawList.map(parseRawUtxo);
+  // Deduplicate concurrent fetches for the same address+network.
+  // dryRun explicitly calls syncUtxos (bypass cache) but two concurrent dryRuns
+  // for the same address should still share one network round trip.
+  const existing = _inFlight.get(key);
+  if (existing) return existing;
 
-  // Confirmed balance = sum of ALL confirmed UTXOs
-  const confirmedBalance = utxos.reduce((acc, u) => acc + u.amount, 0n);
+  const fetch = (async (): Promise<UtxoSet> => {
+    try {
+      // Use the v1.1 batch endpoint even for single-address sync so runtime
+      // path stays aligned with multi-address UTXO fetch behavior.
+      const rawList = await fetchBatchUtxos([address], network);
+      const utxoSet = makeUtxoSet(address.toLowerCase(), rawList, pendingOutbound);
+      _cache.set(key, utxoSet);
+      return utxoSet;
+    } finally {
+      _inFlight.delete(key);
+    }
+  })();
 
-  const utxoSet: UtxoSet = {
-    address: address.toLowerCase(),
-    utxos,
-    confirmedBalance,
-    pendingOutbound,
-    lastSyncAt: Date.now(),
-  };
+  _inFlight.set(key, fetch);
+  return fetch;
+}
 
-  _cache.set(address.toLowerCase(), utxoSet);
-  return utxoSet;
+/**
+ * Batch-sync UTXOs for multiple addresses with one network call.
+ * Returns a map keyed by normalized lower-case address.
+ */
+export async function syncUtxosBatch(
+  addresses: string[],
+  network: string,
+  pendingOutboundByAddress: Record<string, bigint> = {},
+): Promise<Record<string, UtxoSet>> {
+  const unique = normalizeAddressList(addresses);
+  if (unique.length === 0) return {};
+  const normalizedNetwork = String(network || "").trim().toLowerCase();
+  const batchKey = `${normalizedNetwork}:${[...unique].sort().join(",")}`;
+  const existing = _inFlightBatch.get(batchKey);
+  if (existing) return existing;
+
+  const fetch = (async (): Promise<Record<string, UtxoSet>> => {
+    try {
+      const rawList = await fetchBatchUtxos(unique, network);
+      const grouped = new Map<string, KaspaUtxoResponse[]>();
+      for (const raw of rawList) {
+        const key = String(raw?.address || "").trim().toLowerCase();
+        if (!key) continue;
+        const bucket = grouped.get(key);
+        if (bucket) bucket.push(raw);
+        else grouped.set(key, [raw]);
+      }
+
+      const out: Record<string, UtxoSet> = {};
+      for (const addressLower of unique) {
+        const raws = grouped.get(addressLower) ?? [];
+        const pendingOutbound = pendingOutboundByAddress[addressLower] ?? 0n;
+        const utxoSet = makeUtxoSet(addressLower, raws, pendingOutbound);
+        _cache.set(cacheKey(addressLower, normalizedNetwork), utxoSet);
+        out[addressLower] = utxoSet;
+      }
+      return out;
+    } finally {
+      _inFlightBatch.delete(batchKey);
+    }
+  })();
+
+  _inFlightBatch.set(batchKey, fetch);
+  return fetch;
 }
 
 /**
@@ -108,9 +249,37 @@ export async function getOrSyncUtxos(
   pendingInputs?: Set<string>,
   pendingOutbound?: bigint,
 ): Promise<UtxoSet> {
-  const cached = getCachedUtxoSet(address);
+  const cached = getCachedUtxoSet(address, network);
   if (cached) return cached;
   return syncUtxos(address, network, pendingInputs, pendingOutbound);
+}
+
+/**
+ * Return fresh UTXO sets for multiple addresses.
+ * Uses cache when fresh; fetches only stale/missing addresses in one batch call.
+ */
+export async function getOrSyncUtxosBatch(
+  addresses: string[],
+  network: string,
+  pendingOutboundByAddress: Record<string, bigint> = {},
+): Promise<Record<string, UtxoSet>> {
+  const unique = normalizeAddressList(addresses);
+  if (unique.length === 0) return {};
+
+  const out: Record<string, UtxoSet> = {};
+  const missing: string[] = [];
+  for (const address of unique) {
+    const cached = getCachedUtxoSet(address, network);
+    if (cached) {
+      out[address] = cached;
+    } else {
+      missing.push(address);
+    }
+  }
+
+  if (missing.length === 0) return out;
+  const fetched = await syncUtxosBatch(missing, network, pendingOutboundByAddress);
+  return { ...out, ...fetched };
 }
 
 /**

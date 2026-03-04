@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { kasBalance, kasNetworkInfo, kasPrice } from "../../../api/kaspaApi";
+import { kasBalance, kasNetworkInfo, kasNodeStatus, kasPrice } from "../../../api/kaspaApi";
 
 type UseKaspaFeedParams = {
   walletAddress?: string;
@@ -182,14 +182,16 @@ export function useKaspaFeed(params: UseKaspaFeedParams) {
     setKasDataLoading(true);
     setKasDataError(null);
     try {
-      const [dag, bal, price] = await Promise.all([
+      const [dag, bal, price, nodeStatus] = await Promise.all([
         kasNetworkInfo(),
         kasBalance(walletAddress),
         kasPrice().catch(() => null),
+        kasNodeStatus().catch(() => ({ isSynced: null, isUtxoIndexed: null, source: "unknown" as const })),
       ]);
       const fetched = Date.now();
       const nextKasData = {
         dag,
+        nodeStatus,
         priceUsd: Number(price || 0),
         walletKas: Number(bal.kas || 0),
         address: walletAddress,
@@ -274,11 +276,15 @@ export function useKaspaFeed(params: UseKaspaFeedParams) {
           }
         }
 
-        if (wsRefreshTimer) return;
+        // Debounce: cancel any pending refresh and restart the timer so the
+        // refresh fires 300ms after the *last* event in a burst (not the first).
+        // Under 10 BPS a burst of DAA ticks would otherwise schedule multiple
+        // consecutive 250ms refreshes; debouncing collapses them into one.
+        if (wsRefreshTimer) clearTimeout(wsRefreshTimer);
         const fastRefresh =
           (streamEvent.kind === "utxo" && streamEvent.affectsWallet) ||
           streamEvent.kind === "daa";
-        const refreshDelayMs = fastRefresh ? 250 : 1200;
+        const refreshDelayMs = fastRefresh ? 300 : 1400;
         wsRefreshTimer = setTimeout(() => {
           wsRefreshTimer = null;
           refreshKasData();

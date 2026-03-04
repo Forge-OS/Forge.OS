@@ -49,7 +49,7 @@
       "run_at": "document_idle"
     }
   ],
-  "permissions": ["storage", "alarms", "clipboardWrite", "tabs", "windows", "permissions"],
+  "permissions": ["storage", "alarms", "clipboardWrite", "tabs", "windows", "permissions", "notifications"],
   "optional_host_permissions": [
     "https://*/*",
     "http://*/*"

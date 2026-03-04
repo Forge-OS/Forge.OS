@@ -1,21 +1,21 @@
 import { runQuantEngine } from "../quant/runQuantEngine";
 
 type QuantWorkerRequest = {
-  id: number;
+  id: string;
   agent: any;
   kasData: any;
   context?: any;
 };
 
 type QuantWorkerResponse =
-  | { id: number; ok: true; decision: any }
-  | { id: number; ok: false; error: string };
+  | { id: string; ok: true; decision: any }
+  | { id: string; ok: false; error: string };
 
 const WORKER_TIMEOUT_MS = 10000;
 
 self.onmessage = async (event: MessageEvent<QuantWorkerRequest>) => {
   const msg = event.data;
-  if (!msg || typeof msg.id !== "number") return;
+  if (!msg || typeof msg.id !== "string" || !msg.id) return;
   try {
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`Quant engine timed out after ${WORKER_TIMEOUT_MS}ms`)), WORKER_TIMEOUT_MS)

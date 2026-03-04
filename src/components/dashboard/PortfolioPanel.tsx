@@ -192,6 +192,159 @@ export function PortfolioPanel({
         </div>
       </div>
 
+      {/* ── Agent Portfolio ── */}
+      <Card p={0} style={{ marginBottom: 14 }}>
+        <div style={{ padding: "12px 16px", borderBottom: `1px solid rgba(33,48,67,0.5)`, background: "rgba(8,13,20,0.5)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 9, color: C.dim, ...mono, letterSpacing: "0.12em" }}>AGENT PORTFOLIO</span>
+          <span style={{ fontSize: 9, color: C.dim, ...mono }}>{rows.length} in pool</span>
+        </div>
+
+        {rows.length === 0 && (
+          <div style={{ padding: 32, textAlign: "center", fontSize: 12, color: C.dim }}>No agents deployed yet.</div>
+        )}
+
+        {rows.map((row: any, idx: number) => {
+          const isActive = row.agentId === activeAgentId;
+          const riskC = row.risk <= 0.4 ? C.ok : row.risk <= 0.7 ? C.warn : C.danger;
+          const pnl = Number(row.pnlKas || 0);
+          const bal = Number(row.balanceKas || row.budgetKas || 0);
+          const prevBal = prevBalance.current[row.agentId] ?? bal;
+          const agentColor = CHART_COLORS[idx % CHART_COLORS.length];
+          const balUsd = fmtUsd(bal, priceUsd);
+          const pnlUsd = fmtUsd(Math.abs(pnl), priceUsd);
+
+          return (
+            <div key={row.agentId}
+              style={{
+                padding: "14px 16px",
+                borderBottom: `1px solid rgba(33,48,67,0.4)`,
+                background: isActive
+                  ? `linear-gradient(135deg, ${agentColor}08 0%, rgba(8,13,20,0.3) 100%)`
+                  : "transparent",
+                borderLeft: isActive ? `2px solid ${agentColor}` : "2px solid transparent",
+              }}>
+
+              {/* Name row */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: agentColor, display: "inline-block", flexShrink: 0, boxShadow: `0 0 8px ${agentColor}80` }} />
+                  <button
+                    onClick={() => onSelectAgent?.(row.agentId)}
+                    style={{
+                      background: isActive ? `${agentColor}18` : "rgba(16,25,35,0.4)",
+                      border: `1px solid ${isActive ? agentColor : "rgba(33,48,67,0.6)"}`,
+                      color: isActive ? agentColor : C.text,
+                      borderRadius: 6, padding: "6px 12px", cursor: "pointer",
+                      fontSize: 12, fontWeight: 600, ...mono,
+                    }}
+                  >
+                    {row.name}
+                  </button>
+                  <Badge text={row.enabled ? "Active" : "Disabled"} color={row.enabled ? C.ok : C.dim} />
+                  <LiveTicker value={bal} prev={prevBal} />
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <span style={{ fontSize: 12, color: pnl >= 0 ? C.ok : C.danger, fontWeight: 700, ...mono }}>
+                    {pnl >= 0 ? "▲ +" : "▼ "}{pnl.toFixed(4)} KAS
+                    {pnlUsd && <span style={{ fontSize: 9, color: C.dim, marginLeft: 4 }}>({pnl >= 0 ? "+" : "-"}{pnlUsd})</span>}
+                  </span>
+                  <Badge text={`Risk: ${row.risk <= 0.4 ? "Low" : row.risk <= 0.7 ? "Med" : "High"}`} color={riskC} />
+                  <button onClick={() => onEditAgent?.(row)} title="Edit agent"
+                    style={{ background: "rgba(16,25,35,0.5)", border: `1px solid rgba(57,221,182,0.12)`, color: C.dim, borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 11, ...mono }}>
+                    ✏️ Edit
+                  </button>
+                  <button
+                    onClick={() => { if (window.confirm(`Delete agent "${row.name}"? This cannot be undone.`)) { onDeleteAgent?.(row.agentId); } }}
+                    title="Delete agent"
+                    style={{ background: C.dLow, border: `1px solid ${C.danger}50`, color: C.danger, borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 11, ...mono }}>
+                    🗑️ Delete
+                  </button>
+                </div>
+              </div>
+
+              {/* Key numbers grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(100px,1fr))", gap: 8, marginBottom: 10 }}>
+                {[
+                  { label: "Cycle Budget", value: <KasValue value={row.cycleCapKas} color={C.ok} />, hint: "Max KAS this agent can trade per cycle", c: C.ok },
+                  { label: "Total Budget", value: <KasValue value={row.budgetKas} />, hint: "Total KAS allocated", c: C.dim },
+                  {
+                    label: "Live Balance", c: agentColor,
+                    value: (
+                      <div>
+                        <KasValue value={bal.toFixed(4)} color={agentColor} />
+                        {balUsd && <div style={{ fontSize: 9, color: C.dim, ...mono, marginTop: 1 }}>{balUsd}</div>}
+                      </div>
+                    ),
+                    hint: "Current balance for this agent",
+                  },
+                  {
+                    label: "P&L", c: pnl >= 0 ? C.ok : C.danger,
+                    value: (
+                      <div>
+                        <span style={{ fontSize: 13, fontWeight: 600, ...mono, color: pnl >= 0 ? C.ok : C.danger }}>{pnl >= 0 ? "+" : ""}{pnl.toFixed(4)} KAS</span>
+                        {pnlUsd && <div style={{ fontSize: 9, color: C.dim, ...mono, marginTop: 1 }}>{pnl >= 0 ? "+" : "-"}{pnlUsd}</div>}
+                      </div>
+                    ),
+                    hint: `PnL (${row.pnlMode || "estimated"})`,
+                  },
+                  { label: "Portfolio Share", value: pct(row.targetPct, 1), hint: "Target % of total portfolio", c: C.purple },
+                  { label: "Queue Pressure", value: pct(row.queuePressurePct, 1), hint: "How busy the execution queue is", c: C.dim },
+                ].map(({ label, value, hint, c }) => (
+                  <div key={label} title={hint}
+                    style={{ background: `linear-gradient(135deg, ${c}08 0%, rgba(8,13,20,0.5) 100%)`, borderRadius: 6, padding: "8px 10px", border: `1px solid ${c}14` }}>
+                    <div style={{ fontSize: 9, color: C.dim, ...mono, marginBottom: 2, letterSpacing: "0.08em" }}>{label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, ...mono }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Balance vs Budget bar */}
+              {bal > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 9, color: C.dim, ...mono }}>Balance vs Budget</span>
+                    <span style={{ fontSize: 9, color: agentColor, ...mono }}>{((bal / Math.max(1, Number(row.budgetKas))) * 100).toFixed(1)}%</span>
+                  </div>
+                  <ProgressBar value={(bal / Math.max(1, Number(row.budgetKas))) * 100} color={agentColor} height={4} />
+                </div>
+              )}
+
+              {/* Notes */}
+              {(row.notes || []).length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                  {(row.notes || []).map((note: string) => (
+                    <Badge key={note} text={note.replace(/_/g, " ")} color={C.warn} />
+                  ))}
+                </div>
+              )}
+
+              {/* Override settings */}
+              <details>
+                <summary style={{ cursor: "pointer", listStyle: "none" }}>
+                  <span style={{ fontSize: 9, color: C.dim, ...mono }}>Override settings ▼</span>
+                </summary>
+                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(16,25,35,0.5)", padding: "10px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid rgba(33,48,67,0.5)` }}>
+                    <input type="checkbox" checked={row.enabled}
+                      onChange={(e) => onAgentOverridePatch?.(row.agentId, { enabled: e.target.checked })}
+                      style={{ width: 16, height: 16, accentColor: C.accent }} />
+                    <span style={{ fontSize: 11, color: C.text, ...mono }}>Enabled</span>
+                  </label>
+                  <Inp label="Target Allocation %"
+                    value={String(row.targetPct)}
+                    onChange={(v: string) => onAgentOverridePatch?.(row.agentId, { targetAllocationPct: Math.max(0, Math.min(100, Number(v) || 0)) })}
+                    type="number" suffix="%" hint="Desired portfolio share for this agent" />
+                  <Inp label="Risk Weight"
+                    value={String(row.riskWeight)}
+                    onChange={(v: string) => onAgentOverridePatch?.(row.agentId, { riskWeight: Math.max(0, Math.min(10, Number(v) || 0)) })}
+                    type="number" hint="Allocator weight multiplier" />
+                </div>
+              </details>
+            </div>
+          );
+        })}
+      </Card>
+
       {/* ── Market Intelligence Strip ── */}
       <Card p={0} style={{ marginBottom: 14, overflow: "hidden", border: `1px solid ${regimeMeta ? regimeMeta.color + "28" : "rgba(33,48,67,0.5)"}` }}>
         <div style={{ height: 2, background: regimeMeta ? `linear-gradient(90deg, ${regimeMeta.color}, ${C.purple})` : `linear-gradient(90deg, ${C.border}, ${C.border})` }} />
@@ -479,158 +632,6 @@ export function PortfolioPanel({
         </details>
       </Card>
 
-      {/* ── Per-Agent Cards ── */}
-      <Card p={0}>
-        <div style={{ padding: "12px 16px", borderBottom: `1px solid rgba(33,48,67,0.5)`, background: "rgba(8,13,20,0.5)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 9, color: C.dim, ...mono, letterSpacing: "0.12em" }}>AGENTS · REAL-TIME</span>
-          <span style={{ fontSize: 9, color: C.dim, ...mono }}>{rows.length} in pool</span>
-        </div>
-
-        {rows.length === 0 && (
-          <div style={{ padding: 32, textAlign: "center", fontSize: 12, color: C.dim }}>No agents deployed yet.</div>
-        )}
-
-        {rows.map((row: any, idx: number) => {
-          const isActive = row.agentId === activeAgentId;
-          const riskC = row.risk <= 0.4 ? C.ok : row.risk <= 0.7 ? C.warn : C.danger;
-          const pnl = Number(row.pnlKas || 0);
-          const bal = Number(row.balanceKas || row.budgetKas || 0);
-          const prevBal = prevBalance.current[row.agentId] ?? bal;
-          const agentColor = CHART_COLORS[idx % CHART_COLORS.length];
-          const balUsd = fmtUsd(bal, priceUsd);
-          const pnlUsd = fmtUsd(Math.abs(pnl), priceUsd);
-
-          return (
-            <div key={row.agentId}
-              style={{
-                padding: "14px 16px",
-                borderBottom: `1px solid rgba(33,48,67,0.4)`,
-                background: isActive
-                  ? `linear-gradient(135deg, ${agentColor}08 0%, rgba(8,13,20,0.3) 100%)`
-                  : "transparent",
-                borderLeft: isActive ? `2px solid ${agentColor}` : "2px solid transparent",
-              }}>
-
-              {/* Name row */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: agentColor, display: "inline-block", flexShrink: 0, boxShadow: `0 0 8px ${agentColor}80` }} />
-                  <button
-                    onClick={() => onSelectAgent?.(row.agentId)}
-                    style={{
-                      background: isActive ? `${agentColor}18` : "rgba(16,25,35,0.4)",
-                      border: `1px solid ${isActive ? agentColor : "rgba(33,48,67,0.6)"}`,
-                      color: isActive ? agentColor : C.text,
-                      borderRadius: 6, padding: "6px 12px", cursor: "pointer",
-                      fontSize: 12, fontWeight: 600, ...mono,
-                    }}
-                  >
-                    {row.name}
-                  </button>
-                  <Badge text={row.enabled ? "Active" : "Disabled"} color={row.enabled ? C.ok : C.dim} />
-                  <LiveTicker value={bal} prev={prevBal} />
-                </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <span style={{ fontSize: 12, color: pnl >= 0 ? C.ok : C.danger, fontWeight: 700, ...mono }}>
-                    {pnl >= 0 ? "▲ +" : "▼ "}{pnl.toFixed(4)} KAS
-                    {pnlUsd && <span style={{ fontSize: 9, color: C.dim, marginLeft: 4 }}>({pnl >= 0 ? "+" : "-"}{pnlUsd})</span>}
-                  </span>
-                  <Badge text={`Risk: ${row.risk <= 0.4 ? "Low" : row.risk <= 0.7 ? "Med" : "High"}`} color={riskC} />
-                  <button onClick={() => onEditAgent?.(row)} title="Edit agent"
-                    style={{ background: "rgba(16,25,35,0.5)", border: `1px solid rgba(57,221,182,0.12)`, color: C.dim, borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 11, ...mono }}>
-                    ✏️ Edit
-                  </button>
-                  <button
-                    onClick={() => { if (window.confirm(`Delete agent "${row.name}"? This cannot be undone.`)) { onDeleteAgent?.(row.agentId); } }}
-                    title="Delete agent"
-                    style={{ background: C.dLow, border: `1px solid ${C.danger}50`, color: C.danger, borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 11, ...mono }}>
-                    🗑️ Delete
-                  </button>
-                </div>
-              </div>
-
-              {/* Key numbers grid */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(100px,1fr))", gap: 8, marginBottom: 10 }}>
-                {[
-                  { label: "Cycle Budget", value: <KasValue value={row.cycleCapKas} color={C.ok} />, hint: "Max KAS this agent can trade per cycle", c: C.ok },
-                  { label: "Total Budget", value: <KasValue value={row.budgetKas} />, hint: "Total KAS allocated", c: C.dim },
-                  {
-                    label: "Live Balance", c: agentColor,
-                    value: (
-                      <div>
-                        <KasValue value={bal.toFixed(4)} color={agentColor} />
-                        {balUsd && <div style={{ fontSize: 9, color: C.dim, ...mono, marginTop: 1 }}>{balUsd}</div>}
-                      </div>
-                    ),
-                    hint: "Current balance for this agent",
-                  },
-                  {
-                    label: "P&L", c: pnl >= 0 ? C.ok : C.danger,
-                    value: (
-                      <div>
-                        <span style={{ fontSize: 13, fontWeight: 600, ...mono, color: pnl >= 0 ? C.ok : C.danger }}>{pnl >= 0 ? "+" : ""}{pnl.toFixed(4)} KAS</span>
-                        {pnlUsd && <div style={{ fontSize: 9, color: C.dim, ...mono, marginTop: 1 }}>{pnl >= 0 ? "+" : "-"}{pnlUsd}</div>}
-                      </div>
-                    ),
-                    hint: `PnL (${row.pnlMode || "estimated"})`,
-                  },
-                  { label: "Portfolio Share", value: pct(row.targetPct, 1), hint: "Target % of total portfolio", c: C.purple },
-                  { label: "Queue Pressure", value: pct(row.queuePressurePct, 1), hint: "How busy the execution queue is", c: C.dim },
-                ].map(({ label, value, hint, c }) => (
-                  <div key={label} title={hint}
-                    style={{ background: `linear-gradient(135deg, ${c}08 0%, rgba(8,13,20,0.5) 100%)`, borderRadius: 6, padding: "8px 10px", border: `1px solid ${c}14` }}>
-                    <div style={{ fontSize: 9, color: C.dim, ...mono, marginBottom: 2, letterSpacing: "0.08em" }}>{label}</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, ...mono }}>{value}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Balance vs Budget bar */}
-              {bal > 0 && (
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={{ fontSize: 9, color: C.dim, ...mono }}>Balance vs Budget</span>
-                    <span style={{ fontSize: 9, color: agentColor, ...mono }}>{((bal / Math.max(1, Number(row.budgetKas))) * 100).toFixed(1)}%</span>
-                  </div>
-                  <ProgressBar value={(bal / Math.max(1, Number(row.budgetKas))) * 100} color={agentColor} height={4} />
-                </div>
-              )}
-
-              {/* Notes */}
-              {(row.notes || []).length > 0 && (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-                  {(row.notes || []).map((note: string) => (
-                    <Badge key={note} text={note.replace(/_/g, " ")} color={C.warn} />
-                  ))}
-                </div>
-              )}
-
-              {/* Override settings */}
-              <details>
-                <summary style={{ cursor: "pointer", listStyle: "none" }}>
-                  <span style={{ fontSize: 9, color: C.dim, ...mono }}>Override settings ▼</span>
-                </summary>
-                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(16,25,35,0.5)", padding: "10px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid rgba(33,48,67,0.5)` }}>
-                    <input type="checkbox" checked={row.enabled}
-                      onChange={(e) => onAgentOverridePatch?.(row.agentId, { enabled: e.target.checked })}
-                      style={{ width: 16, height: 16, accentColor: C.accent }} />
-                    <span style={{ fontSize: 11, color: C.text, ...mono }}>Enabled</span>
-                  </label>
-                  <Inp label="Target Allocation %"
-                    value={String(row.targetPct)}
-                    onChange={(v: string) => onAgentOverridePatch?.(row.agentId, { targetAllocationPct: Math.max(0, Math.min(100, Number(v) || 0)) })}
-                    type="number" suffix="%" hint="Desired portfolio share for this agent" />
-                  <Inp label="Risk Weight"
-                    value={String(row.riskWeight)}
-                    onChange={(v: string) => onAgentOverridePatch?.(row.agentId, { riskWeight: Math.max(0, Math.min(10, Number(v) || 0)) })}
-                    type="number" hint="Allocator weight multiplier" />
-                </div>
-              </details>
-            </div>
-          );
-        })}
-      </Card>
     </div>
   );
 }

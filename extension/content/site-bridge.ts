@@ -157,11 +157,36 @@ window.addEventListener("message", (ev) => {
     });
     return;
   }
+
+  // Agent send-tx — route to background for session check / popup open
+  if (msg.type === "FORGEOS_SEND_TX") {
+    const requestId = typeof msg.requestId === "string" ? msg.requestId : "";
+    if (!requestId) {
+      window.postMessage({ [S]: true, requestId, result: null, error: "Invalid send-tx request" }, "*");
+      return;
+    }
+    chrome.runtime.sendMessage({
+      type: "FORGEOS_OPEN_FOR_SEND_TX",
+      requestId,
+      to: msg.to,
+      amountKas: msg.amountKas,
+      purpose: msg.purpose,
+      agentId: msg.agentId,
+      autoApproveKas: msg.autoApproveKas,
+    }).catch((err: any) => {
+      window.postMessage({ [S]: true, requestId, result: null, error: err?.message ?? "Send failed" }, "*");
+    });
+    return;
+  }
 });
 
 // Push connect/sign result from background back to page
 chrome.runtime.onMessage.addListener((message: any) => {
-  if (message?.type === "FORGEOS_CONNECT_RESULT" || message?.type === "FORGEOS_SIGN_RESULT") {
+  if (
+    message?.type === "FORGEOS_CONNECT_RESULT" ||
+    message?.type === "FORGEOS_SIGN_RESULT" ||
+    message?.type === "FORGEOS_SEND_TX_RESULT"
+  ) {
     window.postMessage({
       [S]: true,
       requestId: message.requestId,

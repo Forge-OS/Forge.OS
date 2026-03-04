@@ -16,6 +16,9 @@
 //  8. UTXO scriptPublicKey classification — standard P2PK detected correctly
 //  9. DAG score advances between two polls spaced 2s apart (network is live)
 // 10. broadcastTx returns a useful error (not a silent failure) for invalid tx
+// 11. /info/virtual-chain-blue-score — lightweight DAA score endpoint works
+// 12. /info/kaspad — node status reports sync/index state
+// 13. /addresses/utxos (POST) — batch UTXO endpoint returns records
 
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -82,6 +85,20 @@ describe("live: /info/blockdag", () => {
     // At 10 BPS, 2s should produce at least 15 new DAA scores
     expect(scoreB).toBeGreaterThan(scoreA);
     expect(scoreB - scoreA).toBeGreaterThan(10n);
+  }, 10_000);
+});
+
+describe("live: /info/virtual-chain-blue-score", () => {
+  skip("returns a positive blue score and advances between polls", async () => {
+    const { fetchBlueScore } = await import("../../extension/network/kaspaClient");
+    const a = await fetchBlueScore("mainnet");
+    await new Promise((r) => setTimeout(r, 2_000));
+    const b = await fetchBlueScore("mainnet");
+
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(Number(a)).toBeGreaterThan(0);
+    expect(Number(b)).toBeGreaterThan(Number(a));
   }, 10_000);
 });
 
@@ -182,6 +199,29 @@ describe("live: /addresses/{address}/utxos", () => {
 
     const sum = utxoSet.utxos.reduce((acc, u) => acc + u.amount, 0n);
     expect(utxoSet.confirmedBalance).toBe(sum);
+  }, TIMEOUT_MS);
+});
+
+describe("live: /addresses/utxos (batch POST)", () => {
+  skip("returns UTXO records for a treasury address submitted in batch", async () => {
+    const { fetchBatchUtxos } = await import("../../extension/network/kaspaClient");
+    const utxos = await fetchBatchUtxos([TREASURY], "mainnet");
+
+    expect(Array.isArray(utxos)).toBe(true);
+    expect(utxos.length).toBeGreaterThan(0);
+    expect(typeof utxos[0]?.address).toBe("string");
+    expect(String(utxos[0]?.address || "").startsWith("kaspa:")).toBe(true);
+  }, TIMEOUT_MS);
+});
+
+describe("live: /info/kaspad", () => {
+  skip("returns node status booleans for sync and UTXO index", async () => {
+    const { fetchNodeStatus } = await import("../../extension/network/kaspaClient");
+    const status = await fetchNodeStatus("mainnet");
+
+    expect(status).not.toBeNull();
+    expect(typeof status!.isSynced).toBe("boolean");
+    expect(typeof status!.isUtxoIndexed).toBe("boolean");
   }, TIMEOUT_MS);
 });
 

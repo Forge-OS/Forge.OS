@@ -54,6 +54,12 @@ export function WalletPanel({ agent, wallet, kasData, marketHistory = [], lastDe
   const daaScore = kasData?.dag?.daaScore;
   const blockCount = kasData?.dag?.blockCount || kasData?.dag?.headerCount;
   const networkName = kasData?.dag?.networkName || NETWORK_LABEL;
+  const nodeSyncState = kasData?.nodeStatus?.isSynced;
+  const nodeIndexState = kasData?.nodeStatus?.isUtxoIndexed;
+  const nodeSyncText = nodeSyncState == null ? "UNKNOWN" : (nodeSyncState ? "SYNCED" : "SYNCING");
+  const nodeSyncColor = nodeSyncState == null ? C.dim : (nodeSyncState ? C.ok : C.warn);
+  const nodeIndexText = nodeIndexState == null ? "UNKNOWN" : (nodeIndexState ? "READY" : "INDEXING");
+  const nodeIndexColor = nodeIndexState == null ? C.dim : (nodeIndexState ? C.ok : C.warn);
   const providerLabel = wallet?.provider === "kasware" ? "KasWare"
     : wallet?.provider === "demo" ? "Demo Mode"
     : wallet?.provider === "kasware-wasm" ? "KasWare (WASM)"
@@ -327,6 +333,8 @@ export function WalletPanel({ agent, wallet, kasData, marketHistory = [], lastDe
             {[
               { k: "DAA Score", v: daaScore ? Number(daaScore).toLocaleString() : "—", c: C.accent },
               { k: "Block Count", v: blockCount ? Number(blockCount).toLocaleString() : "—", c: C.dim },
+              { k: "Node Sync", v: nodeSyncText, c: nodeSyncColor },
+              { k: "UTXO Index", v: nodeIndexText, c: nodeIndexColor },
               {
                 k: "DAA Velocity",
                 v: qm ? `${daaVelocity >= 0 ? "+" : ""}${daaVelocity.toFixed(1)} blk/s` : "—",

@@ -24,7 +24,7 @@ import {
   restoreSessionFromCache,
   setSessionPersistence,
 } from "../vault/vault";
-import { fetchDagInfo, NETWORK_BPS } from "../network/kaspaClient";
+import { fetchBlueScore, fetchNodeStatus, NETWORK_BPS } from "../network/kaspaClient";
 import { connectKaspaWs, disconnectKaspaWs, subscribeUtxosChanged, subscribeDaaScore } from "../network/kaspaWebSocket";
 import { loadPendingTxs } from "../tx/store";
 import { pollConfirmation } from "../tx/broadcast";
@@ -39,6 +39,8 @@ import { LockScreen } from "./screens/LockScreen";
 import { FirstRunScreen } from "./screens/FirstRunScreen";
 import { ConnectApprovalScreen } from "./screens/ConnectApprovalScreen";
 import { SignApprovalScreen } from "./screens/SignApprovalScreen";
+import { SendTxApprovalScreen, type PendingTxRequest } from "./screens/SendTxApprovalScreen";
+import { executeKaspaIntent } from "../tx/kernel";
 import { EXTENSION_POPUP_BASE_MIN_HEIGHT, EXTENSION_POPUP_BASE_WIDTH, EXTENSION_POPUP_UI_SCALE } from "./layout";
 import { outlineButton, popupShellBackground } from "./surfaces";
 import {
@@ -57,6 +59,7 @@ type Screen =
 
 const PENDING_CONNECT_KEY = "forgeos.connect.pending";
 const PENDING_SIGN_KEY = "forgeos.sign.pending";
+const PENDING_TX_KEY = "forgeos.pending.tx.v1";
 const SITE_AUTH_SESSION_GRACE_MS = 120_000;
 const TRUSTED_SITE_SIGN_HOSTS = new Set([
   "forge-os.xyz",
@@ -85,6 +88,7 @@ export function Popup() {
   const [session, setSession] = useState<UnlockedSession | null>(null);
   const [network, setNetwork] = useState("mainnet");
   const [balance, setBalance] = useState<number | null>(null);
+  const [krcPortfolioUsdTotal, setKrcPortfolioUsdTotal] = useState(0);
   const [usdPrice, setUsdPrice] = useState(0);
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState<Tab>("wallet");
@@ -96,6 +100,7 @@ export function Popup() {
   const [hidePortfolioBalances, setHidePortfolioBalancesState] = useState(false);
   const [pendingConnect, setPendingConnect] = useState<PendingConnectRequest | null>(null);
   const [pendingSign, setPendingSign] = useState<PendingSignRequest | null>(null);
+  const [pendingTx, setPendingTx] = useState<PendingTxRequest | null>(null);
   const [signingSiteRequest, setSigningSiteRequest] = useState(false);
   const [siteSignError, setSiteSignError] = useState<string | null>(null);
   const autoSignedRequestIds = useRef(new Set<string>());
@@ -103,9 +108,12 @@ export function Popup() {
   const networkRef = useRef("mainnet");
   const [lockedAddress, setLockedAddress] = useState<string | null>(null);
   const [dagScore, setDagScore] = useState<string | null>(null);
+  const [nodeSynced, setNodeSynced] = useState<boolean | null>(null);
+  const [nodeUtxoIndexed, setNodeUtxoIndexed] = useState<boolean | null>(null);
   const [balanceUpdatedAt, setBalanceUpdatedAt] = useState<number | null>(null);
   const [priceUpdatedAt, setPriceUpdatedAt] = useState<number | null>(null);
   const [dagUpdatedAt, setDagUpdatedAt] = useState<number | null>(null);
+  const [nodeStatusUpdatedAt, setNodeStatusUpdatedAt] = useState<number | null>(null);
   const [feedStatusMessage, setFeedStatusMessage] = useState<string | null>(null);
 
   const NETWORKS = ["mainnet", "testnet-10", "testnet-11", "testnet-12"] as const;
@@ -118,6 +126,7 @@ export function Popup() {
   const BALANCE_FEED_STALE_MS = 45_000;
   const PRICE_FEED_STALE_MS = 45_000;
   const DAG_FEED_STALE_MS = 60_000;
+  const NODE_STATUS_STALE_MS = 90_000;
 
   useEffect(() => {
     networkRef.current = network;
@@ -206,13 +215,19 @@ export function Popup() {
   const readPendingApprovals = useCallback(() => {
     const sessionStore = (chrome.storage as any)?.session;
     if (!sessionStore?.get) return;
-    sessionStore.get([PENDING_CONNECT_KEY, PENDING_SIGN_KEY]).then((result: any) => {
+    sessionStore.get([PENDING_CONNECT_KEY, PENDING_SIGN_KEY, PENDING_TX_KEY]).then((result: any) => {
       const pendingConnectReq = result?.[PENDING_CONNECT_KEY];
       const pendingSignReq = result?.[PENDING_SIGN_KEY];
+      const pendingTxReq = result?.[PENDING_TX_KEY];
       setPendingConnect(pendingConnectReq?.requestId ? pendingConnectReq : null);
       setPendingSign(
         pendingSignReq?.requestId && typeof pendingSignReq?.message === "string"
           ? pendingSignReq
+          : null,
+      );
+      setPendingTx(
+        pendingTxReq?.requestId && typeof pendingTxReq?.to === "string" && pendingTxReq?.amountKas > 0
+          ? pendingTxReq
           : null,
       );
     }).catch(() => {});
@@ -281,10 +296,13 @@ export function Popup() {
       if ((msg as { type?: string })?.type === "AUTOLOCK_FIRED") {
         handleLock();
       }
+      if ((msg as { type?: string })?.type === "FORGEOS_TX_PENDING") {
+        readPendingApprovals();
+      }
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, []);
+  }, [readPendingApprovals]);
 
   // ── Session TTL check + auto-extend on confirmed active session ──────────────
   useEffect(() => {
@@ -301,15 +319,28 @@ export function Popup() {
   useEffect(() => {
     if (screen.type !== "unlocked") return;
     const poll = async () => {
-      const info = await fetchDagInfo(network);
-      if (info?.virtualDaaScore) {
-        setDagScore(info.virtualDaaScore);
+      // Use lightweight blue-score + node-status endpoints instead of full /info/blockdag.
+      const [scoreResult, nodeStatusResult] = await Promise.allSettled([
+        fetchBlueScore(network),
+        fetchNodeStatus(network),
+      ]);
+
+      if (scoreResult.status === "fulfilled" && scoreResult.value != null) {
+        setDagScore(String(scoreResult.value));
         setDagUpdatedAt(Date.now());
-        setFeedStatusMessage((prev) => (
-          prev?.startsWith("Live BlockDAG feed") ? null : prev
-        ));
+        setFeedStatusMessage((prev) => (prev?.startsWith("Live BlockDAG feed") ? null : prev));
       } else {
         setFeedStatusMessage("Live BlockDAG feed unavailable — retrying…");
+      }
+
+      if (nodeStatusResult.status === "fulfilled" && nodeStatusResult.value) {
+        setNodeSynced(typeof nodeStatusResult.value.isSynced === "boolean" ? nodeStatusResult.value.isSynced : null);
+        setNodeUtxoIndexed(typeof nodeStatusResult.value.isUtxoIndexed === "boolean" ? nodeStatusResult.value.isUtxoIndexed : null);
+        setNodeStatusUpdatedAt(Date.now());
+      } else {
+        setNodeSynced(null);
+        setNodeUtxoIndexed(null);
+        setNodeStatusUpdatedAt(null);
       }
     };
     poll();
@@ -357,9 +388,12 @@ export function Popup() {
     setNetwork(normalized);
     setBalance(null);
     setDagScore(null);
+    setNodeSynced(null);
+    setNodeUtxoIndexed(null);
     setBalanceUpdatedAt(null);
     setPriceUpdatedAt(null);
     setDagUpdatedAt(null);
+    setNodeStatusUpdatedAt(null);
     setFeedStatusMessage(null);
     if (session?.address) {
       fetchBalances(session.address, normalized);
@@ -448,9 +482,12 @@ export function Popup() {
     setBalance(null);
     setUsdPrice(0);
     setDagScore(null);
+    setNodeSynced(null);
+    setNodeUtxoIndexed(null);
     setBalanceUpdatedAt(null);
     setPriceUpdatedAt(null);
     setDagUpdatedAt(null);
+    setNodeStatusUpdatedAt(null);
     setFeedStatusMessage(null);
     setScreen({ type: "locked" });
   };
@@ -462,9 +499,12 @@ export function Popup() {
     setBalance(null);
     setUsdPrice(0);
     setDagScore(null);
+    setNodeSynced(null);
+    setNodeUtxoIndexed(null);
     setBalanceUpdatedAt(null);
     setPriceUpdatedAt(null);
     setDagUpdatedAt(null);
+    setNodeStatusUpdatedAt(null);
     setFeedStatusMessage(null);
     setScreen({ type: "first_run" });
   };
@@ -609,6 +649,51 @@ export function Popup() {
     void handleApproveSiteSign();
   }, [screen.type, pendingSign, session?.mnemonic, signingSiteRequest, isAutoSignEligibleRequest]);
 
+  // ── Agent send-tx: auto-approve (silent) or show approval screen ────────────
+  const handleSendTxApprove = async () => {
+    if (!pendingTx || !session?.address) return;
+    const txResult = await executeKaspaIntent(
+      {
+        fromAddress: session.address,
+        network,
+        recipients: [{ address: pendingTx.to, amountKas: pendingTx.amountKas }],
+        agentJobId: pendingTx.agentId,
+      },
+      { awaitConfirmation: false },
+    );
+    chrome.runtime.sendMessage({
+      type: "FORGEOS_SEND_TX_APPROVE",
+      requestId: pendingTx.requestId,
+      tabId: pendingTx.tabId,
+      txid: txResult.txId || "",
+      amountKas: pendingTx.amountKas,
+      agentId: pendingTx.agentId,
+    }).catch(() => {});
+    setPendingTx(null);
+    window.close();
+  };
+
+  const handleSendTxReject = () => {
+    if (!pendingTx) return;
+    chrome.runtime.sendMessage({
+      type: "FORGEOS_SEND_TX_REJECT",
+      requestId: pendingTx.requestId,
+      tabId: pendingTx.tabId,
+      error: "Transaction rejected by user",
+    }).catch(() => {});
+    setPendingTx(null);
+    window.close();
+  };
+
+  // Auto-approve: silent sign when session active + amount within threshold
+  useEffect(() => {
+    if (screen.type !== "unlocked" || !pendingTx || !session?.mnemonic) return;
+    const { amountKas, autoApproveKas } = pendingTx;
+    if (!(autoApproveKas > 0) || !(amountKas <= autoApproveKas)) return;
+    void handleSendTxApprove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen.type, pendingTx?.requestId, session?.mnemonic]);
+
   // ── Screen renders ────────────────────────────────────────────────────────────
   if (screen.type === "loading") {
     return (
@@ -671,6 +756,19 @@ export function Popup() {
     );
   }
 
+  // ── Pending send-tx approval (agent transaction) ────────────────────────────
+  if (pendingTx && activeAddress && session?.mnemonic && !(pendingTx.autoApproveKas > 0 && pendingTx.amountKas <= pendingTx.autoApproveKas)) {
+    return (
+      <SendTxApprovalScreen
+        request={pendingTx}
+        fromAddress={activeAddress}
+        kasUsdPrice={usdPrice}
+        onApprove={handleSendTxApprove}
+        onReject={handleSendTxReject}
+      />
+    );
+  }
+
   // ── Pending connect approval (MetaMask-style) ────────────────────────────────
   if (pendingConnect && activeAddress) {
     return (
@@ -701,7 +799,10 @@ export function Popup() {
   // ── UNLOCKED — main popup UI ─────────────────────────────────────────────────
   const address = activeAddress;
   const displayCurrency: DisplayCurrency = "USD";
-  const portfolioUsdValue = balance !== null && usdPrice > 0 ? balance * usdPrice : null;
+  const kasUsdValue = balance !== null && usdPrice > 0 ? balance * usdPrice : 0;
+  const portfolioUsdValue = balance !== null && usdPrice > 0
+    ? kasUsdValue + krcPortfolioUsdTotal
+    : null;
   const portfolioDisplayValue =
     portfolioUsdValue !== null ? formatFiatFromUsd(portfolioUsdValue, displayCurrency) : "—";
   const maskedPortfolioDisplayValue = hidePortfolioBalances ? "••••••" : portfolioDisplayValue;
@@ -713,6 +814,22 @@ export function Popup() {
   const balanceLive = isFeedFresh(balanceUpdatedAt, BALANCE_FEED_STALE_MS);
   const priceLive = isFeedFresh(priceUpdatedAt, PRICE_FEED_STALE_MS);
   const dagLive = isFeedFresh(dagUpdatedAt, DAG_FEED_STALE_MS);
+  const nodeStatusLive = isFeedFresh(nodeStatusUpdatedAt, NODE_STATUS_STALE_MS);
+  const nodeSyncState = nodeStatusLive ? nodeSynced : null;
+  const nodeIndexState = nodeStatusLive ? nodeUtxoIndexed : null;
+  const nodeReady = nodeSyncState === true && nodeIndexState === true;
+  const nodeHealthLabel = nodeReady
+    ? "NODE READY"
+    : nodeSyncState === false
+      ? "NODE SYNCING"
+      : nodeIndexState === false
+        ? "NODE INDEXING"
+        : "NODE UNKNOWN";
+  const nodeHealthColor = nodeReady
+    ? C.ok
+    : nodeSyncState === false || nodeIndexState === false
+      ? C.warn
+      : C.dim;
   const allFeedsLive = balanceLive && priceLive && dagLive;
   const anyFeedLive = balanceLive || priceLive || dagLive;
   const feedLabel = allFeedsLive ? "LIVE FEED" : anyFeedLive ? "PARTIAL FEED" : "FEED OFFLINE";
@@ -780,6 +897,23 @@ export function Popup() {
               transition: "all 180ms ease",
             }}
           >{NETWORK_LABELS[network] ?? network.toUpperCase()}</button>
+
+          <span
+            title="Node sync/index status"
+            style={{
+              fontSize: 8,
+              color: nodeHealthColor,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              background: `${nodeHealthColor}18`,
+              border: `1px solid ${nodeHealthColor}3A`,
+              borderRadius: 999,
+              padding: "4px 8px",
+              ...mono,
+            }}
+          >
+            {nodeHealthLabel}
+          </span>
 
           {isManagedWallet && (
             <button
@@ -1064,6 +1198,7 @@ export function Popup() {
             onModeConsumed={() => setWalletMode(undefined)}
             onBalanceInvalidated={() => session?.address && fetchBalances(session.address, network)}
             hideBalances={hidePortfolioBalances}
+            onKrcPortfolioUpdate={setKrcPortfolioUsdTotal}
           />
         )}
         {tab === "swap" && <SwapTab />}
@@ -1099,6 +1234,9 @@ export function Popup() {
           <span style={{ fontSize: 8, color: C.muted, letterSpacing: "0.06em" }}>FORGE-OS</span>
           <span style={{ fontSize: 8, color: feedColor, letterSpacing: "0.05em", fontWeight: 700 }}>
             · {feedLabel}
+          </span>
+          <span style={{ fontSize: 8, color: nodeHealthColor, letterSpacing: "0.05em", fontWeight: 700 }}>
+            · {nodeHealthLabel}
           </span>
           {dagScore && (
             <span style={{ fontSize: 8, color: C.dim, letterSpacing: "0.04em" }}>

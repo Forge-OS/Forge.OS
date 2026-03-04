@@ -144,7 +144,7 @@ export function AuthenticatedMobileTopbar({
           const isActive = String(activeAgent?.agentId || "") === String(row?.agentId || "");
           return (
             <button
-              key={String(row?.agentId || row?.name || Math.random())}
+              key={String(row?.agentId || row?.name || `agent-idx-${agents.indexOf(row)}`)}
               onClick={() => onSelectAgent(String(row?.agentId || ""))}
               style={{
                 background: isActive && view === "dashboard" ? C.s2 : "none",

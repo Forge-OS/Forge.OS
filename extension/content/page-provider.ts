@@ -80,6 +80,22 @@ function createProvider() {
       return bridgeRequest("FORGEOS_SIGN", { message });
     },
 
+    /**
+     * Send a transaction through the Forge-OS vault bridge.
+     * If the vault session is active and amountKas <= autoApproveKas, the
+     * extension signs silently with a desktop notification and no popup shown.
+     * Otherwise the approval popup is opened for the user to confirm.
+     */
+    async sendTransaction(params: {
+      to: string;
+      amountKas: number;
+      purpose?: string;
+      agentId?: string;
+      autoApproveKas?: number;
+    }): Promise<string> {
+      return bridgeRequest("FORGEOS_SEND_TX", params, 120_000);
+    },
+
     /** Request the extension popup to open (MetaMask-style). */
     openExtension(): void {
       window.postMessage({ [S]: true, type: "FORGEOS_OPEN_POPUP" }, "*");

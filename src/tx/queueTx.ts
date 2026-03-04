@@ -274,6 +274,13 @@ export function buildQueueTxItem(input: any): QueueTxItem {
 
 export async function broadcastQueueTx(wallet: any, txItem: QueueTxItem) {
   const tx = validateQueueTxItem(txItem);
+
+  // Paper trading: simulate broadcast without touching the chain
+  if (wallet?.paper === true || String(wallet?.execMode || "").toLowerCase() === "paper") {
+    await new Promise((r) => setTimeout(r, 400 + Math.random() * 200));
+    return `paper_${Date.now().toString(16)}_${crypto.randomUUID().replace(/-/g, "")}`;
+  }
+
   const outputs = Array.isArray(tx.outputs) ? tx.outputs : [];
   const hasMultiOutputs = outputs.length > 1;
   if (hasMultiOutputs && !WalletAdapter.supportsNativeMultiOutput(String(wallet?.provider || ""))) {
@@ -299,6 +306,17 @@ export async function broadcastQueueTx(wallet: any, txItem: QueueTxItem) {
   }
   if (wallet?.provider === "tangem" || wallet?.provider === "onekey") {
     return WalletAdapter.sendHardwareBridge(String(wallet?.provider || "hardware"), tx.to, tx.amount_kas, tx.purpose, outputs);
+  }
+  if (wallet?.provider === "forgeos") {
+    const provider = (window as any).forgeos;
+    if (!provider?.sendTransaction) throw new Error("Forge-OS extension not available. Install the Forge-OS browser extension.");
+    return provider.sendTransaction({
+      to: tx.to,
+      amountKas: tx.amount_kas,
+      purpose: tx.purpose,
+      agentId: tx.agentId ?? undefined,
+      autoApproveKas: wallet.autoApproveKas ?? 0,
+    });
   }
 
   // Demo mode fallback for UI flows/tests.

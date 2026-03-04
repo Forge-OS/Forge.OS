@@ -5,7 +5,7 @@ import { sanitizeAgentsSnapshot } from "../shared/agentSync";
 import { fetchBalance } from "../network/kaspaClient";
 import { loadPendingTxs, updatePendingTx } from "../tx/store";
 import { recoverPendingSwapSettlements } from "../swap/swap";
-import { getConnectedSites, NETWORK_STORAGE_KEY } from "../shared/storage";
+import { getConnectedSites, getDesktopNotificationsEnabled, NETWORK_STORAGE_KEY } from "../shared/storage";
 import { UI_PATCH_PORT_NAME, type UiPatch, type UiPatchEnvelope } from "../shared/messages";
 import {
   countOriginRequests,
@@ -42,6 +42,21 @@ const BALANCE_ALARM = "forgeos-balance-poll";
 const AUTOLOCK_ALARM = "forgeos-autolock";
 const PENDING_SWEEP_ALARM = "forgeos-pending-sweep";
 const KRC_PREFETCH_ALARM = "forgeos-krc-prefetch";
+
+// ── Desktop push notifications ────────────────────────────────────────────────
+const LOW_BALANCE_THRESHOLD_KAS = 10; // fire once when balance drops below this
+let _lastNotifiedLowBalance = false;  // in-memory guard so we don't spam every minute
+
+async function notify(title: string, message: string, id = `forgeos-${Date.now()}`): Promise<void> {
+  const enabled = await getDesktopNotificationsEnabled().catch(() => false);
+  if (!enabled) return;
+  chrome.notifications.create(id, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icons/icon48.png"),
+    title,
+    message,
+  }).catch(() => {});
+}
 
 // Pending site-request queue hardening
 const ENV = (import.meta as any)?.env ?? {};
@@ -223,6 +238,17 @@ async function updateBadge(): Promise<void> {
       : kas.toFixed(0);
     chrome.action.setBadgeText({ text: label });
     chrome.action.setBadgeBackgroundColor({ color: "#39DDB6" });
+
+    // Low-balance notification: fire once when balance first drops below threshold
+    const isLow = kas < LOW_BALANCE_THRESHOLD_KAS;
+    if (isLow && !_lastNotifiedLowBalance) {
+      void notify(
+        "Forge-OS · Low Balance",
+        `Wallet balance is ${kas.toFixed(2)} KAS — below ${LOW_BALANCE_THRESHOLD_KAS} KAS threshold.`,
+        "forgeos-low-balance",
+      );
+    }
+    _lastNotifiedLowBalance = isLow;
   } catch { /* non-fatal — badge stays as-is */ }
 }
 
@@ -247,6 +273,22 @@ let pendingMutationChain: Promise<void> = Promise.resolve();
 
 function queuePendingMutation(op: () => Promise<void>): void {
   pendingMutationChain = pendingMutationChain.then(op).catch(() => {});
+}
+
+// Session key for a single pending send-tx request (one at a time)
+const PENDING_TX_SESSION_KEY = "forgeos.pending.tx.v1";
+
+function sendTxResult(
+  tabId: number,
+  requestId: string,
+  payload: { txid?: string; error?: string },
+): void {
+  chrome.tabs.sendMessage(tabId, {
+    type: "FORGEOS_SEND_TX_RESULT",
+    requestId,
+    ...(payload.txid ? { result: payload.txid } : {}),
+    ...(payload.error ? { error: payload.error } : {}),
+  }).catch(() => {});
 }
 
 function sendConnectResult(
@@ -493,6 +535,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
       );
       for (const tx of stale) {
         await updatePendingTx({ ...tx, state: "FAILED", error: "CONFIRM_TIMEOUT: no confirmation in 15 minutes" }).catch(() => {});
+        void notify(
+          "Forge-OS · TX Timeout",
+          `Transaction timed out after 15 min: ${tx.txId ? tx.txId.slice(0, 12) + "…" : "unknown"}`,
+          `forgeos-tx-timeout-${tx.id}`,
+        );
       }
 
       // B5: Resume any in-flight swap settlements
@@ -791,6 +838,66 @@ chrome.runtime.onMessage.addListener((message: any, sender: any) => {
       await updatePendingBadge(resolved.state);
       await openPopupForRemainingPending(resolved.state);
     });
+    return;
+  }
+
+  // ── Agent send-tx request: store + open popup (or auto-sign in popup) ───
+  if (message?.type === "FORGEOS_OPEN_FOR_SEND_TX") {
+    const tabId = sender?.tab?.id as number | undefined;
+    if (!tabId) return;
+    const requestId = typeof message.requestId === "string" ? message.requestId : "";
+    const to = typeof message.to === "string" ? message.to : "";
+    const amountKas = typeof message.amountKas === "number" ? message.amountKas : 0;
+    if (!requestId || !to || !(amountKas > 0)) {
+      sendTxResult(tabId, requestId, { error: "Invalid send-tx request" });
+      return;
+    }
+
+    const pending = {
+      requestId,
+      tabId,
+      to,
+      amountKas,
+      purpose: typeof message.purpose === "string" ? message.purpose.slice(0, 140) : "Agent transaction",
+      agentId: typeof message.agentId === "string" ? message.agentId : undefined,
+      autoApproveKas: typeof message.autoApproveKas === "number" ? message.autoApproveKas : 0,
+      createdAt: Date.now(),
+    };
+
+    chrome.storage.session.set({ [PENDING_TX_SESSION_KEY]: pending }).then(() => {
+      // Try to notify an already-open popup first; fall back to opening popup.
+      chrome.runtime.sendMessage({ type: "FORGEOS_TX_PENDING" }).catch(() => {
+        openExtensionPopup().catch(() => {
+          sendTxResult(tabId, requestId, { error: "Could not open Forge-OS popup. Click the extension icon." });
+        });
+      });
+    }).catch(() => {
+      sendTxResult(tabId, requestId, { error: "Internal storage error" });
+    });
+    return;
+  }
+
+  // ── Popup resolved the send-tx (signed → returns txid) ──────────────────
+  if (message?.type === "FORGEOS_SEND_TX_APPROVE") {
+    const requestId = typeof message.requestId === "string" ? message.requestId : "";
+    const tabId = typeof message.tabId === "number" ? message.tabId : 0;
+    const txid = typeof message.txid === "string" ? message.txid : "";
+    chrome.storage.session.remove(PENDING_TX_SESSION_KEY).catch(() => {});
+    if (tabId && requestId && txid) {
+      sendTxResult(tabId, requestId, { txid });
+      void notify("Forge-OS · Agent TX Sent", `${message.amountKas || ""} KAS sent by agent${message.agentId ? ` (${String(message.agentId).slice(0, 20)})` : ""}`, `forgeos-autotx-${requestId}`);
+    }
+    return;
+  }
+
+  // ── Popup rejected the send-tx ───────────────────────────────────────────
+  if (message?.type === "FORGEOS_SEND_TX_REJECT") {
+    const requestId = typeof message.requestId === "string" ? message.requestId : "";
+    const tabId = typeof message.tabId === "number" ? message.tabId : 0;
+    chrome.storage.session.remove(PENDING_TX_SESSION_KEY).catch(() => {});
+    if (tabId && requestId) {
+      sendTxResult(tabId, requestId, { error: typeof message.error === "string" ? message.error : "Transaction rejected" });
+    }
     return;
   }
 });

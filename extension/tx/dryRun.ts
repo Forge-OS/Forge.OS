@@ -31,10 +31,18 @@ export async function dryRunValidate(tx: PendingTx): Promise<DryRunResult> {
   // ── CHECK 1: UTXO availability ────────────────────────────────────────────
   let utxoSet;
   try {
-    const covenantInputs = tx.inputs.filter((input) => (input.scriptClass ?? "standard") === "covenant");
-    if (covenantInputs.length > 0) {
+    // vprog_covenant UTXOs require covenant-aware spend tx (KIP-9 path, post-upgrade).
+    // Legacy "covenant" UTXOs (escrow, OP_RETURN) are always unsupported in standard send.
+    const vProgInputs = tx.inputs.filter((input) => (input.scriptClass ?? "standard") === "vprog_covenant");
+    const legacyCovenantInputs = tx.inputs.filter((input) => (input.scriptClass ?? "standard") === "covenant");
+    if (vProgInputs.length > 0) {
       errors.push(
-        `COVENANT_INPUT_UNSUPPORTED: ${covenantInputs.length} covenant UTXO(s) require covenant-aware spend logic`,
+        `VPROG_COVENANT_INPUT: ${vProgInputs.length} vProg covenant UTXO(s) detected — use atomic swap claim path, not standard send`,
+      );
+    }
+    if (legacyCovenantInputs.length > 0) {
+      errors.push(
+        `COVENANT_INPUT_UNSUPPORTED: ${legacyCovenantInputs.length} non-standard UTXO(s) require covenant-aware spend logic`,
       );
     }
 
@@ -102,6 +110,24 @@ export async function dryRunValidate(tx: PendingTx): Promise<DryRunResult> {
         `NETWORK_MISMATCH: change address "${tx.changeOutput.address}" does not match network "${tx.network}"`,
       );
     }
+  }
+
+  // ── CHECK 6: KIP-9 dust threshold ────────────────────────────────────────
+  // Storage mass formula requires each output to carry at least 20,000 sompi
+  // (the minimum that keeps storage_mass finite). Outputs below this threshold
+  // are rejected by rusty-kaspa nodes running the Crescendo ruleset.
+  const KIP9_MIN_OUTPUT_SOMPI = 20_000n;
+  for (const output of tx.outputs) {
+    if (output.amount < KIP9_MIN_OUTPUT_SOMPI) {
+      errors.push(
+        `DUST_OUTPUT: output to "${output.address}" is ${output.amount.toString()} sompi — below KIP-9 minimum of ${KIP9_MIN_OUTPUT_SOMPI.toString()} sompi`,
+      );
+    }
+  }
+  if (tx.changeOutput && tx.changeOutput.amount > 0n && tx.changeOutput.amount < KIP9_MIN_OUTPUT_SOMPI) {
+    errors.push(
+      `DUST_CHANGE: change output is ${tx.changeOutput.amount.toString()} sompi — below KIP-9 minimum of ${KIP9_MIN_OUTPUT_SOMPI.toString()} sompi`,
+    );
   }
 
   return {

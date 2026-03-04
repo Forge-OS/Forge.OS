@@ -1,6 +1,6 @@
 import type { PendingTx } from "./types";
 import {
-  fetchTransaction,
+  fetchTransactionAcceptance,
   getKaspaBackendSelection,
   type KaspaBackendSelectionSnapshot,
 } from "../network/kaspaClient";
@@ -30,13 +30,16 @@ export async function probeKaspaReceipt(
 ): Promise<KaspaReceiptProbe> {
   const backend = await getKaspaBackendSelection(network);
   try {
-    const tx = await fetchTransaction(txId, network);
+    // Use batch acceptance endpoint (rusty-kaspa v1.1.0+) — single POST is more efficient
+    // than a GET /transactions/{id} which returns full transaction data we don't need here.
+    const results = await fetchTransactionAcceptance([txId], network);
+    const entry = results.find((r) => r.transactionId === txId) ?? results[0] ?? null;
     return {
       txId,
       network,
       checkedAt: Date.now(),
-      confirmed: Boolean(tx?.acceptingBlockHash),
-      acceptingBlockHash: tx?.acceptingBlockHash ?? null,
+      confirmed: Boolean(entry?.isAccepted),
+      acceptingBlockHash: entry?.acceptingBlockHash ?? null,
       backend,
       error: null,
     };

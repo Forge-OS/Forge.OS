@@ -109,4 +109,62 @@ describe("krc portfolio pipeline config and safety", () => {
     expect(candles[0].volumeUsd).toBe(0);
     expect(candles[1].volumeUsd).toBe(0);
   });
+
+  it("parses nested KRC721 holdings and infers token count via tokenId markers", async () => {
+    const { __parseKrcHoldingsForTests } = await import("../../extension/portfolio/krcPortfolio");
+    const collectionAddress = "krc721:coolcatscollectionaddress0001";
+
+    const parsed = __parseKrcHoldingsForTests(
+      {
+        result: {
+          data: {
+            items: [
+              { collectionAddress, tokenId: "1" },
+              { collectionAddress, tokenId: "2" },
+              { collectionAddress, tokenId: "3" },
+            ],
+          },
+        },
+      },
+      "krc721",
+    );
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].standard).toBe("krc721");
+    expect(parsed[0].address).toBe(collectionAddress);
+    expect(parsed[0].balanceRaw).toBe("3");
+  });
+
+  it("does not infer phantom KRC721 holdings from metadata-only objects", async () => {
+    const { __parseKrcHoldingsForTests } = await import("../../extension/portfolio/krcPortfolio");
+    const collectionAddress = "krc721:metadatacollectionaddress0002";
+
+    const parsed = __parseKrcHoldingsForTests(
+      {
+        data: {
+          items: [
+            { address: collectionAddress, name: "Collection Name", symbol: "META" },
+          ],
+        },
+      },
+      "krc721",
+    );
+
+    expect(parsed).toHaveLength(0);
+  });
+
+  it("reports support diagnostics for endpoint configuration", async () => {
+    vi.stubEnv("VITE_KRC_INDEXER_ENDPOINTS", "https://idx-a.example,https://idx-b.example");
+    vi.stubEnv("VITE_KRC_MARKET_ENDPOINTS", "https://market.example");
+    vi.stubEnv("VITE_KRC_CANDLES_ENDPOINTS", "https://candles.example");
+
+    const { getKrcPortfolioDiagnostics } = await import("../../extension/portfolio/krcPortfolio");
+    const diagnostics = getKrcPortfolioDiagnostics("mainnet");
+
+    expect(diagnostics.supportedStandards).toEqual(["krc20", "krc721"]);
+    expect(diagnostics.indexerEndpoints).toBe(2);
+    expect(diagnostics.marketEndpoints).toBeGreaterThanOrEqual(1);
+    expect(diagnostics.candlesEndpoints).toBeGreaterThanOrEqual(1);
+    expect(diagnostics.holdingsDiscoveryReady).toBe(true);
+  });
 });

@@ -7,6 +7,7 @@ export interface AgentViewModel {
   name: string;
   strategy: string;
   risk: string;
+  walletAddress: string | null;
   capitalLimitKas: string | null;
   execMode: string;
   status: string;
@@ -54,6 +55,16 @@ function networkFromAddress(value: unknown): AgentNetworkId | null {
   if (normalized.startsWith("kaspa:")) return "mainnet";
   if (normalized.startsWith("kaspatest:")) return "testnet";
   return null;
+}
+
+function pickKaspaAddress(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const normalized = value.trim();
+    const lower = normalized.toLowerCase();
+    if (lower.startsWith("kaspa:") || lower.startsWith("kaspatest:")) return normalized;
+  }
+  return "";
 }
 
 export function normalizeNetworkId(raw: unknown, fallback: unknown = "unknown"): AgentNetworkId {
@@ -119,6 +130,11 @@ export function mapAgentView(agent: unknown, currentNetwork: string): AgentViewM
   const name = pickString(raw.name, raw.agentName) || "Agent";
   const strategy = pickString(raw.strategyLabel, raw.strategy, raw.strategyTemplate) || "—";
   const risk = pickString(raw.risk) || "—";
+  const walletAddress = pickKaspaAddress(
+    wallet.address,
+    raw.address,
+    raw.walletAddress,
+  ) || null;
   const capitalLimitRaw = pickString(raw.capitalLimit, raw.capital_limit);
   const capitalLimitKas = capitalLimitRaw || null;
   const execMode = pickString(raw.execMode, raw.mode) || "manual";
@@ -142,6 +158,7 @@ export function mapAgentView(agent: unknown, currentNetwork: string): AgentViewM
     name,
     strategy,
     risk,
+    walletAddress,
     capitalLimitKas,
     execMode,
     status,

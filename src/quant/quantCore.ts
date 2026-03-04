@@ -42,6 +42,18 @@ export type QuantContext = {
     daaScoresSinceLastMove: number;
     expectedBps: number;
   };
+  /** Optional extra context forwarded verbatim to the AI overlay prompt. */
+  extra?: {
+    krcPortfolioTokens?: Array<{ ticker: string; balanceKas?: number; balanceUsd?: number }>;
+    utxoCount?: number;
+    utxoTotalKas?: number;
+    recentDecisions?: Array<{ ts: number; action: string; confidence_score: number; rationale?: string }>;
+  };
+  /**
+   * Number of consecutive cycles in which the current regime has held without change.
+   * Used to dampen Kelly sizing during fresh regime transitions (< 3 cycles = transitioning).
+   */
+  regimeHoldCycles?: number;
 };
 
 export type QuantMetrics = {
@@ -77,6 +89,7 @@ export type QuantMetrics = {
   adaptive_kelly_cap?: number;
   adaptive_risk_ceiling?: number;
   adaptive_exposure_cap_pct?: number;
+  regime_hold_cycles?: number;
   ai_overlay_applied?: boolean;
   ai_action_raw?: string;
   ai_confidence_raw?: number;
@@ -442,6 +455,53 @@ function buildRationale(params: {
 export function buildQuantCoreDecision(agent: any, kasData: any, context?: QuantContext): QuantDecisionDraft {
   const snapshots = normalizeSnapshots(kasData, context);
   const profile = riskProfileFor(agent);
+
+  // WARM-UP GATE: require 32+ snapshots before issuing any non-HOLD recommendation.
+  // With fewer samples the quant model's volatility/momentum estimates are unreliable.
+  if (snapshots.length < 32) {
+    return {
+      action: "HOLD",
+      confidence_score: 0,
+      risk_score: 0.5,
+      kelly_fraction: 0,
+      capital_allocation_kas: 0,
+      capital_allocation_pct: 0,
+      expected_value_pct: 0,
+      stop_loss_pct: 0,
+      take_profit_pct: 0,
+      monte_carlo_win_pct: 0,
+      volatility_estimate: "MEDIUM",
+      liquidity_impact: "MINIMAL",
+      strategy_phase: "HOLDING",
+      rationale: `Warm-up phase: ${snapshots.length}/32 snapshots collected. Holding until sufficient price history is available for reliable quantitative analysis.`,
+      risk_factors: ["Insufficient sample history — quant model warming up"],
+      next_review_trigger: `Continue accumulating price history (${snapshots.length}/32 samples required).`,
+      decision_source: "quant-core",
+      decision_source_detail: `warmup:${snapshots.length}_of_32`,
+      quant_metrics: {
+        regime: "NEUTRAL",
+        sample_count: snapshots.length,
+        data_quality_score: round(snapshots.length / 32, 4),
+        price_usd: 0,
+        price_return_1_pct: 0,
+        price_return_5_pct: 0,
+        price_return_20_pct: 0,
+        momentum_z: 0,
+        ewma_volatility: 0,
+        daa_velocity: 0,
+        daa_slope: 0,
+        drawdown_pct: 0,
+        win_probability_model: 0,
+        edge_score: 0,
+        kelly_raw: 0,
+        kelly_cap: 0,
+        risk_ceiling: 0,
+        risk_profile: profile.label,
+        exposure_cap_pct: 0,
+      },
+    };
+  }
+
   const capitalLimit = Math.max(0, toFinite(agent?.capitalLimit, 0));
   const latestSnapshot = snapshots[snapshots.length - 1];
   const now = toFinite(context?.now, Date.now());
@@ -496,7 +556,76 @@ export function buildQuantCoreDecision(agent: any, kasData: any, context?: Quant
     mtf.weightedScore,
     mtf.alignment,
   );
+
+  // CIRCUIT BREAKER: hard stop when recent drawdown exceeds agent-configured or absolute limit.
+  // Prevents the engine from issuing any allocation during severe capital impairment.
+  const maxDdPct = Math.max(0.05, Math.min(0.5, toFinite((agent as any)?.maxDrawdownPct, 0.20)));
+  if (drawdownPct > maxDdPct) {
+    return {
+      action: "HOLD",
+      confidence_score: 0.1,
+      risk_score: 0.92,
+      kelly_fraction: 0,
+      capital_allocation_kas: 0,
+      capital_allocation_pct: 0,
+      expected_value_pct: 0,
+      stop_loss_pct: round(drawdownPct * 100, 2),
+      take_profit_pct: 0,
+      monte_carlo_win_pct: 0,
+      volatility_estimate: volBucket,
+      liquidity_impact: "MINIMAL",
+      strategy_phase: "HOLDING",
+      rationale: `Circuit breaker: ${(drawdownPct * 100).toFixed(1)}% drawdown exceeds the ${(maxDdPct * 100).toFixed(1)}% limit — all new allocations suspended until recovery.`,
+      risk_factors: [
+        `Drawdown circuit breaker triggered (${(drawdownPct * 100).toFixed(1)}% > ${(maxDdPct * 100).toFixed(1)}%)`,
+        "All capital allocation suspended until drawdown recovers",
+      ],
+      next_review_trigger: `Monitor for drawdown recovery below ${(maxDdPct * 100).toFixed(1)}%.`,
+      decision_source: "quant-core",
+      decision_source_detail: `circuit_breaker:dd_${(drawdownPct * 100).toFixed(1)}pct`,
+      quant_metrics: {
+        regime,
+        sample_count: snapshots.length,
+        data_quality_score: round(dataQualityScore, 4),
+        price_usd: round(toFinite(last(priceSeries), toFinite(kasData?.priceUsd, 0)), 6),
+        price_return_1_pct: round(priceReturn1 * 100, 4),
+        price_return_5_pct: round(priceReturn5 * 100, 4),
+        price_return_20_pct: round(priceReturn20 * 100, 4),
+        momentum_z: round(momentumZ, 4),
+        ewma_volatility: round(ewmaVol, 6),
+        daa_velocity: round(daaVelocity, 4),
+        daa_slope: round(daaSlope, 4),
+        drawdown_pct: round(drawdownPct * 100, 4),
+        win_probability_model: 0,
+        edge_score: 0,
+        kelly_raw: 0,
+        kelly_cap: 0,
+        risk_ceiling: round(profile.riskCeiling, 4),
+        risk_profile: profile.label,
+        exposure_cap_pct: round(profile.exposureCapPct * 100, 4),
+      },
+    };
+  }
+
   const strategyAdaptation = resolveStrategyAdaptation(agent, regime, volBucket, mtf);
+
+  // REGIME HOLD (item 5): dampen Kelly by 25% when regime is transitioning (< 3 stable cycles).
+  // Prevents over-sizing on fresh regime signals that may be noise.
+  const regimeHoldCycles = Math.max(0, Math.round(toFinite(context?.regimeHoldCycles, 0)));
+  const regimeTransitioning = regimeHoldCycles < 3;
+  if (regimeTransitioning) {
+    strategyAdaptation.kellyCapMultiplier = clamp(strategyAdaptation.kellyCapMultiplier * 0.75, 0.45, 1.22);
+  }
+
+  // BEAR TRAP (item 6): short-term bullish signal against bearish macro trend = divergence risk.
+  // Deflate action bias to prevent chasing a likely false breakout.
+  const score1h = toFinite(mtf.signals["1h"]?.score, 0);
+  const score24h = toFinite(mtf.signals["24h"]?.score, 0);
+  const bearTrapDetected = score1h > 0.3 && score24h < -0.2;
+  if (bearTrapDetected) {
+    strategyAdaptation.actionBias = clamp(strategyAdaptation.actionBias * 0.5, -0.2, 0.16);
+  }
+
   const effectiveRiskCeiling = clamp(profile.riskCeiling * strategyAdaptation.riskCeilingMultiplier, 0.18, 0.94);
   const effectiveExposureCapPct = clamp(profile.exposureCapPct * strategyAdaptation.exposureCapMultiplier, 0.04, 0.55);
 
@@ -535,8 +664,11 @@ export function buildQuantCoreDecision(agent: any, kasData: any, context?: Quant
 
   const b = Math.max(0.01, rewardRiskRatio);
   const kellyRaw = Math.max(0, winProbability - (1 - winProbability) / b);
+  // DRAWDOWN-AWARE KELLY (item 3): linearly reduce Kelly cap as drawdown exceeds 8%.
+  // At 23%+ drawdown the cap is cut by 60%, protecting capital during impairment phases.
+  const ddPenalty = clamp(Math.max(0, (drawdownPct - 0.08) / 0.15), 0, 1) * 0.6;
   const kellyCap = clamp(
-    profile.kellyCap * strategyAdaptation.kellyCapMultiplier * (0.55 + 0.45 * dataQualityScore),
+    profile.kellyCap * strategyAdaptation.kellyCapMultiplier * (0.55 + 0.45 * dataQualityScore) * (1 - ddPenalty),
     0.015,
     Math.max(0.02, profile.kellyCap * 1.25)
   );
@@ -623,6 +755,12 @@ export function buildQuantCoreDecision(agent: any, kasData: any, context?: Quant
     mtfAlignment: mtf.alignment,
     strategyMode: strategyAdaptation.mode,
   });
+  if (bearTrapDetected && riskFactors.length < 6) {
+    riskFactors.push("Bear trap: short-term bullish vs bearish macro divergence");
+  }
+  if (regimeTransitioning && riskFactors.length < 6) {
+    riskFactors.push("Regime recently changed — transitional Kelly sizing applied");
+  }
 
   const rationale = buildRationale({
     action,
@@ -681,6 +819,7 @@ export function buildQuantCoreDecision(agent: any, kasData: any, context?: Quant
     adaptive_kelly_cap: round(kellyCap, 4),
     adaptive_risk_ceiling: round(effectiveRiskCeiling, 4),
     adaptive_exposure_cap_pct: round(effectiveExposureCapPct * 100, 4),
+    regime_hold_cycles: regimeHoldCycles,
   };
 
   return {

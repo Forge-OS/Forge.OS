@@ -22,6 +22,7 @@ const PREFETCH_MAX_ENTRIES = 6;
 const PREFETCH_STORAGE_KEY = "forgeos.krc.prefetch.v1";
 const REQUEST_TIMEOUT_MS = 3_500;
 const HOT_TOKEN_LIMIT = 24;
+const SUPPORTED_KRC_STANDARDS: KaspaTokenStandard[] = ["krc20", "krc721"];
 
 const endpointHealth = new Map<
   string,
@@ -220,7 +221,8 @@ function looksLikeTokenAddress(value: string): boolean {
   const raw = String(value || "").trim();
   if (!raw) return false;
   if (/^0x[a-fA-F0-9]{40}$/.test(raw)) return true;
-  return /^[a-zA-Z0-9:_-]{24,}$/.test(raw);
+  if (/^krc(?:20|721):[a-zA-Z0-9._:-]{3,}$/i.test(raw)) return true;
+  return /^[a-zA-Z0-9:_-]{16,}$/.test(raw);
 }
 
 function normalizeAddress(value: string): string {
@@ -254,22 +256,54 @@ function parseBalanceRaw(input: unknown, fallbackForNft = "1"): string | null {
 
 function extractObjects(raw: unknown): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
-  const root = asObject(raw);
-  if (!root) return out;
-  out.push(root);
-  for (const key of ["data", "result", "items", "tokens", "holdings", "balances", "collections"]) {
-    const value = root[key];
+  const visited = new Set<unknown>();
+  const queue: Array<{ value: unknown; depth: number }> = [{ value: raw, depth: 0 }];
+  const MAX_DEPTH = 5;
+  const MAX_VISITS = 600;
+  let visits = 0;
+
+  while (queue.length > 0 && visits < MAX_VISITS) {
+    const next = queue.shift();
+    if (!next) break;
+    const { value, depth } = next;
+    if (value == null || visited.has(value)) continue;
+    visited.add(value);
+    visits += 1;
+
     if (Array.isArray(value)) {
-      for (const item of value) {
-        const obj = asObject(item);
-        if (obj) out.push(obj);
-      }
-    } else {
-      const nested = asObject(value);
-      if (nested) out.push(nested);
+      if (depth >= MAX_DEPTH) continue;
+      for (const row of value) queue.push({ value: row, depth: depth + 1 });
+      continue;
+    }
+
+    const obj = asObject(value);
+    if (!obj) continue;
+    out.push(obj);
+    if (depth >= MAX_DEPTH) continue;
+    for (const nested of Object.values(obj)) {
+      queue.push({ value: nested, depth: depth + 1 });
     }
   }
+
   return out;
+}
+
+function hasNftIdentityMarker(candidate: Record<string, unknown>): boolean {
+  for (const key of [
+    "tokenId",
+    "token_id",
+    "nftId",
+    "itemId",
+    "serial",
+    "inscriptionId",
+    "inscription",
+    "assetTokenId",
+  ]) {
+    const value = candidate[key];
+    if (typeof value === "string" && value.trim()) return true;
+    if (typeof value === "number" && Number.isFinite(value)) return true;
+  }
+  return false;
 }
 
 function withTimeout(input: string): Promise<Response> {
@@ -359,15 +393,24 @@ function parseHoldings(raw: unknown, standard: KaspaTokenStandard): Array<{ addr
       "tokenAddress",
       "address",
       "contractAddress",
+      "contract_address",
       "contract",
       "id",
       "assetId",
       "collectionAddress",
+      "collection",
+      "token",
     ]);
     if (!looksLikeTokenAddress(address)) continue;
-    const resolvedStandard = String(candidate.standard ?? candidate.type ?? "").toLowerCase().includes("721")
+    const standardHint = String(candidate.standard ?? candidate.type ?? candidate.kind ?? candidate.assetType ?? "").toLowerCase();
+    const resolvedStandard = (
+      standardHint.includes("721")
+      || standardHint.includes("nft")
+      || String(address).toLowerCase().startsWith("krc721:")
+    )
       ? "krc721"
       : standard;
+    const nftFallbackBalance = resolvedStandard === "krc721" && hasNftIdentityMarker(candidate) ? "1" : null;
     const balanceRaw = parseBalanceRaw(
       candidate.balance
       ?? candidate.amount
@@ -375,7 +418,7 @@ function parseHoldings(raw: unknown, standard: KaspaTokenStandard): Array<{ addr
       ?? candidate.tokenBalance
       ?? candidate.rawBalance
       ?? candidate.count,
-      resolvedStandard === "krc721" ? "1" : null,
+      nftFallbackBalance,
     );
     if (!balanceRaw) continue;
     const key = `${resolvedStandard}|${normalizeAddress(address)}`;
@@ -453,47 +496,49 @@ function parseMarketSnapshot(raw: unknown, standard: KaspaTokenStandard, source:
 
 function parseChainStats(raw: unknown, source: string): KrcChainStatsSnapshot | null {
   const now = Date.now();
-  const candidate = extractObjects(raw)[0];
-  if (!candidate) return null;
-  const holders = pickNumber(candidate, ["holders", "holderCount"]);
-  const owners = pickNumber(candidate, ["owners", "ownerCount", "uniqueOwners"]);
-  const supplyStr = pickString(candidate, ["supply", "totalSupply", "circulatingSupply"]);
-  const txCount24h = pickNumber(candidate, ["txCount24h", "transactions24h", "tx24h"]);
-  const sales24h = pickNumber(candidate, ["sales24h", "salesCount24h", "trades24h"]);
-  const listedCount = pickNumber(candidate, ["listedCount", "listed", "listings", "activeListings"]);
-  const collectionItems = pickNumber(candidate, ["collectionItems", "items", "itemCount"]);
-  const volume24hUsd = pickNumber(candidate, ["volume24hUsd", "volumeUsd24h", "volume24h"]);
-  const floorPriceUsd = pickNumber(candidate, ["floorPriceUsd", "floorPrice"]);
-  const floorChange24hPct = pickNumber(candidate, ["floorChange24hPct", "floor24hChangePct", "floorChangePct24h", "floorChange24h"]);
-  const marketCapUsd = pickNumber(candidate, ["marketCapUsd", "marketCap", "fdvUsd", "fullyDilutedValueUsd"]);
-  if (
-    holders === null
-    && owners === null
-    && !supplyStr
-    && txCount24h === null
-    && sales24h === null
-    && listedCount === null
-    && collectionItems === null
-    && volume24hUsd === null
-    && floorPriceUsd === null
-    && floorChange24hPct === null
-    && marketCapUsd === null
-  ) return null;
-  return {
-    holders: Number.isFinite(holders) ? Number(holders) : null,
-    owners: Number.isFinite(owners) ? Number(owners) : null,
-    supply: supplyStr || null,
-    txCount24h: Number.isFinite(txCount24h) ? Number(txCount24h) : null,
-    sales24h: Number.isFinite(sales24h) ? Number(sales24h) : null,
-    listedCount: Number.isFinite(listedCount) ? Number(listedCount) : null,
-    collectionItems: Number.isFinite(collectionItems) ? Number(collectionItems) : null,
-    volume24hUsd: Number.isFinite(volume24hUsd) ? Number(volume24hUsd) : null,
-    floorPriceUsd: Number.isFinite(floorPriceUsd) ? Number(floorPriceUsd) : null,
-    floorChange24hPct: Number.isFinite(floorChange24hPct) ? Number(floorChange24hPct) : null,
-    marketCapUsd: Number.isFinite(marketCapUsd) ? Number(marketCapUsd) : null,
-    updatedAt: now,
-    source,
-  };
+  const candidates = extractObjects(raw);
+  for (const candidate of candidates) {
+    const holders = pickNumber(candidate, ["holders", "holderCount"]);
+    const owners = pickNumber(candidate, ["owners", "ownerCount", "uniqueOwners"]);
+    const supplyStr = pickString(candidate, ["supply", "totalSupply", "circulatingSupply"]);
+    const txCount24h = pickNumber(candidate, ["txCount24h", "transactions24h", "tx24h"]);
+    const sales24h = pickNumber(candidate, ["sales24h", "salesCount24h", "trades24h"]);
+    const listedCount = pickNumber(candidate, ["listedCount", "listed", "listings", "activeListings"]);
+    const collectionItems = pickNumber(candidate, ["collectionItems", "items", "itemCount"]);
+    const volume24hUsd = pickNumber(candidate, ["volume24hUsd", "volumeUsd24h", "volume24h"]);
+    const floorPriceUsd = pickNumber(candidate, ["floorPriceUsd", "floorPrice"]);
+    const floorChange24hPct = pickNumber(candidate, ["floorChange24hPct", "floor24hChangePct", "floorChangePct24h", "floorChange24h"]);
+    const marketCapUsd = pickNumber(candidate, ["marketCapUsd", "marketCap", "fdvUsd", "fullyDilutedValueUsd"]);
+    if (
+      holders === null
+      && owners === null
+      && !supplyStr
+      && txCount24h === null
+      && sales24h === null
+      && listedCount === null
+      && collectionItems === null
+      && volume24hUsd === null
+      && floorPriceUsd === null
+      && floorChange24hPct === null
+      && marketCapUsd === null
+    ) continue;
+    return {
+      holders: Number.isFinite(holders) ? Number(holders) : null,
+      owners: Number.isFinite(owners) ? Number(owners) : null,
+      supply: supplyStr || null,
+      txCount24h: Number.isFinite(txCount24h) ? Number(txCount24h) : null,
+      sales24h: Number.isFinite(sales24h) ? Number(sales24h) : null,
+      listedCount: Number.isFinite(listedCount) ? Number(listedCount) : null,
+      collectionItems: Number.isFinite(collectionItems) ? Number(collectionItems) : null,
+      volume24hUsd: Number.isFinite(volume24hUsd) ? Number(volume24hUsd) : null,
+      floorPriceUsd: Number.isFinite(floorPriceUsd) ? Number(floorPriceUsd) : null,
+      floorChange24hPct: Number.isFinite(floorChange24hPct) ? Number(floorChange24hPct) : null,
+      marketCapUsd: Number.isFinite(marketCapUsd) ? Number(marketCapUsd) : null,
+      updatedAt: now,
+      source,
+    };
+  }
+  return null;
 }
 
 function parseCandles(raw: unknown, standard: KaspaTokenStandard): KrcCandlePoint[] {
@@ -799,4 +844,30 @@ export async function __fetchKrcCandlesForTests(
   fallbackPrice: number | null,
 ): Promise<KrcCandlePoint[]> {
   return fetchCandles(address, standard, network, fallbackPrice);
+}
+
+export function __parseKrcHoldingsForTests(
+  raw: unknown,
+  standard: KaspaTokenStandard,
+): Array<{ address: string; standard: KaspaTokenStandard; balanceRaw: string }> {
+  return parseHoldings(raw, standard);
+}
+
+export function getKrcPortfolioDiagnostics(network: string): {
+  supportedStandards: KaspaTokenStandard[];
+  indexerEndpoints: number;
+  marketEndpoints: number;
+  candlesEndpoints: number;
+  holdingsDiscoveryReady: boolean;
+} {
+  const idx = indexerEndpoints(network);
+  const market = marketEndpoints(network);
+  const candles = candlesEndpoints(network);
+  return {
+    supportedStandards: [...SUPPORTED_KRC_STANDARDS],
+    indexerEndpoints: idx.length,
+    marketEndpoints: market.length,
+    candlesEndpoints: candles.length,
+    holdingsDiscoveryReady: idx.length > 0,
+  };
 }

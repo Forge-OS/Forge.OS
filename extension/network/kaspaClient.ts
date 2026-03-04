@@ -3,6 +3,7 @@
 // Does NOT use kaspa-wasm's WebSocket RPC — the extension uses REST only.
 import {
   getCustomKaspaRpc,
+  getKaspaFeeEstimateTier,
   getKaspaRpcPoolOverride,
   getLocalNodeEnabled,
   getLocalNodeNetworkProfile,
@@ -81,10 +82,12 @@ export const ENDPOINTS: Record<string, string> = {
   "testnet-12": ENDPOINT_POOLS["testnet-12"][0],
 };
 
-const REQUEST_TIMEOUT_MS = 12_000;
+const REQUEST_TIMEOUT_MS = 8_000;   // Kaspa REST responds <500ms normally; 8s is generous
 const MAX_RETRIES = 2;
-const RETRY_DELAY_BASE_MS = 600;
+const RETRY_DELAY_BASE_MS = 300;    // 10 BPS network — shorter back-off recovers faster
 const LOCAL_NODE_STATUS_CACHE_TTL_MS = 3_000;
+const REMOTE_NODE_STATUS_PROBE_TTL_MS = 20_000;
+const REMOTE_NODE_STATUS_TIMEOUT_MS = 4_000;
 const REQUIRE_LOCAL_NODE_SYNC_FOR_SELECTION = String((import.meta as any)?.env?.VITE_LOCAL_NODE_REQUIRE_SYNC_FOR_SELECTION ?? "true")
   .trim()
   .toLowerCase() !== "false";
@@ -97,7 +100,7 @@ function isRetryableHttpStatus(status: number): boolean {
 // ── Circuit breaker ───────────────────────────────────────────────────────────
 
 const CB_TRIP_THRESHOLD = 4;  // consecutive failures before open
-const CB_RECOVER_MS = 30_000; // half-open after 30 s
+const CB_RECOVER_MS = 15_000; // half-open after 15 s — fast recovery on 10 BPS network
 
 type CBState = "closed" | "open" | "half-open";
 const _cb: Record<string, { state: CBState; failures: number; openAt: number }> = {};
@@ -109,6 +112,10 @@ type EndpointHealth = {
   lastLatencyMs: number;
   lastStatus: number;
   lastError: string;
+  nodeStatusCheckedAt: number;
+  nodeSynced: boolean | null;
+  nodeUtxoIndexed: boolean | null;
+  nodeStatusError: string;
 };
 
 const _health: Record<string, EndpointHealth> = {};
@@ -121,14 +128,21 @@ async function hydrateHealthFromSession(): Promise<void> {
   if (_healthHydrated) return;
   _healthHydrated = true;
   try {
-    const result = await chrome.storage.session.get(RPC_HEALTH_SESSION_KEY);
+    // Race with a 2 s timeout — storage contention in MV3 can stall indefinitely
+    // if another extension or the browser holds a lock. Never block API calls.
+    const result = await Promise.race([
+      chrome.storage.session.get(RPC_HEALTH_SESSION_KEY),
+      new Promise<Record<string, unknown>>((_, reject) =>
+        setTimeout(() => reject(new Error("hydrate_timeout")), 2_000),
+      ),
+    ]);
     const saved = result?.[RPC_HEALTH_SESSION_KEY];
     if (saved && typeof saved === "object") {
       for (const [k, v] of Object.entries(saved as Record<string, EndpointHealth>)) {
         if (typeof v === "object" && v !== null) _health[k] = v as EndpointHealth;
       }
     }
-  } catch { /* session storage unavailable (e.g. content script context) */ }
+  } catch { /* session storage unavailable or timed out — start with empty health */ }
 }
 
 function persistHealthToSession(): void {
@@ -144,6 +158,10 @@ function getEndpointHealth(base: string): EndpointHealth {
       lastLatencyMs: 0,
       lastStatus: 0,
       lastError: "",
+      nodeStatusCheckedAt: 0,
+      nodeSynced: null,
+      nodeUtxoIndexed: null,
+      nodeStatusError: "",
     };
   }
   return _health[base];
@@ -166,6 +184,69 @@ function markHealthFailure(base: string, error: string, status = 0) {
   h.lastStatus = status;
   h.lastError = error;
   persistHealthToSession();
+}
+
+function markEndpointNodeStatus(
+  base: string,
+  status: {
+    isSynced: boolean | null;
+    isUtxoIndexed: boolean | null;
+    error?: string;
+  },
+): void {
+  const h = getEndpointHealth(base);
+  h.nodeStatusCheckedAt = Date.now();
+  h.nodeSynced = status.isSynced;
+  h.nodeUtxoIndexed = status.isUtxoIndexed;
+  h.nodeStatusError = status.error ? String(status.error).slice(0, 140) : "";
+  persistHealthToSession();
+}
+
+async function probeEndpointNodeStatus(base: string): Promise<void> {
+  const h = getEndpointHealth(base);
+  if (h.nodeStatusCheckedAt > 0 && Date.now() - h.nodeStatusCheckedAt < REMOTE_NODE_STATUS_PROBE_TTL_MS) {
+    return;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REMOTE_NODE_STATUS_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${base}/info/kaspad`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      // 404/501 likely means endpoint does not expose v1.1 status route yet.
+      if (res.status === 404 || res.status === 501) {
+        markEndpointNodeStatus(base, {
+          isSynced: null,
+          isUtxoIndexed: null,
+          error: `HTTP ${res.status}`,
+        });
+        return;
+      }
+      markEndpointNodeStatus(base, {
+        isSynced: null,
+        isUtxoIndexed: null,
+        error: `HTTP ${res.status}`,
+      });
+      return;
+    }
+
+    const payload = await res.json().catch(() => null) as { isSynced?: unknown; isUtxoIndexed?: unknown } | null;
+    const isSynced = typeof payload?.isSynced === "boolean" ? payload.isSynced : null;
+    const isUtxoIndexed = typeof payload?.isUtxoIndexed === "boolean" ? payload.isUtxoIndexed : null;
+    markEndpointNodeStatus(base, { isSynced, isUtxoIndexed });
+  } catch (err) {
+    markEndpointNodeStatus(base, {
+      isSynced: null,
+      isUtxoIndexed: null,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function getCircuitBreaker(base: string) {
@@ -204,6 +285,10 @@ export interface KaspaEndpointHealthSnapshot {
   lastLatencyMs: number;
   lastStatus: number;
   lastError: string;
+  nodeStatusCheckedAt: number;
+  nodeSynced: boolean | null;
+  nodeUtxoIndexed: boolean | null;
+  nodeStatusError: string;
 }
 
 export function getKaspaEndpointHealthForPool(poolInput: string[]): KaspaEndpointHealthSnapshot[] {
@@ -221,6 +306,10 @@ export function getKaspaEndpointHealthForPool(poolInput: string[]): KaspaEndpoin
       lastLatencyMs: h.lastLatencyMs,
       lastStatus: h.lastStatus,
       lastError: h.lastError,
+      nodeStatusCheckedAt: h.nodeStatusCheckedAt,
+      nodeSynced: h.nodeSynced,
+      nodeUtxoIndexed: h.nodeUtxoIndexed,
+      nodeStatusError: h.nodeStatusError,
     };
   });
 }
@@ -240,20 +329,32 @@ export function getKaspaEndpointHealth(network?: string): Record<string, KaspaEn
   };
 }
 
+/**
+ * Composite endpoint score — lower is better.
+ *
+ * Components:
+ *   consecutiveFails × 8000   — failed endpoints penalised heavily
+ *   latencyMs                 — measured round-trip; untested endpoints default to 2000ms
+ *   recentBonus               — -500 ms credit for an OK in the last 30 s
+ *
+ * Open circuits always sort last. This keeps the fastest healthy node first
+ * without needing a separate latency-only sort pass.
+ */
+function endpointScore(base: string): number {
+  const cb = getCircuitBreaker(base);
+  if (cb.state === "open") return Infinity;
+  const h = getEndpointHealth(base);
+  const latency = h.lastLatencyMs > 0 ? h.lastLatencyMs : 2_000;
+  const recentBonus = h.lastOkAt > Date.now() - 30_000 ? -500 : 0;
+  const nodeStatusFresh = h.nodeStatusCheckedAt > 0 && Date.now() - h.nodeStatusCheckedAt <= 120_000;
+  const nodePenalty = nodeStatusFresh
+    ? (h.nodeSynced === false ? 5_000 : 0) + (h.nodeUtxoIndexed === false ? 2_500 : 0)
+    : 0;
+  return h.consecutiveFails * 8_000 + latency + recentBonus + nodePenalty;
+}
+
 function rankEndpointPool(poolInput: string[]): string[] {
-  const pool = [...poolInput];
-  return pool.sort((a, b) => {
-    const cbA = getCircuitBreaker(a);
-    const cbB = getCircuitBreaker(b);
-    if (cbA.state === "open" && cbB.state !== "open") return 1;
-    if (cbB.state === "open" && cbA.state !== "open") return -1;
-    const hA = getEndpointHealth(a);
-    const hB = getEndpointHealth(b);
-    // Prefer recent successes and fewer failures.
-    if (hA.lastOkAt !== hB.lastOkAt) return hB.lastOkAt - hA.lastOkAt;
-    if (hA.consecutiveFails !== hB.consecutiveFails) return hA.consecutiveFails - hB.consecutiveFails;
-    return 0;
-  });
+  return [...poolInput].sort((a, b) => endpointScore(a) - endpointScore(b));
 }
 
 function networkEnvSuffix(network: string): "MAINNET" | "TN10" | "TN11" | "TN12" {
@@ -381,8 +482,10 @@ const POOL_CACHE_TTL_MS = 5_000;
 export function invalidateEndpointPoolCache(network?: string): void {
   if (network) {
     _poolCache.delete(network);
+    _clearFeeCacheForNetwork(network);
   } else {
     _poolCache.clear();
+    _feeCache.clear();
   }
   _localNodeStatusCache = null;
 }
@@ -472,6 +575,12 @@ async function resolveRuntimeEndpointPool(network: string): Promise<string[]> {
     pool = [local, ...rankEndpointPool(rest)];
   } else {
     pool = rankEndpointPool(selection.pool);
+    if (pool.length > 0) {
+      // Warm remote node-status health in the background so the next ranking pass
+      // can down-rank endpoints that are alive but not synced/indexed.
+      const probeTargets = pool.slice(0, Math.min(2, pool.length));
+      void Promise.all(probeTargets.map((base) => probeEndpointNodeStatus(base)));
+    }
   }
 
   _poolCache.set(network, {
@@ -605,6 +714,9 @@ export interface KaspaFeeEstimate {
   lowBuckets: Array<{ feerate: number; estimatedSeconds: number }>;
 }
 
+/** Fee tier selector — "normal" is the safe default for most user-initiated txs. */
+export type FeeEstimateTier = "priority" | "normal" | "low";
+
 export interface KaspaDagInfo {
   networkName: string;
   blockCount: string;
@@ -612,6 +724,28 @@ export interface KaspaDagInfo {
   /** Monotonically increasing virtual DAA score — increments ~10/s on mainnet 10-BPS. */
   virtualDaaScore: string;
   difficulty: number;
+  tipHashes?: string[];
+  pastMedianTime?: string;
+  virtualParentHashes?: string[];
+  pruningPointHash?: string;
+  sink?: string;
+}
+
+/** Node health snapshot from GET /info/kaspad (rusty-kaspa v1.1.0+). */
+export interface KaspaNodeStatus {
+  isUtxoIndexed: boolean;
+  isSynced: boolean;
+  p2pId?: string;
+  mempool_size?: number;
+  server_version?: string;
+}
+
+/** Acceptance record from POST /transactions/acceptance (rusty-kaspa v1.1.0+). */
+export interface KaspaTransactionAcceptance {
+  transactionId: string;
+  isAccepted: boolean;
+  acceptingBlockHash: string | null;
+  acceptingBlockDaaScore?: string;
 }
 
 // ── Network BPS constants (theoretical target block rate per network) ──────────
@@ -660,15 +794,81 @@ export async function fetchKasPrice(network = "mainnet"): Promise<number> {
   }
 }
 
+// ── Fee rate short-lived cache ────────────────────────────────────────────────
+// buildTransaction calls estimateFee twice (preliminary + refined).
+// Feerate changes slowly (block-level granularity); 8 s cache is safe at 10 BPS.
+// Cache key format: "${network}:${tier}" to support per-tier caching.
+const _feeCache = new Map<string, { feerate: number; expiresAt: number }>();
+const _feeTierCache = new Map<string, { tier: FeeEstimateTier; expiresAt: number }>();
+const FEE_CACHE_TTL_MS = 8_000;
+const FEE_TIER_CACHE_TTL_MS = 10_000;
+
+async function resolveRuntimeFeeTier(network: string): Promise<FeeEstimateTier> {
+  const key = String(network || "").trim() || "mainnet";
+  const hit = _feeTierCache.get(key);
+  if (hit && Date.now() < hit.expiresAt) return hit.tier;
+
+  const envTier = String((import.meta as any)?.env?.VITE_KASPA_FEE_ESTIMATE_TIER_DEFAULT || "")
+    .trim()
+    .toLowerCase();
+  const fallbackTier: FeeEstimateTier =
+    envTier === "priority" ? "priority"
+    : envTier === "low" ? "low"
+    : "normal";
+
+  let tier: FeeEstimateTier = fallbackTier;
+  try {
+    const stored = await getKaspaFeeEstimateTier(key);
+    tier = stored === "priority" || stored === "low" || stored === "normal" ? stored : fallbackTier;
+  } catch {
+    tier = fallbackTier;
+  }
+
+  _feeTierCache.set(key, { tier, expiresAt: Date.now() + FEE_TIER_CACHE_TTL_MS });
+  return tier;
+}
+
+function _clearFeeCacheForNetwork(network: string): void {
+  const prefix = `${network}:`;
+  for (const key of _feeCache.keys()) {
+    if (key.startsWith(prefix)) _feeCache.delete(key);
+  }
+  _feeTierCache.delete(network);
+}
+
+/** Flush the fee rate cache (call after network/preset changes). */
+export function invalidateFeeCache(network?: string): void {
+  if (network) {
+    _clearFeeCacheForNetwork(network);
+  } else {
+    _feeCache.clear();
+    _feeTierCache.clear();
+  }
+}
+
 /**
- * Fetch fee estimate from the network.
+ * Fetch fee estimate from the network for the specified tier.
  * Returns feerate in sompi/gram (mass unit).
- * Kaspa's minimum feerate is ~1 sompi/gram.
+ *   "priority" → priorityBucket (fastest, most expensive)
+ *   "normal"   → normalBuckets[0] (default — cost-effective for standard txs)
+ *   "low"      → lowBuckets[0] (cheapest, may be slower under congestion)
+ * Results are cached per (network, tier) for 8 s.
  */
-export async function fetchFeeEstimate(network = "mainnet"): Promise<number> {
+export async function fetchFeeEstimate(
+  network = "mainnet",
+  tier: FeeEstimateTier = "normal",
+): Promise<number> {
+  const cacheKey = `${network}:${tier}`;
+  const hit = _feeCache.get(cacheKey);
+  if (hit && Date.now() < hit.expiresAt) return hit.feerate;
   try {
     const data = await apiFetch<KaspaFeeEstimate>(network, `/info/fee-estimate`);
-    return data?.priorityBucket?.feerate ?? 1;
+    const feerate =
+      tier === "priority" ? (data?.priorityBucket?.feerate ?? 1)
+      : tier === "low"    ? (data?.lowBuckets?.[0]?.feerate ?? 1)
+      :                     (data?.normalBuckets?.[0]?.feerate ?? data?.priorityBucket?.feerate ?? 1);
+    _feeCache.set(cacheKey, { feerate, expiresAt: Date.now() + FEE_CACHE_TTL_MS });
+    return feerate;
   } catch {
     return 1; // fallback to minimum
   }
@@ -677,17 +877,42 @@ export async function fetchFeeEstimate(network = "mainnet"): Promise<number> {
 /**
  * Estimate transaction fee given input/output counts.
  * Uses the network's current feerate multiplied by estimated mass.
- * Kaspa mass ≈ 239 + 142 * inputs + 51 * outputs (simplified Rust formula).
+ *
+ * Standard mass formula (Kaspa Rust node):
+ *   mass ≈ 239 + 142 × inputs + 51 × outputs
+ *
+ * vProg covenant inputs (KIP-9) have a larger locking script (~64–200 bytes
+ * vs 34 bytes for P2PK), so each adds ~80 extra bytes of mass on average.
+ * Use covenantInputCount to get an accurate pre-upgrade fee estimate.
  */
 export async function estimateFee(
   inputCount: number,
   outputCount: number,
   network = "mainnet",
+  covenantInputCount = 0,
 ): Promise<bigint> {
-  const feerate = await fetchFeeEstimate(network);
-  const mass = 239 + 142 * inputCount + 51 * outputCount;
-  // Minimum fee = mass * feerate, but always at least 1000 sompi (safety floor)
+  const tier = await resolveRuntimeFeeTier(network);
+  const feerate = await fetchFeeEstimate(network, tier);
+  const standardInputs = inputCount - covenantInputCount;
+  // Standard P2PK input mass: 142; vProg covenant input mass: ~220 (script is ~86 bytes larger)
+  const mass = 239 + 142 * standardInputs + 220 * covenantInputCount + 51 * outputCount;
+  // Minimum fee = mass × feerate, always at least 1000 sompi (safety floor)
   return BigInt(Math.max(Math.ceil(mass * feerate), 1_000));
+}
+
+/**
+ * Fetch UTXOs and confirmed balance for an address in parallel.
+ * Avoids two sequential round trips when both are needed (e.g. during sync).
+ */
+export async function fetchAddressData(
+  address: string,
+  network = "mainnet",
+): Promise<{ utxos: KaspaUtxoResponse[]; balance: bigint }> {
+  const [utxos, balance] = await Promise.all([
+    fetchUtxos(address, network),
+    fetchBalance(address, network).catch(() => 0n),
+  ]);
+  return { utxos, balance };
 }
 
 /**
@@ -746,6 +971,103 @@ export async function fetchDagInfo(network = "mainnet"): Promise<KaspaDagInfo | 
 }
 
 /**
+ * Fetch just the virtual-chain blue score (DAA score) — lightweight substitute for fetchDagInfo.
+ * Uses GET /info/virtual-chain-blue-score (rusty-kaspa v1.1.0+).
+ * Returns null on failure. Prefer this over fetchDagInfo when only the score is needed.
+ */
+export async function fetchBlueScore(network = "mainnet"): Promise<number | null> {
+  try {
+    const data = await apiFetch<{ blueScore: string }>(network, `/info/virtual-chain-blue-score`);
+    return data?.blueScore != null ? Number(data.blueScore) : null;
+  } catch {
+    // Backward-compat fallback for endpoints that do not expose /info/virtual-chain-blue-score.
+    const dag = await fetchDagInfo(network);
+    if (!dag?.virtualDaaScore) return null;
+    const parsed = Number(dag.virtualDaaScore);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+}
+
+/**
+ * Fetch node health status from GET /info/kaspad (rusty-kaspa v1.1.0+).
+ * Exposes isSynced, isUtxoIndexed, and peer info.
+ * Returns null on failure.
+ */
+export async function fetchNodeStatus(network = "mainnet"): Promise<KaspaNodeStatus | null> {
+  try {
+    return await apiFetch<KaspaNodeStatus>(network, `/info/kaspad`);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Batch-fetch UTXOs for multiple addresses in a single POST request.
+ * Uses POST /addresses/utxos (rusty-kaspa v1.1.0+).
+ * More efficient than N sequential fetchUtxos calls during multi-account sync.
+ */
+export async function fetchBatchUtxos(
+  addresses: string[],
+  network = "mainnet",
+): Promise<KaspaUtxoResponse[]> {
+  if (addresses.length === 0) return [];
+  try {
+    return await apiFetch<KaspaUtxoResponse[]>(network, `/addresses/utxos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(addresses),
+    });
+  } catch {
+    // Backward-compat fallback for providers without POST /addresses/utxos.
+    const byAddress = await Promise.all(
+      addresses.map((address) => fetchUtxos(address, network).catch(() => [] as KaspaUtxoResponse[])),
+    );
+    return byAddress.flat();
+  }
+}
+
+/**
+ * Batch-fetch transaction acceptance status via POST /transactions/acceptance (rusty-kaspa v1.1.0+).
+ * Returns an array of acceptance records (one per txId, in the same order).
+ * More efficient than N sequential fetchTransaction calls for confirmation polling.
+ * Falls back to legacy per-tx GET lookups when the batch endpoint is unavailable.
+ */
+export async function fetchTransactionAcceptance(
+  txIds: string[],
+  network = "mainnet",
+): Promise<KaspaTransactionAcceptance[]> {
+  if (txIds.length === 0) return [];
+  try {
+    return await apiFetch<KaspaTransactionAcceptance[]>(network, `/transactions/acceptance`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(txIds),
+    });
+  } catch {
+    // Backward-compat fallback for providers without POST /transactions/acceptance.
+    const resolved = await Promise.all(
+      txIds.map(async (txId) => {
+        try {
+          const tx = await fetchTransaction(txId, network);
+          return {
+            transactionId: txId,
+            isAccepted: Boolean(tx?.acceptingBlockHash),
+            acceptingBlockHash: tx?.acceptingBlockHash ?? null,
+          } satisfies KaspaTransactionAcceptance;
+        } catch {
+          return {
+            transactionId: txId,
+            isAccepted: false,
+            acceptingBlockHash: null,
+          } satisfies KaspaTransactionAcceptance;
+        }
+      }),
+    );
+    return resolved;
+  }
+}
+
+/**
  * Active health probe for the endpoint pool of a network.
  * Useful for diagnostics and UI warnings when a testnet API is flaky.
  */
@@ -760,7 +1082,68 @@ export async function probeKaspaEndpointPool(
     } catch {
       // Health is already recorded by apiFetchFromBase. Keep probing best-effort.
     }
+    await probeEndpointNodeStatus(base);
   }));
 
   return getKaspaEndpointHealthForPool(pool);
+}
+
+// ── Transaction history ───────────────────────────────────────────────────────
+
+export interface KaspaHistoricalTxInput {
+  address: string;
+  amount: string; // sompi as string
+}
+
+export interface KaspaHistoricalTxOutput {
+  address: string;
+  amount: string; // sompi as string
+}
+
+export interface KaspaHistoricalTx {
+  txId: string;
+  blockTime: number; // Unix ms
+  inputs: KaspaHistoricalTxInput[];
+  outputs: KaspaHistoricalTxOutput[];
+  isAccepted: boolean;
+}
+
+/**
+ * Fetch recent confirmed transactions for an address.
+ * Uses /addresses/{address}/full-transactions — returns up to `limit` most recent.
+ */
+export async function fetchTransactionHistory(
+  address: string,
+  network = "mainnet",
+  limit = 20,
+): Promise<KaspaHistoricalTx[]> {
+  type RawTx = {
+    transaction_id?: string;
+    block_time?: number | string;
+    inputs?: Array<{ previous_outpoint_address?: string; amount?: string | number }>;
+    outputs?: Array<{ script_public_key_address?: string; amount?: string | number }>;
+    is_accepted?: boolean;
+  };
+  try {
+    const raw = await apiFetch<RawTx[]>(
+      network,
+      `/addresses/${encodeURIComponent(address)}/full-transactions?limit=${limit}&offset=0`,
+    );
+    if (!Array.isArray(raw)) return [];
+    return raw.map((tx) => ({
+      txId:       String(tx.transaction_id || ""),
+      blockTime:  Number(tx.block_time || 0),
+      isAccepted: Boolean(tx.is_accepted ?? true),
+      inputs: (tx.inputs ?? []).map((inp) => ({
+        address: String(inp.previous_outpoint_address || ""),
+        amount:  String(inp.amount || "0"),
+      })),
+      outputs: (tx.outputs ?? []).map((out) => ({
+        address: String(out.script_public_key_address || ""),
+        amount:  String(out.amount || "0"),
+      })),
+    }));
+  } catch {
+    return [];
+  }
 }

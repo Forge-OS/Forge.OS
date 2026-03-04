@@ -55,9 +55,29 @@ import { ActionQueue } from "./ActionQueue";
 import { DashboardRuntimeNotices } from "./DashboardRuntimeNotices";
 import { WalletPanel } from "./WalletPanel";
 import { SwapView } from "../SwapView";
+import { buildPairExecutionIntent, describePairMode, formatPairIntentLog } from "../../quant/pairTrading";
+import { checkAndTriggerOrders, markOrderExecuted } from "../../quant/limitOrder";
+import { checkDcaSchedules, markDcaExecuted } from "../../quant/dcaScheduler";
+import {
+  loadStopLossState,
+  recordAccumulateFill,
+  updatePeakPrice,
+  resetPositionAfterReduce,
+  checkStopConditions,
+  formatStopStatus,
+  isInStopCooldown,
+  enterStopCooldown,
+  type StopLossState,
+} from "../../quant/stopLoss";
+import {
+  formatOutcomesForPrompt,
+  recordTradeBroadcast,
+  confirmPendingOutcomes,
+} from "../../quant/tradeOutcomes";
+import { fetchOnChainAnalytics, formatOnChainAnalyticsForPrompt } from "../../quant/onChainAnalytics";
+import { fetchKrcBalance, invalidateKrcBalanceCache } from "../../quant/krcBalance";
+import { executePairIntent, isPairSwapConfigured } from "../../swap/pairSwap";
 
-const PerfChart = lazy(() => import("./PerfChart").then((m) => ({ default: m.PerfChart })));
-const AgentOverviewPanel = lazy(() => import("./AgentOverviewPanel").then((m) => ({ default: m.AgentOverviewPanel })));
 const IntelligencePanel = lazy(() =>
   import("./IntelligencePanel").then((m) => ({ default: m.IntelligencePanel }))
 );
@@ -67,8 +87,38 @@ const PnlAttributionPanel = lazy(() =>
 );
 const AlertsPanel = lazy(() => import("./AlertsPanel").then((m) => ({ default: m.AlertsPanel })));
 const QuantAnalyticsPanel = lazy(() => import("./QuantAnalyticsPanel").then((m) => ({ default: m.QuantAnalyticsPanel })));
+const BacktestPanel = lazy(() => import("./BacktestPanel").then((m) => ({ default: m.BacktestPanel })));
+const LeaderboardPanel = lazy(() => import("./LeaderboardPanel").then((m) => ({ default: m.LeaderboardPanel })));
+const NetworkPanel = lazy(() => import("./NetworkPanel").then((m) => ({ default: m.NetworkPanel })));
+const OverviewPanel = lazy(() => import("./OverviewPanel").then((m) => ({ default: m.OverviewPanel })));
+import { PanelSkeleton } from "./PanelSkeleton";
 
-export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAgent, onDeleteAgent, onEditAgent}: any) {
+const VALID_EXEC_MODES = ["autonomous", "manual", "notify", "paper"];
+
+function normalizeExecMode(value: any) {
+  const mode = String(value || "").toLowerCase();
+  return VALID_EXEC_MODES.includes(mode) ? mode : "manual";
+}
+
+function buildStrategyEditForm(agent: any) {
+  return {
+    strategyTemplate: String(agent?.strategyTemplate || "dca_accumulator"),
+    strategyLabel: String(agent?.strategyLabel || "Steady DCA Builder"),
+    risk: String(agent?.risk || "medium"),
+    kpiTarget: String(agent?.kpiTarget || "12"),
+    capitalLimit: String(agent?.capitalLimit || "5000"),
+    horizon: Number(agent?.horizon || 30),
+    autoApproveThreshold: String(agent?.autoApproveThreshold || "100"),
+    execMode: normalizeExecMode(agent?.execMode),
+  };
+}
+
+function toNumberString(value: any, fallback: number) {
+  const n = Number(value);
+  return Number.isFinite(n) ? String(n) : String(fallback);
+}
+
+export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAgent, onDeleteAgent, onEditAgent, onPatchAgent}: any) {
   const LIVE_POLL_MS = 2000;           // 2 s – faster wallet-balance refresh
   const STREAM_RECONNECT_MAX_DELAY_MS = 8000;
   const RECEIPT_RETRY_BASE_MS = 2000;
@@ -89,6 +139,12 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
   const cycleLockRef = useRef(false);
   const lastRegimeRef = useRef("");
   const lastAdaptiveThresholdReasonRef = useRef("");
+  // Execution backoff refs: exponential delay after consecutive RPC/execution failures.
+  const consecutiveExecutionFailuresRef = useRef(0);
+  const executionBackoffUntilRef = useRef(0);
+  // Regime hold tracking: count of consecutive cycles in which the current regime held.
+  const regimeHoldCyclesRef = useRef(0);
+  const lastRegimeForHoldRef = useRef("");
   const [runtimeHydrated, setRuntimeHydrated] = useState(false);
   const [tab, setTab] = useState("overview");
   // Helper to read persisted state from localStorage
@@ -113,10 +169,9 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
   const [decisions, setDecisions] = useState([] as any[]);
   const [loading, setLoading] = useState(false);
   // Get persisted execMode value if available (validate it's a valid option)
-  const validExecModes = ["autonomous", "manual", "notify"];
-  const initialExecMode = persistedState?.execMode && validExecModes.includes(persistedState.execMode)
-    ? persistedState.execMode
-    : (agent.execMode || "manual");
+  const initialExecMode = persistedState?.execMode && VALID_EXEC_MODES.includes(String(persistedState.execMode))
+    ? String(persistedState.execMode)
+    : normalizeExecMode(agent.execMode);
   const [execMode, setExecMode] = useState(initialExecMode);
   const baseAutoThresh = useMemo(() => parseFloat(agent.autoApproveThreshold) || 50, [agent.autoApproveThreshold]);
   const [usage, setUsage] = useState(() => getUsageState(FREE_CYCLES_PER_DAY, usageScope));
@@ -125,47 +180,42 @@ export function Dashboard({agent, wallet, agents = [], activeAgentId, onSelectAg
     ? persistedState.liveExecutionArmed 
     : LIVE_EXECUTION_DEFAULT;
   const [liveExecutionArmed, setLiveExecutionArmed] = useState(initialLiveExecutionArmed);
+  const [paperPnlKas, setPaperPnlKas] = useState(0); // simulated P&L for paper mode
+  // Stablecoin balance used for pair trading (USDC/USDT KRC20). Populated by KRC portfolio
+  // hook when agent.pairMode === "kas-usdc". Defaults to 0 (no USDC = pair mode pauses BUY_KAS).
+  const [stableBalanceKrc, setStableBalanceKrc] = useState(0);
+  // Poll KRC-20 stablecoin balance when pair trading is active.
+  const agentPairMode = String(agent?.pairMode || "accumulation");
+  useEffect(() => {
+    if (!wallet?.address || agentPairMode === "accumulation") return;
+    const stableTick = (import.meta.env.VITE_PAIR_STABLE_TICK || "USDC").trim().toUpperCase();
+    let cancelled = false;
+    const refresh = async () => {
+      const balance = await fetchKrcBalance(wallet.address!, stableTick).catch(() => 0);
+      if (!cancelled) setStableBalanceKrc(balance);
+    };
+    refresh();
+    const id = setInterval(refresh, 30_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [wallet?.address, agentPairMode]);
+  const [stopLossState, setStopLossState] = useState<StopLossState>(() =>
+    loadStopLossState(agent?.agentId || "default")
+  );
   const [nextAutoCycleAt, setNextAutoCycleAt] = useState(() => Date.now() + cycleIntervalMs);
 const [viewportWidth, setViewportWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1200
   );
   const [editingStrategy, setEditingStrategy] = useState(false);
-  const [editForm, setEditForm] = useState({
-    strategyTemplate: agent.strategyTemplate || "dca_accumulator",
-    strategyLabel: agent.strategyLabel || "Steady DCA Builder",
-    risk: agent.risk || "medium",
-    kpiTarget: agent.kpiTarget || "12",
-    capitalLimit: agent.capitalLimit || "5000",
-    horizon: agent.horizon || 30,
-    autoApproveThreshold: agent.autoApproveThreshold || "100",
-    execMode: agent.execMode || "manual",
-  });
-  
-  const allStrategies = [...STRATEGY_TEMPLATES, ...PROFESSIONAL_PRESETS.filter(p => p.id !== "custom")];
-  
-  const handleStrategySelect = (strategy: any) => {
-    setEditForm({
-      ...editForm,
-      strategyTemplate: strategy.id,
-      strategyLabel: strategy.name,
-      risk: strategy.defaults.risk || "medium",
-      kpiTarget: strategy.defaults.kpiTarget || "12",
-      capitalLimit: agent.capitalLimit || "5000",
-      horizon: strategy.defaults.horizon || 30,
-      autoApproveThreshold: strategy.defaults.autoApproveThreshold || "50",
-      execMode: strategy.defaults.execMode || "manual",
-    });
-  };
-  
-  const handleSaveStrategy = () => {
-    // Save to agent - this would typically call a parent handler or persist
-    setEditingStrategy(false);
-    addLog({
-      type:"SYSTEM", 
-      msg:`Strategy updated to ${editForm.strategyLabel}`, 
-      fee:null
-    });
-  };
+  const [editForm, setEditForm] = useState(() => buildStrategyEditForm(agent));
+  const allStrategies = useMemo(
+    () => [...STRATEGY_TEMPLATES, ...PROFESSIONAL_PRESETS.filter((p) => p.id !== "custom")],
+    []
+  );
+  const strategyOptions = useMemo(() => [...STRATEGY_TEMPLATES, ...PROFESSIONAL_PRESETS], []);
+  const strategyById = useMemo(
+    () => new Map(strategyOptions.map((strategy: any) => [String(strategy.id), strategy])),
+    [strategyOptions]
+  );
   const quantClientMode = useMemo(() => getQuantEngineClientMode(), []);
 
   const {
@@ -192,6 +242,130 @@ const [viewportWidth, setViewportWidth] = useState(
     (e: any) => setLog((p: any) => [{ ts: Date.now(), ...e }, ...p].slice(0, MAX_LOG_ENTRIES)),
     [MAX_LOG_ENTRIES]
   );
+  const applyAgentPatch = useCallback(
+    (targetAgentId: string, patch: Record<string, any>, logMessage?: string) => {
+      const id = String(targetAgentId || "").trim();
+      if (!id || !patch || Object.keys(patch).length === 0) return;
+      onPatchAgent?.(id, patch);
+
+      if (String(agent?.agentId || agent?.name || "") === id && typeof patch.execMode === "string") {
+        setExecMode(normalizeExecMode(patch.execMode));
+      }
+      if (logMessage) {
+        addLog({ type: "SYSTEM", msg: logMessage, fee: null });
+      }
+    },
+    [addLog, agent?.agentId, agent?.name, onPatchAgent]
+  );
+
+  const updateActiveExecMode = useCallback(
+    (nextMode: string) => {
+      const normalizedMode = normalizeExecMode(nextMode);
+      setExecMode(normalizedMode);
+      const id = String(agent?.agentId || agent?.name || "").trim();
+      if (id) {
+        onPatchAgent?.(id, { execMode: normalizedMode });
+      }
+    },
+    [agent?.agentId, agent?.name, onPatchAgent]
+  );
+
+  const handleStrategySelect = useCallback((strategy: any) => {
+    if (!strategy) return;
+    setEditForm((prev: any) => ({
+      ...prev,
+      strategyTemplate: String(strategy.id),
+      strategyLabel: String(strategy.name || prev.strategyLabel || "Custom"),
+      risk: String(strategy?.defaults?.risk || prev.risk || "medium"),
+      kpiTarget: toNumberString(strategy?.defaults?.kpiTarget ?? prev.kpiTarget, 12),
+      capitalLimit: toNumberString(prev.capitalLimit, 5000),
+      horizon: Number(strategy?.defaults?.horizon || prev.horizon || 30),
+      autoApproveThreshold: toNumberString(strategy?.defaults?.autoApproveThreshold ?? prev.autoApproveThreshold, 50),
+      execMode: normalizeExecMode(strategy?.defaults?.execMode || prev.execMode || "manual"),
+    }));
+  }, []);
+
+  const handleSaveStrategy = useCallback(() => {
+    const id = String(agent?.agentId || agent?.name || "").trim();
+    if (!id) return;
+    const strategy = strategyById.get(String(editForm.strategyTemplate || ""));
+    const patch = {
+      strategyTemplate: String(editForm.strategyTemplate || "custom"),
+      strategyLabel: String(editForm.strategyLabel || strategy?.name || "Custom"),
+      strategyClass: String(strategy?.class || agent?.strategyClass || "custom"),
+      risk: String(editForm.risk || "medium"),
+      kpiTarget: toNumberString(editForm.kpiTarget, 12),
+      capitalLimit: toNumberString(editForm.capitalLimit, 5000),
+      horizon: Number(editForm.horizon || 30),
+      autoApproveThreshold: toNumberString(editForm.autoApproveThreshold, 50),
+      execMode: normalizeExecMode(editForm.execMode),
+    };
+
+    applyAgentPatch(id, patch, `Strategy updated to ${patch.strategyLabel} · mode ${String(patch.execMode).toUpperCase()}.`);
+    setEditingStrategy(false);
+  }, [agent?.agentId, agent?.name, agent?.strategyClass, applyAgentPatch, editForm, strategyById]);
+
+  const handleAgentStrategyQuickChange = useCallback(
+    (targetAgent: any, strategyId: string) => {
+      const id = String(targetAgent?.agentId || targetAgent?.name || "").trim();
+      if (!id) return;
+      const strategy = strategyById.get(String(strategyId || ""));
+      if (!strategy) return;
+
+      const patch = {
+        strategyTemplate: String(strategy.id),
+        strategyLabel: String(strategy.name || targetAgent?.strategyLabel || "Custom"),
+        strategyClass: String(strategy.class || targetAgent?.strategyClass || "custom"),
+        risk: String(strategy?.defaults?.risk || targetAgent?.risk || "medium"),
+        kpiTarget: toNumberString(strategy?.defaults?.kpiTarget ?? targetAgent?.kpiTarget, 12),
+        capitalLimit: toNumberString(targetAgent?.capitalLimit, 5000),
+        horizon: Number(strategy?.defaults?.horizon || targetAgent?.horizon || 30),
+        autoApproveThreshold: toNumberString(strategy?.defaults?.autoApproveThreshold ?? targetAgent?.autoApproveThreshold, 50),
+        execMode: normalizeExecMode(strategy?.defaults?.execMode || targetAgent?.execMode || "manual"),
+      };
+
+      applyAgentPatch(
+        id,
+        patch,
+        `${String(targetAgent?.name || "Agent")} strategy set to ${patch.strategyLabel} · mode ${String(patch.execMode).toUpperCase()}.`
+      );
+      if (String(agent?.agentId || agent?.name || "") === id) {
+        setEditForm(buildStrategyEditForm({ ...targetAgent, ...patch }));
+      }
+    },
+    [agent?.agentId, agent?.name, applyAgentPatch, strategyById]
+  );
+
+  const handleAgentExecModeQuickChange = useCallback(
+    (targetAgent: any, nextMode: string) => {
+      const id = String(targetAgent?.agentId || targetAgent?.name || "").trim();
+      if (!id) return;
+      const normalizedMode = normalizeExecMode(nextMode);
+      applyAgentPatch(
+        id,
+        { execMode: normalizedMode },
+        `${String(targetAgent?.name || "Agent")} execution mode set to ${normalizedMode.toUpperCase()}.`
+      );
+    },
+    [applyAgentPatch]
+  );
+
+  useEffect(() => {
+    setEditForm(buildStrategyEditForm(agent));
+    setEditingStrategy(false);
+  }, [
+    agent?.agentId,
+    agent?.name,
+    agent?.strategyTemplate,
+    agent?.strategyLabel,
+    agent?.risk,
+    agent?.kpiTarget,
+    agent?.capitalLimit,
+    agent?.horizon,
+    agent?.autoApproveThreshold,
+    agent?.execMode,
+  ]);
+
   const activeStrategyLabel = String(agent?.strategyLabel || agent?.strategyTemplate || "Custom");
   const {
     alertConfig,
@@ -275,6 +449,28 @@ const [viewportWidth, setViewportWidth] = useState(
     // Migrate legacy persisted tab value after billing/paywall UI removal.
     if (tab === "billing") setTab("treasury");
   }, [tab]);
+
+  // ── Regime hold persistence ──────────────────────────────────────────────────
+  // Hydrate on mount so adaptive Kelly dampening survives page reloads.
+  useEffect(() => {
+    if (!runtimeScope) return;
+    try {
+      const stored = JSON.parse(localStorage.getItem(`forgeos.regime.hold.${runtimeScope}`) || "{}");
+      if (Number.isFinite(stored.cycles)) regimeHoldCyclesRef.current = Number(stored.cycles);
+      if (typeof stored.regime === "string")  lastRegimeForHoldRef.current = stored.regime;
+    } catch { /* ignore */ }
+  }, [runtimeScope]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist after every new decision (refs are always up-to-date by that point).
+  useEffect(() => {
+    if (!runtimeScope) return;
+    try {
+      localStorage.setItem(
+        `forgeos.regime.hold.${runtimeScope}`,
+        JSON.stringify({ cycles: regimeHoldCyclesRef.current, regime: lastRegimeForHoldRef.current })
+      );
+    } catch { /* ignore */ }
+  }, [decisions.length, runtimeScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const riskThresh = agent?.risk==="low"?0.4:agent?.risk==="medium"?0.65:0.85;
   const allAgents = useMemo(() => {
@@ -408,8 +604,11 @@ const [viewportWidth, setViewportWidth] = useState(
 
   const runCycle = useCallback(async()=>{
     if (cycleLockRef.current || status!=="RUNNING" || !runtimeHydrated) return;
+    // EXECUTION BACKOFF (item 4): skip cycle if in exponential back-off window after failures.
+    if (Date.now() < executionBackoffUntilRef.current) return;
     cycleLockRef.current = true;
     setLoading(true);
+    let _cycleOk = false;
     try{
       if(!kasData){
         addLog({type:"ERROR", msg:"No live Kaspa data available. Reconnect feed before running cycle.", fee:null});
@@ -422,13 +621,61 @@ const [viewportWidth, setViewportWidth] = useState(
       addLog({type:"DATA", msg:formatDagSignalsLog(dagSignals), fee:null});
       setUsage(consumeUsageCycle(FREE_CYCLES_PER_DAY, usageScope));
 
-      const dec = await runQuantEngineClient(agent, kasData||{}, { history: marketHistory, dagSignals });
+      const _onChainAnalytics = await fetchOnChainAnalytics(DEFAULT_NETWORK).catch(() => null);
+      const rawDec = await runQuantEngineClient(agent, kasData||{}, {
+        history: marketHistory,
+        dagSignals,
+        regimeHoldCycles: regimeHoldCyclesRef.current,
+        extra: {
+          utxoTotalKas: Number(kasData?.walletKas || 0),
+          recentDecisions: decisions.slice(0, 5).map((d: any) => ({
+            ts: d.ts,
+            action: String(d?.dec?.action || "HOLD"),
+            confidence_score: Number(d?.dec?.confidence_score || 0),
+            rationale: String(d?.dec?.rationale || "").slice(0, 80),
+          })),
+          tradeOutcomesBlock: formatOutcomesForPrompt(agent?.agentId || "default", 5),
+          onChainAnalyticsBlock: _onChainAnalytics ? formatOnChainAnalyticsForPrompt(_onChainAnalytics) : undefined,
+        },
+      });
+      // Clone before any mutation so the original audit record is preserved.
+      const dec = { ...rawDec };
       const decSource = String(dec?.decision_source || "ai");
       const quantRegime = String(dec?.quant_metrics?.regime || "NA");
-      if (ACCUMULATE_ONLY && !["ACCUMULATE", "HOLD"].includes(dec.action)) {
+      // REGIME HOLD TRACKING (item 5): count consecutive cycles in the same regime.
+      if (quantRegime === lastRegimeForHoldRef.current) {
+        regimeHoldCyclesRef.current += 1;
+      } else {
+        regimeHoldCyclesRef.current = 0;
+        lastRegimeForHoldRef.current = quantRegime;
+      }
+      // Per-agent accumulate-only gate: falls back to global env flag when agent has no actionMode set.
+      const agentActionMode = String(agent?.actionMode || "").toLowerCase();
+      const effectiveAccumulateOnly =
+        agentActionMode === "accumulate_only" || (agentActionMode === "" && ACCUMULATE_ONLY);
+      if (effectiveAccumulateOnly && !["ACCUMULATE", "HOLD"].includes(dec.action)) {
         dec.action = "HOLD";
         dec.rationale = `${String(dec.rationale || "")} Execution constrained by accumulate-only mode.`.trim();
       }
+
+      // PAIR TRADING INTENT: compute for "kas-usdc" and "dual" pair modes.
+      // The intent is logged and queued; actual DEX/covenant dispatch happens via swap layer
+      // once VITE_SWAP_DEX_ENDPOINT is live and (optionally) VITE_VPROG_ENABLED=true post May 2026.
+      const pairIntent = buildPairExecutionIntent(
+        dec.action,
+        dec.kelly_fraction,
+        Number(kasData?.priceUsd || 0),
+        Number(kasData?.walletKas || 0),
+        stableBalanceKrc,
+        {
+          pairMode: String(agent?.pairMode || "accumulation"),
+          stableEntryBias: String(agent?.stableEntryBias || "0.6"),
+          stableExitBias: String(agent?.stableExitBias || "0.4"),
+          usdcSlippageTolerance: String(agent?.usdcSlippageTolerance || "0.5"),
+          capitalLimit: Number(agent?.capitalLimit || 0),
+        },
+      );
+
       const decisionTs = Date.now();
       setDecisions((p: any)=>[{ts:decisionTs, dec, kasData, source:decSource}, ...p].slice(0, MAX_DECISION_ENTRIES));
 
@@ -484,6 +731,12 @@ const [viewportWidth, setViewportWidth] = useState(
           : 0;
       const availableToSpend = Math.max(0, liveKas - RESERVE - NET_FEE - treasuryPayoutReserveKas);
       const executionReady = liveConnected && !kasDataError && wallet?.provider !== "demo";
+      const currentPrice = Number(kasData?.priceUsd || 0);
+
+      // Close any pending trade outcomes that are old enough to be confirmed.
+      if (currentPrice > 0) {
+        confirmPendingOutcomes(agent.agentId || "default", currentPrice);
+      }
 
       if(!riskOk){
         addLog({type:"VALID", msg:`Risk gate FAILED — score ${dec.risk_score} > ${riskThresh} ceiling`, fee:null});
@@ -509,6 +762,26 @@ const [viewportWidth, setViewportWidth] = useState(
       } else {
         addLog({type:"VALID", msg:`Risk OK (${dec.risk_score}) · Conf OK (${dec.confidence_score}) · Kelly ${(dec.kelly_fraction*100).toFixed(1)}%`, fee:null});
 
+        // ── STOP-LOSS / TRAILING STOP GUARD ──────────────────────────────────────
+        const _slState = updatePeakPrice(agent.agentId || "default", currentPrice);
+        setStopLossState(_slState);
+        const _slCheck = checkStopConditions(currentPrice, _slState, {
+          stopLossPct: Number(agent?.stopLossPct || 0),
+          trailingStopPct: Number(agent?.trailingStopPct || 0),
+        });
+        if (_slCheck.triggered && dec.action !== "REDUCE") {
+          addLog({ type: "EXEC", msg: `STOP-LOSS TRIGGERED — ${_slCheck.label}`, fee: null });
+          // Enter 4-hour re-entry cooldown to prevent whipsaw after a stop-loss exit.
+          enterStopCooldown(agent.agentId || "default");
+        }
+        // effectiveAction may override ACCUMULATE/HOLD → REDUCE when stop fires.
+        // Also gate ACCUMULATE if we're in a post-stop cooldown window.
+        const inCooldown = isInStopCooldown(agent.agentId || "default");
+        if (inCooldown && !_slCheck.triggered) {
+          addLog({ type: "EXEC", msg: "Post-stop cooldown active — ACCUMULATE gated, holding.", fee: null });
+        }
+        const effectiveAction = _slCheck.triggered ? "REDUCE" : (inCooldown && dec.action === "ACCUMULATE" ? "HOLD" : dec.action);
+
         if (execMode === "notify") {
           addLog({type:"EXEC", msg:`NOTIFY mode active — ${dec.action} signal recorded, no transaction broadcast.`, fee:0.01});
         } else if (!liveExecutionArmed || !executionReady) {
@@ -520,22 +793,53 @@ const [viewportWidth, setViewportWidth] = useState(
             msg:`Signal generated (${dec.action}) but no transaction broadcast because ${reason}.`,
             fee:0.01,
           });
-        } else if(dec.action === "REDUCE"){
-          // REDUCE = take-profit signal. Kaspa is the asset being accumulated — to realise
-          // profit the user must manually transfer KAS from their accumulation vault to an
-          // exchange.  No automated on-chain transaction is generated here.
-          addLog({
-            type:"EXEC",
-            msg:`REDUCE signal — take-profit opportunity. Move KAS from your accumulation address to an exchange to realise gains. Agent will hold accumulation until signal clears.`,
-            fee:0.01,
-          });
-        } else if(dec.action!=="HOLD"){
+        } else if(effectiveAction === "REDUCE"){
+          // REDUCE = take-profit signal.
+          if (pairIntent) {
+            // Pair mode: sell KAS for stablecoin via DEX (or vProg covenant post KIP-9).
+            addLog({ type:"EXEC", msg: formatPairIntentLog(pairIntent), fee:0.01 });
+            if (isPairSwapConfigured() && execMode === "autonomous") {
+              // DEX configured + autonomous mode → auto-execute swap.
+              executePairIntent(pairIntent, wallet!.address!).then((result) => {
+                addLog({
+                  type:"EXEC",
+                  msg:`PAIR SWAP: ${pairIntent.kasAmount.toFixed(4)} KAS → ${pairIntent.stableAmount.toFixed(2)} ${pairIntent.stableTick} · txid: ${result.txId.slice(0,16)}...`,
+                  fee:0.01,
+                });
+                invalidateKrcBalanceCache(wallet!.address!, pairIntent.stableTick);
+              }).catch((e: any) => {
+                addLog({ type:"EXEC", msg:`Pair swap failed: ${e?.message || "unknown"} — position unchanged.`, fee:null });
+              });
+            } else {
+              addLog({
+                type:"SYSTEM",
+                msg: isPairSwapConfigured()
+                  ? `Pair swap ready — set exec mode to AUTONOMOUS for auto-execution.`
+                  : `Set VITE_SWAP_DEX_ENDPOINT to auto-execute, or dispatch manually.${pairIntent.preferCovenant ? " vProg covenant path active post KIP-9." : ""}`,
+                fee:null,
+              });
+            }
+          } else {
+            // Accumulation mode: no automated REDUCE execution; manual exchange transfer required.
+            addLog({
+              type:"EXEC",
+              msg: _slCheck.triggered
+                ? `STOP-LOSS EXIT — ${_slCheck.label}. Move KAS to exchange to realise exit.`
+                : `REDUCE signal — take-profit opportunity. Move KAS from your accumulation address to an exchange to realise gains. Agent will hold accumulation until signal clears.`,
+              fee:0.01,
+            });
+          }
+          // Reset position tracking after REDUCE (stop or take-profit)
+          const _resetState = resetPositionAfterReduce(agent.agentId || "default") as unknown;
+          void _resetState;
+          setStopLossState(loadStopLossState(agent.agentId || "default"));
+        } else if(effectiveAction !== "HOLD"){
           const requested = Number(dec.capital_allocation_kas || 0);
           const calibrationScaledRequested =
-            dec.action === "ACCUMULATE"
+            effectiveAction === "ACCUMULATE"
               ? Number((Math.max(0, requested) * calibrationSizeMultiplier).toFixed(6))
               : requested;
-          if (dec.action === "ACCUMULATE" && calibrationScaledRequested < requested) {
+          if (effectiveAction === "ACCUMULATE" && calibrationScaledRequested < requested) {
             addLog({
               type:"SYSTEM",
               msg:
@@ -547,9 +851,9 @@ const [viewportWidth, setViewportWidth] = useState(
           }
           const sharedCapKas = Number(activePortfolioRow?.cycleCapKas || 0);
           const portfolioCapped =
-            dec.action === "ACCUMULATE" && sharedCapKas > 0 ? Math.min(calibrationScaledRequested, sharedCapKas) : calibrationScaledRequested;
-          const amountKas = dec.action === "ACCUMULATE" ? Math.min(portfolioCapped, availableToSpend) : calibrationScaledRequested;
-          if (dec.action === "ACCUMULATE" && sharedCapKas > 0 && calibrationScaledRequested > portfolioCapped) {
+            effectiveAction === "ACCUMULATE" && sharedCapKas > 0 ? Math.min(calibrationScaledRequested, sharedCapKas) : calibrationScaledRequested;
+          const amountKas = effectiveAction === "ACCUMULATE" ? Math.min(portfolioCapped, availableToSpend) : calibrationScaledRequested;
+          if (effectiveAction === "ACCUMULATE" && sharedCapKas > 0 && calibrationScaledRequested > portfolioCapped) {
             addLog({
               type:"SYSTEM",
               msg:`Shared portfolio allocator capped ${agent.name} cycle from ${calibrationScaledRequested} to ${portfolioCapped.toFixed(4)} KAS.`,
@@ -562,6 +866,33 @@ const [viewportWidth, setViewportWidth] = useState(
           if (!(amountKas > 0)) {
             addLog({type:"EXEC", msg:"HOLD — computed execution amount is zero", fee:0.03});
             return;
+          }
+          // PAIR MODE: execute BUY_KAS alongside the regular KAS vault transfer.
+          if (pairIntent && pairIntent.direction === "BUY_KAS") {
+            addLog({ type:"EXEC", msg: formatPairIntentLog(pairIntent), fee:0.01 });
+            if (isPairSwapConfigured() && execMode === "autonomous" && stableBalanceKrc > 0) {
+              // Fire-and-forget alongside the KAS transfer below.
+              executePairIntent(pairIntent, wallet!.address!).then((result) => {
+                addLog({
+                  type:"EXEC",
+                  msg:`PAIR BUY: ${pairIntent.stableAmount.toFixed(2)} ${pairIntent.stableTick} → KAS · txid: ${result.txId.slice(0,16)}...`,
+                  fee:0.01,
+                });
+                invalidateKrcBalanceCache(wallet!.address!, pairIntent.stableTick);
+              }).catch((e: any) => {
+                addLog({ type:"EXEC", msg:`Pair BUY failed: ${e?.message || "unknown"}`, fee:null });
+              });
+            } else {
+              addLog({
+                type:"SYSTEM",
+                msg: stableBalanceKrc <= 0
+                  ? `Pair BUY paused — no ${pairIntent.stableTick} balance detected.`
+                  : isPairSwapConfigured()
+                    ? `Pair BUY ready — set exec mode to AUTONOMOUS for auto-execution.`
+                    : `Set VITE_SWAP_DEX_ENDPOINT to auto-execute ${pairIntent.stableTick}→KAS swap.`,
+                fee:null,
+              });
+            }
           }
           // Get agent deposit address for this wallet session
           const agentDepositAddr = getAgentDepositAddress(wallet?.address);
@@ -591,7 +922,7 @@ const [viewportWidth, setViewportWidth] = useState(
           // the real safety net. Blocking on source alone was over-conservative.
           // During a DAG activity surge the effective threshold is lifted 1.5× so the bot
           // can execute larger accumulation tranches when on-chain demand is elevated.
-          const surgeBoost = dagSignals.activitySurge && dec.action === "ACCUMULATE" ? 1.5 : 1.0;
+          const surgeBoost = dagSignals.activitySurge && effectiveAction === "ACCUMULATE" ? 1.5 : 1.0;
           const effectiveAutoThresh = adaptiveAutoThreshold.thresholdKas * surgeBoost;
           if (adaptiveAutoThreshold.samplesSufficient && Math.abs(adaptiveAutoThreshold.multiplier - 1) >= 0.08) {
             const adaptiveReasonKey =
@@ -623,17 +954,48 @@ const [viewportWidth, setViewportWidth] = useState(
           if(isAutoApprove){
             try {
               const txid = await sendWalletTransfer(txItem);
+              const isPaperTx = txid.startsWith("paper_");
+
+              // Track simulated P&L for paper mode
+              if (isPaperTx) {
+                const sign = effectiveAction === "REDUCE" ? -1 : 1;
+                setPaperPnlKas((prev) => prev + sign * (txItem.amount_kas ?? 0));
+              }
+              // Track entry price for stop-loss after real ACCUMULATE fill
+              if (!isPaperTx && effectiveAction === "ACCUMULATE" && currentPrice > 0) {
+                const newSlState = recordAccumulateFill(
+                  agent.agentId || "default",
+                  txItem.amount_kas ?? 0,
+                  currentPrice,
+                );
+                setStopLossState(newSlState);
+              }
+              // Record trade for Claude outcome feedback loop
+              if (!isPaperTx) {
+                recordTradeBroadcast({
+                  agentId: agent.agentId || "default",
+                  txId: txid,
+                  action: effectiveAction,
+                  decisionSource: decSource,
+                  entryPriceUsd: currentPrice,
+                  amountKas: txItem.amount_kas ?? 0,
+                  regime: quantRegime,
+                  confidenceScore: Number(dec.confidence_score || 0),
+                });
+              }
 
               addLog({
                 type:"EXEC",
-                msg:`AUTO-APPROVED: ${dec.action} · ${txItem.amount_kas} KAS · txid: ${txid.slice(0,16)}...`,
+                msg: isPaperTx
+                  ? `PAPER: ${dec.action} · ${txItem.amount_kas} KAS · simulated`
+                  : `AUTO-APPROVED: ${dec.action} · ${txItem.amount_kas} KAS · txid: ${txid.slice(0,16)}...`,
                 fee:0.08,
-                truthLabel:"BROADCASTED",
-                receiptProvenance:"ESTIMATED",
+                truthLabel: isPaperTx ? "PAPER" : "BROADCASTED",
+                receiptProvenance: isPaperTx ? "PAPER" : "ESTIMATED",
               });
-              addLog({type:"TREASURY", msg:`Fee split → Pool: ${(FEE_RATE*AGENT_SPLIT).toFixed(4)} KAS / Treasury: ${(FEE_RATE*TREASURY_SPLIT).toFixed(4)} KAS`, fee:FEE_RATE});
+              if (!isPaperTx) addLog({type:"TREASURY", msg:`Fee split → Pool: ${(FEE_RATE*AGENT_SPLIT).toFixed(4)} KAS / Treasury: ${(FEE_RATE*TREASURY_SPLIT).toFixed(4)} KAS`, fee:FEE_RATE});
               const signedItem = prependSignedBroadcastedQueueItem(txItem, txid);
-              await settleTreasuryFeePayout(signedItem, "auto");
+              if (!isPaperTx) await settleTreasuryFeePayout(signedItem, "auto");
             } catch (e: any) {
               prependQueueItem(txItem);
               addLog({type:"SIGN", msg:`Auto-approve fallback to manual queue: ${e?.message || "wallet broadcast failed"}`, fee:null});
@@ -646,20 +1008,95 @@ const [viewportWidth, setViewportWidth] = useState(
           addLog({type:"EXEC", msg:"HOLD — no action taken", fee:0.08});
         }
       }
+      // ── LIMIT ORDER CHECK ─────────────────────────────────────────────────
+      if (currentPrice > 0) {
+        checkAndTriggerOrders(currentPrice, (order) => {
+          addLog({
+            type: "EXEC",
+            msg: `LIMIT ORDER TRIGGERED · ${order.type} ${order.kasAmount.toFixed(4)} KAS @ $${order.triggerPrice.toFixed(4)} (current $${currentPrice.toFixed(4)})`,
+            fee: null,
+          });
+          // Wire to execution queue: create a queue item so user can approve or it
+          // auto-executes if conditions match (autonomous mode + under auto-approve thresh).
+          const _execReady = liveConnected && !kasDataError && liveExecutionArmed && wallet?.address && wallet?.provider !== "demo";
+          if (_execReady) {
+            const loTxItem = buildQueueTxItem({
+              id: `lo_${crypto.randomUUID()}`,
+              type: order.type === "BUY" ? "ACCUMULATE" : "REDUCE",
+              metaKind: "action",
+              from: wallet!.address,
+              to: getAgentDepositAddress(wallet!.address) || ACCUMULATION_VAULT,
+              amount_kas: order.kasAmount,
+              purpose: `Limit order ${order.type} @ $${order.triggerPrice.toFixed(4)}`,
+              status: "pending",
+              ts: Date.now(),
+              dec: { action: order.type === "BUY" ? "ACCUMULATE" : "REDUCE", rationale: `Limit order triggered at $${currentPrice.toFixed(4)}` },
+            });
+            prependQueueItem(loTxItem);
+            markOrderExecuted(order.id);
+            addLog({ type: "SIGN", msg: `Limit order queued for wallet: ${order.kasAmount.toFixed(4)} KAS`, fee: null });
+          } else {
+            addLog({ type: "SYSTEM", msg: `Limit order ready — connect wallet + arm live execution to auto-queue.`, fee: null });
+          }
+        });
+
+        // ── DCA CHECK ─────────────────────────────────────────────────────
+        checkDcaSchedules((schedule) => {
+          addLog({
+            type: "EXEC",
+            msg: `DCA · Buying ${schedule.kasAmount.toFixed(4)} KAS · "${schedule.note || schedule.frequency}" · run #${schedule.executionCount + 1}`,
+            fee: null,
+          });
+          // Wire DCA to execution queue (same path as ACCUMULATE signal)
+          if (liveConnected && !kasDataError && liveExecutionArmed && wallet?.address && wallet?.provider !== "demo") {
+            const dcaTxItem = buildQueueTxItem({
+              id: `dca_${crypto.randomUUID()}`,
+              type: "ACCUMULATE",
+              metaKind: "action",
+              from: wallet.address,
+              to: getAgentDepositAddress(wallet.address) || ACCUMULATION_VAULT,
+              amount_kas: schedule.kasAmount,
+              purpose: `DCA ${schedule.frequency} · run #${schedule.executionCount + 1}`,
+              status: "pending",
+              ts: Date.now(),
+              dec: { action: "ACCUMULATE", rationale: `DCA schedule: ${schedule.note || schedule.frequency}` },
+            });
+            prependQueueItem(dcaTxItem);
+            markDcaExecuted(schedule.id);
+            addLog({ type: "SIGN", msg: `DCA queued: ${schedule.kasAmount.toFixed(4)} KAS`, fee: null });
+          } else {
+            markDcaExecuted(schedule.id); // advance schedule even without execution to prevent re-fire
+            addLog({ type: "SYSTEM", msg: `DCA schedule advanced — connect wallet to auto-execute.`, fee: null });
+          }
+        });
+      }
+
+      _cycleOk = true;
     }catch(e: any){
       const fx = normalizeError(e, { domain: "system" });
       addLog({type:"ERROR", msg:formatForgeError(fx), fee:null});
       if (fx.domain === "tx" && fx.code === "TX_BROADCAST_FAILED") {
         transitionAgentStatus({ type: "FAIL", reason: fx.message });
       }
+      // EXECUTION BACKOFF (item 4): exponential delay after consecutive failures (2s, 4s, 8s … 30s cap).
+      consecutiveExecutionFailuresRef.current += 1;
+      const backoffMs = Math.min(30_000, 2_000 * Math.pow(2, consecutiveExecutionFailuresRef.current - 1));
+      executionBackoffUntilRef.current = Date.now() + backoffMs;
+      if (consecutiveExecutionFailuresRef.current >= 2) {
+        addLog({
+          type: "SYSTEM",
+          msg: `Execution backoff: ${consecutiveExecutionFailuresRef.current} consecutive failures — pausing ${Math.round(backoffMs / 1000)}s before next cycle.`,
+          fee: null,
+        });
+      }
     }
     finally {
+      if (_cycleOk) consecutiveExecutionFailuresRef.current = 0;
       setLoading(false);
       cycleLockRef.current = false;
       priceTriggerResetRef.current();   // re-anchor price baseline after each cycle
     }
   }, [
-    ACCUMULATE_ONLY,
     MAX_DECISION_ENTRIES,
     activePortfolioRow,
     addLog,
@@ -848,13 +1285,44 @@ const [viewportWidth, setViewportWidth] = useState(
     {k:"swap",l:"SWAP"},
     {k:"intelligence",l:"INTELLIGENCE"},
     {k:"analytics",l:"ANALYTICS"},
+    {k:"controls",l:"CONTROLS"},
+    {k:"backtest",l:"BACKTEST"},
+    {k:"leaderboard",l:"LEADERBOARD"},
     {k:"attribution",l:"ATTRIBUTION"},
     {k:"alerts",l:"ALERTS"},
     {k:"queue",l:`QUEUE${pendingCount>0?` (${pendingCount})`:""}`},
     {k:"log",l:"LOG"},
     {k:"network",l:"NETWORK"},
-    {k:"controls",l:"CONTROLS"},
   ];
+  const rpcFailoverMode = KAS_API_FALLBACKS.length > 0 ? "MULTI-ENDPOINT" : "PRIMARY ONLY";
+  const streamHeartbeatAgeMs = streamPulse > 0 ? Math.max(0, Date.now() - streamPulse) : null;
+  const streamHeartbeatLabel =
+    streamHeartbeatAgeMs == null
+      ? "NO EVENTS"
+      : streamHeartbeatAgeMs < 1000
+        ? `${streamHeartbeatAgeMs} ms`
+        : `${(streamHeartbeatAgeMs / 1000).toFixed(1)} s`;
+  const lastStreamKindLabel = lastStreamEvent?.kind ? String(lastStreamEvent.kind).toUpperCase() : "NONE";
+  const wsKickMinIntervalMs = lastStreamEvent?.kind === "utxo" ? 1500 : 2500;
+  const nodeSyncState = kasData?.nodeStatus?.isSynced;
+  const nodeIndexState = kasData?.nodeStatus?.isUtxoIndexed;
+  const nodeHealthText =
+    nodeSyncState === true && nodeIndexState === true
+      ? "NODE READY"
+      : nodeSyncState === false
+        ? "NODE SYNCING"
+        : nodeIndexState === false
+          ? "NODE INDEXING"
+          : "NODE UNKNOWN";
+  const nodeHealthColor =
+    nodeSyncState === true && nodeIndexState === true
+      ? C.ok
+      : nodeSyncState === false || nodeIndexState === false
+        ? C.warn
+        : C.dim;
+  const expectedNetworkId = String(DEFAULT_NETWORK || "").toLowerCase();
+  const walletNetworkId = String(wallet?.network || "").toLowerCase();
+  const walletNetworkMismatch = !!walletNetworkId && walletNetworkId !== expectedNetworkId;
 
   // Track previous pending count to detect state changes
   const lastPendingCountRef = useRef(0);
@@ -1038,8 +1506,10 @@ const [viewportWidth, setViewportWidth] = useState(
           {activeStrategyLabel && activeStrategyLabel !== "Custom" && <Badge text={String(activeStrategyLabel).toUpperCase()} color={C.text}/>}
           {/* LIVE EXEC ON — only when armed */}
           {liveExecutionArmed === true && <Badge text="LIVE EXEC ON" color={C.ok} dot/>}
-          {/* ACCUMULATE-ONLY — only when env flag is on */}
-          {ACCUMULATE_ONLY && <Badge text="ACCUMULATE-ONLY" color={C.ok}/>}
+          {/* ACCUMULATE-ONLY — per-agent mode or global env fallback */}
+          {(String(agent?.actionMode || "").toLowerCase() === "accumulate_only" || (String(agent?.actionMode || "") === "" && ACCUMULATE_ONLY)) && <Badge text="ACCUMULATE-ONLY" color={C.ok}/>}
+          {/* PAPER TRADING — simulation mode, no real txs */}
+          {execMode === "paper" && <Badge text="PAPER TRADING" color={C.warn} dot/>}
           {/* Wallet provider (e.g. KASWARE) — always show when connected */}
           {wallet?.provider && <Badge text={wallet?.provider?.toUpperCase()} color={C.purple} dot/>}
           {/* ENGINE WORKER — only when quant engine is in worker mode */}
@@ -1062,6 +1532,7 @@ const [viewportWidth, setViewportWidth] = useState(
           {autoCycleCountdownLabel && <Badge text={`AUTO ${autoCycleCountdownLabel}`} color={status==="RUNNING"?C.text:C.dim}/>}
           {/* Live feed badges */}
           {liveConnected && <Badge text="DAG LIVE" color={C.ok} dot/>}
+          <Badge text={nodeHealthText} color={nodeHealthColor} dot={nodeSyncState === true && nodeIndexState === true}/>
           {streamConnected && streamBadgeText && <Badge text={streamBadgeText} color={streamBadgeColor} dot/>}
           {lastStreamEvent?.kind === "daa" && <Badge text="WS DAA PUSH" color={C.ok} dot/>}
           {lastStreamEvent?.kind === "utxo" && lastStreamEvent?.affectsWallet && <Badge text="WS UTXO PUSH" color={C.warn} dot/>}
@@ -1077,7 +1548,8 @@ const [viewportWidth, setViewportWidth] = useState(
             key={t.k}
             data-testid={`dashboard-tab-${t.k}`}
             onClick={()=>setTab(t.k)}
-            style={{background:"none", border:"none", borderBottom:`2px solid ${tab===t.k?C.accent:"transparent"}`, color:tab===t.k?C.accent:C.dim, padding:"7px 14px", fontSize:11, cursor:"pointer", letterSpacing:"0.08em", ...mono, marginBottom:-1, whiteSpace:"nowrap", transition:"color 0.15s"}}
+            className={`forge-tab-btn${tab===t.k?" active":""}`}
+            style={{color:tab===t.k?C.accent:C.dim, padding:"8px 14px", fontSize:11, letterSpacing:"0.08em", ...mono}}
           >
             {t.l}
           </button>
@@ -1086,574 +1558,46 @@ const [viewportWidth, setViewportWidth] = useState(
 
       {/* ── OVERVIEW ── */}
       {tab==="overview" && (
-        <div>
-          {/* DeFi Header - Wallet Balance & Key Metrics */}
-          <Card data-testid="overview-portfolio-header" p={0} style={{marginBottom:12, background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, border: `1px solid ${C.accent}40`, boxShadow: `0 4px 24px ${C.accent}15`}}>
-            <div style={{padding: isNarrowPhone ? "12px 10px 10px" : isMobile ? "14px 14px 12px" : "18px 24px", display:"flex", flexDirection:isMobile ? "column" : "row", justifyContent:"space-between", alignItems:isMobile ? "stretch" : "center", gap:isMobile ? 12 : 0, borderBottom: `1px solid ${C.border}`, background: `linear-gradient(90deg, ${C.accent}15 0%, transparent 100%)`}}>
-              <div style={{display:"flex", alignItems:"center", gap:isNarrowPhone ? 8 : isMobile ? 10 : 14, minWidth:0}}>
-                <div style={{width:isNarrowPhone ? 40 : isMobile ? 44 : 52, height:isNarrowPhone ? 40 : isMobile ? 44 : 52, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", flexShrink:0}}>
-                  <img src="/kaspa-logo.png" alt="KAS" width={isNarrowPhone ? 42 : isMobile ? 48 : 56} height={isNarrowPhone ? 42 : isMobile ? 48 : 56} style={{objectFit:"cover", marginTop:1}} />
-                </div>
-                <div style={{display:"flex", flexDirection:"column", justifyContent:"center", minWidth:0}}>
-                  <div style={{fontSize:10, color:C.accent, ...mono, marginBottom:1, letterSpacing:"0.15em", fontWeight:700}}>◆ TOTAL PORTFOLIO VALUE</div>
-                  <div style={{fontSize:isNarrowPhone ? 24 : isMobile ? 28 : 36, color:C.accent, fontWeight:700, ...mono, textShadow: `0 0 30px ${C.accent}60`, lineHeight:1, wordBreak:"break-word"}}>
-                    {kasData?.walletKas || agent.capitalLimit} <span style={{fontSize:isNarrowPhone ? 12 : isMobile ? 14 : 18, color:C.dim}}>KAS</span>
-                  </div>
-                  {Number(kasData?.priceUsd || 0) > 0 && (
-                    <div style={{fontSize:isNarrowPhone ? 13 : isMobile ? 14 : 18, color:C.text, ...mono, display:"flex", alignItems:"center", gap:6, flexWrap:"wrap"}}>
-                      ${(Number(kasData?.walletKas || 0) * Number(kasData?.priceUsd)).toFixed(2)} 
-                      <span style={{color:C.ok, fontSize:isNarrowPhone ? 9 : isMobile ? 10 : 12, background:C.ok + "20", padding:"2px 8px", borderRadius:4}}>USD</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div style={{display:"flex", flexDirection:isMobile ? "row" : "column", gap:10, alignItems:isMobile ? "stretch" : "flex-end", width:isMobile ? "100%" : "auto"}}>
-                <div style={{display:"flex", gap:10, alignItems:"center", justifyContent:isMobile ? "space-between" : "flex-start", background:`${C.s2}90`, padding:isNarrowPhone ? "7px 8px" : isMobile ? "8px 10px" : "10px 16px", borderRadius:10, border:`1px solid ${C.border}`, width:isMobile ? "100%" : "auto"}}>
-                  <div style={{display:"flex", alignItems:"center", gap:6}}>
-                    <span style={{fontSize:isNarrowPhone ? 9 : isMobile ? 10 : 11, color:C.dim, ...mono}}>KAS/USD</span>
-                    <span style={{fontSize:isNarrowPhone ? 14 : isMobile ? 16 : 18, color:C.text, fontWeight:700, ...mono}}>${Number(kasData?.priceUsd || 0).toFixed(4)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* Quick Stats Row - DeFi Style */}
-            <div data-testid="overview-quick-stats" style={{padding: isNarrowPhone ? "10px" : isMobile ? "12px 14px" : "16px 24px", display:"grid", gridTemplateColumns:isNarrowPhone ? "1fr" : isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(6, 1fr)", gap:isMobile ? 10 : 16, background:`${C.border}15`}}>
-              <div style={{textAlign:"center", background:C.s2 + "60", padding:"12px 8px", borderRadius:8, border:`1px solid ${C.ok}30`}}>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono, marginBottom:6, letterSpacing:"0.1em"}}>SPENDABLE</div>
-                <div style={{fontSize:isMobile ? 16 : 18, color:C.ok, fontWeight:700, ...mono}}>{spendableKas.toFixed(2)}</div>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono}}>KAS</div>
-              </div>
-              <div style={{textAlign:"center", background:C.s2 + "60", padding:"12px 8px", borderRadius:8, border:`1px solid ${C.warn}30`}}>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono, marginBottom:6, letterSpacing:"0.1em"}}>RESERVE</div>
-                <div style={{fontSize:isMobile ? 16 : 18, color:C.warn, fontWeight:700, ...mono}}>{RESERVE}</div>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono}}>KAS</div>
-              </div>
-              <div style={{textAlign:"center", background:C.s2 + "60", padding:"12px 8px", borderRadius:8, border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono, marginBottom:6, letterSpacing:"0.1em"}}>DAA HEIGHT</div>
-                <div style={{fontSize:isMobile ? 16 : 18, color:C.text, fontWeight:700, ...mono}}>{kasData?.dag?.daaScore?.toLocaleString()?.slice(-6) || "—"}</div>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono}}>BLOCK</div>
-              </div>
-              <div style={{textAlign:"center", background:C.s2 + "60", padding:"12px 8px", borderRadius:8, border:`1px solid ${pendingCount > 0 ? C.warn : C.border}`}}>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono, marginBottom:6, letterSpacing:"0.1em"}}>PENDING</div>
-                <div style={{fontSize:isMobile ? 16 : 18, color:pendingCount > 0 ? C.warn : C.dim, fontWeight:700, ...mono}}>{pendingCount}</div>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono}}>TXS</div>
-              </div>
-              <div style={{textAlign:"center", background:C.s2 + "60", padding:"12px 8px", borderRadius:8, border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono, marginBottom:6, letterSpacing:"0.1em"}}>FEES PAID</div>
-                <div style={{fontSize:isMobile ? 16 : 18, color:C.text, fontWeight:700, ...mono}}>{totalFees.toFixed(3)}</div>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono}}>KAS</div>
-              </div>
-              <div style={{textAlign:"center", background:C.s2 + "60", padding:"12px 8px", borderRadius:8, border:`1px solid ${C.accent}30`}}>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono, marginBottom:6, letterSpacing:"0.1em"}}>CYCLE SIZE</div>
-                <div style={{fontSize:isMobile ? 16 : 18, color:C.accent, fontWeight:700, ...mono}}>{agent.capitalLimit}</div>
-                <div style={{fontSize:isMobile ? 8 : 9, color:C.dim, ...mono}}>KAS</div>
-              </div>
-            </div>
-{/* Quick Actions Section */}
-            <div style={{padding: isNarrowPhone ? "12px 10px" : isMobile ? "12px 14px" : "14px 24px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap", borderTop:`1px solid ${C.border}`}}>
-              <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
-                <Btn onClick={runCycle} disabled={loading||status!=="RUNNING"} size="sm">
-                  {loading ? "⏳" : "🚀"} {loading ? "RUNNING" : "RUN CYCLE"}
-                </Btn>
-                <Btn
-                  onClick={()=>setLiveExecutionArmed((v: boolean)=>!v)}
-                  variant={liveExecutionArmed ? "warn" : "primary"}
-                  size="sm"
-                >
-                  {liveExecutionArmed ? "🟢 AUTO-TRADE ON" : "🔴 AUTO-TRADE OFF"}
-                </Btn>
-                <Btn onClick={()=>transitionAgentStatus({ type: status==="RUNNING" ? "PAUSE" : "RESUME" })} variant="ghost" size="sm">
-                  {status==="RUNNING" ? "⏸ PAUSE AGENT" : "▶️ RESUME AGENT"}
-                </Btn>
-                <Btn onClick={exportAgentConfig} variant="ghost" size="sm" title="Download agent config as JSON backup">
-                  EXPORT
-                </Btn>
-                <Btn onClick={killSwitch} variant="danger" size="sm">
-                  🛑 KILL-SWITCH
-                </Btn>
-              </div>
-              <div style={{display:"flex", alignItems:"center", gap:6}}>
-                <span style={{fontSize: 11, color: liveExecutionArmed ? C.ok : C.warn, fontWeight: 700, ...mono}}>
-                  {liveExecutionArmed ? "LIVE EXEC ON" : "LIVE EXEC OFF"}
-                </span>
-              </div>
-            </div>
-          </Card>
-          
-          <div style={{display:"grid", gridTemplateColumns:summaryGridCols, gap:10, marginBottom:12}}>
-            {[
-              {l:"Pending Signatures",v:pendingCount,s:"In action queue",c:pendingCount>0?C.warn:C.dim},
-              {l:"Total Protocol Fees",v:`${totalFees} KAS`,s:"", c:C.text},
-              {l:"Capital / Cycle",v:`${agent.capitalLimit} KAS`,s:"Per execution cycle",c:C.text},
-              {l:"Portfolio Cap",v:activePortfolioRow?.cycleCapKas ? `${activePortfolioRow.cycleCapKas} KAS` : "—",s:"Shared allocator",c:activePortfolioRow?.cycleCapKas ? C.ok : C.dim},
-            ].map(r=> (
-              <Card key={r.l} p={14}><Label>{r.l}</Label><div style={{fontSize:18, color:r.c, fontWeight:700, ...mono, marginBottom:2}}>{r.v}</div><div style={{fontSize:11, color:C.dim}}>{r.s}</div></Card>
-            ))}
-          </div>
-          
-          {/* AI Trading Status - Enhanced DeFi/Web3 Style */}
-          <Card p={0} style={{marginBottom:12, background: `linear-gradient(135deg, ${C.s2} 0%, ${lastDecision ? C.s1 : C.s2} 100%)`, border: `1px solid ${lastDecision ? C.accent + '40' : C.border}`, boxShadow: lastDecision ? `0 4px 24px ${C.accent}20` : 'none'}}>
-            {/* Header with animated status */}
-            <div style={{padding: "16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom: `1px solid ${C.border}`, background: `linear-gradient(90deg, ${C.accent}10 0%, transparent 100%)`}}>
-              <div style={{display:"flex", alignItems:"center", gap:12}}>
-                <span style={{fontSize:16}}>
-                  {status === "RUNNING" && lastDecision ? "🟢" : status === "RUNNING" ? "🟡" : status === "PAUSED" ? "🟡" : "⚫"}
-                </span>
-                <span style={{fontSize:14, color:C.text, fontWeight:700, ...mono}}>🤖 AI TRADING ENGINE</span>
-              </div>
-              <div style={{display:"flex", gap:8, alignItems:"center"}}>
-                <div style={{display:"flex", alignItems:"center", gap:6, background:`${C.s2}90`, padding:"6px 12px", borderRadius:20, border:`1px solid ${C.border}`}}>
-                  <span style={{fontSize:12}}>⚡</span>
-                  <span style={{fontSize:11, color:C.dim, ...mono}}>Engine Latency</span>
-                  <span style={{fontSize:12, color:C.accent, fontWeight:700, ...mono}}>{lastDecision?.dec?.engine_latency_ms || 0}ms</span>
-                </div>
-                <Badge 
-                  text={status === "RUNNING" ? "● ACTIVE" : status === "PAUSED" ? "◉ PAUSED" : "○ OFF"}
-                  color={status === "RUNNING" ? C.ok : status === "PAUSED" ? C.warn : C.dim}
-                />
-                <Badge 
-                  text={lastDecision?.action || "WAITING"} 
-                  color={lastDecision?.action === "ACCUMULATE" ? C.ok : lastDecision?.action === "REDUCE" ? C.danger : lastDecision?.action === "HOLD" ? C.warn : C.dim}
-                />
-              </div>
-            </div>
-            
-            {lastDecision ? (
-              <div style={{padding: "20px"}}>
-                {/* Primary Metrics Row - Enhanced */}
-                <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap:12, marginBottom:16}}>
-                  {/* Decision Source with Icon */}
-                  <div style={{background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, borderRadius:10, padding:14, border:`1px solid ${lastDecisionSource === "hybrid-ai" ? C.accent + '40' : C.border}`}}>
-                    <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:8}}>
-                      <span style={{fontSize:16}}>{lastDecisionSource === "hybrid-ai" ? "🧠" : lastDecisionSource === "ai" ? "🤖" : "📊"}</span>
-                      <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.1em"}}>DECISION SOURCE</div>
-                    </div>
-                    <div style={{fontSize:18, color: lastDecisionSource === "hybrid-ai" ? C.accent : lastDecisionSource === "ai" ? C.ok : C.text, fontWeight:700, ...mono}}>
-                      {lastDecisionSource === "hybrid-ai" ? "HYBRID AI" : lastDecisionSource === "ai" ? "PURE AI" : lastDecisionSource === "quant-core" ? "QUANT CORE" : "FALLBACK"}
-                    </div>
-                    <div style={{fontSize:10, color:C.dim, marginTop:4}}>{lastDecisionSource === "hybrid-ai" ? "AI + Quant combined" : lastDecisionSource === "ai" ? "OpenAI powered" : "Local quant engine"}</div>
-                  </div>
-                  
-                  {/* Confidence Score - Circular Gauge Style */}
-                  <div style={{background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, borderRadius:10, padding:14, border:`1px solid ${lastDecision.confidence_score >= 0.8 ? C.ok + '40' : lastDecision.confidence_score >= 0.5 ? C.warn + '40' : C.danger + '40'}`}}>
-                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8}}>
-                      <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.1em"}}>CONFIDENCE</div>
-                      <span style={{fontSize:14}}>{lastDecision.confidence_score >= 0.8 ? "🟢" : lastDecision.confidence_score >= 0.5 ? "🟡" : "🔴"}</span>
-                    </div>
-                    <div style={{display:"flex", alignItems:"baseline", gap:4}}>
-                      <span style={{fontSize:28, color: lastDecision.confidence_score >= 0.8 ? C.ok : lastDecision.confidence_score >= 0.5 ? C.warn : C.danger, fontWeight:700, ...mono}}>
-                        {(lastDecision.confidence_score * 100).toFixed(0)}
-                      </span>
-                      <span style={{fontSize:14, color:C.dim, ...mono}}>%</span>
-                    </div>
-                    <div style={{marginTop:8, height:4, background:C.s1, borderRadius:2, overflow:"hidden"}}>
-                      <div style={{width: `${lastDecision.confidence_score * 100}%`, height:"100%", background: lastDecision.confidence_score >= 0.8 ? C.ok : lastDecision.confidence_score >= 0.5 ? C.warn : C.danger, borderRadius:2, transition:"width 0.5s ease"}} />
-                    </div>
-                  </div>
-                  
-                  {/* Kelly Sizing */}
-                  <div style={{background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, borderRadius:10, padding:14, border:`1px solid ${C.accent}40`}}>
-                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8}}>
-                      <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.1em"}}>KELLY SIZING</div>
-                      <span style={{fontSize:14}}>📈</span>
-                    </div>
-                    <div style={{display:"flex", alignItems:"baseline", gap:4}}>
-                      <span style={{fontSize:28, color:C.accent, fontWeight:700, ...mono}}>
-                        {(lastDecision.kelly_fraction * 100).toFixed(1)}
-                      </span>
-                      <span style={{fontSize:14, color:C.dim, ...mono}}>%</span>
-                    </div>
-                    <div style={{fontSize:10, color:C.dim, marginTop:4}}>Position size multiplier</div>
-                  </div>
-                  
-                  {/* Monte Carlo Win */}
-                  <div style={{background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, borderRadius:10, padding:14, border:`1px solid ${C.ok}40`}}>
-                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8}}>
-                      <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.1em"}}>MONTE CARLO</div>
-                      <span style={{fontSize:14}}>🎯</span>
-                    </div>
-                    <div style={{display:"flex", alignItems:"baseline", gap:4}}>
-                      <span style={{fontSize:28, color:C.ok, fontWeight:700, ...mono}}>
-                        {lastDecision.monte_carlo_win_pct}
-                      </span>
-                      <span style={{fontSize:14, color:C.dim, ...mono}}>%</span>
-                    </div>
-                    <div style={{fontSize:10, color:C.dim, marginTop:4}}>Win probability</div>
-                  </div>
-                </div>
-                
-                {/* Quant Metrics Row - More Detail */}
-                {lastDecision.quant_metrics && (
-                  <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:16, marginBottom:16, border:`1px solid ${C.border}`}}>
-                    <div style={{fontSize:11, color:C.accent, fontWeight:700, ...mono, marginBottom:12, letterSpacing:"0.1em"}}>📊 QUANT CORE METRICS</div>
-                    <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap:12}}>
-                      <div>
-                        <div style={{fontSize:9, color:C.dim, ...mono, marginBottom:4}}>SAMPLES</div>
-                        <div style={{fontSize:16, color:C.text, fontWeight:700, ...mono}}>{lastDecision.quant_metrics.sample_count ?? "—"}</div>
-                      </div>
-                      <div>
-                        <div style={{fontSize:9, color:C.dim, ...mono, marginBottom:4}}>EDGE SCORE</div>
-                        <div style={{fontSize:16, color: Number(lastDecision.quant_metrics.edge_score) > 0 ? C.ok : C.warn, fontWeight:700, ...mono}}>{Number(lastDecision.quant_metrics.edge_score || 0).toFixed(4) ?? "—"}</div>
-                      </div>
-                      <div>
-                        <div style={{fontSize:9, color:C.dim, ...mono, marginBottom:4}}>VOLATILITY</div>
-                        <div style={{fontSize:16, color:C.text, fontWeight:700, ...mono}}>{Number(lastDecision.quant_metrics.ewma_volatility || 0).toFixed(4) ?? "—"}</div>
-                      </div>
-                      <div>
-                        <div style={{fontSize:9, color:C.dim, ...mono, marginBottom:4}}>DATA QUALITY</div>
-                        <div style={{fontSize:16, color: (lastDecision.quant_metrics.data_quality_score || 0) >= 0.7 ? C.ok : C.warn, fontWeight:700, ...mono}}>{((lastDecision.quant_metrics.data_quality_score || 0) * 100).toFixed(0)}%</div>
-                      </div>
-                      <div>
-                        <div style={{fontSize:9, color:C.dim, ...mono, marginBottom:4}}>REGIME</div>
-                        <div style={{fontSize:14, color: lastDecision.quant_metrics.regime === "RISK_ON" ? C.ok : lastDecision.quant_metrics.regime === "RISK_OFF" ? C.danger : C.warn, fontWeight:700, ...mono}}>
-                          {String(lastDecision.quant_metrics.regime || "NA").replace(/_/g, " ")}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Risk & Execution Row */}
-                <div style={{display:"flex", gap:12, marginBottom:16, flexWrap:"wrap"}}>
-                  <div style={{flex: "1 1 200px", background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${lastDecision.risk_score <= 0.4 ? C.ok + '40' : lastDecision.risk_score <= 0.7 ? C.warn + '40' : C.danger + '40'}`}}>
-                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                      <div style={{fontSize:10, color:C.dim, ...mono}}>RISK SCORE</div>
-                      <span style={{fontSize:14}}>{lastDecision.risk_score <= 0.4 ? "🛡️" : lastDecision.risk_score <= 0.7 ? "⚠️" : "🚨"}</span>
-                    </div>
-                    <div style={{fontSize:24, color: lastDecision.risk_score <= 0.4 ? C.ok : lastDecision.risk_score <= 0.7 ? C.warn : C.danger, fontWeight:700, ...mono}}>
-                      {lastDecision.risk_score?.toFixed(3)}
-                    </div>
-                    <div style={{fontSize:10, color:C.dim, marginTop:4}}>
-                      {lastDecision.risk_score <= 0.4 ? "Low risk - Safe to execute" : lastDecision.risk_score <= 0.7 ? "Medium risk - Caution advised" : "High risk - Blocked"}
-                    </div>
-                  </div>
-                  
-                  <div style={{flex: "1 1 200px", background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.accent}40`}}>
-                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                      <div style={{fontSize:10, color:C.dim, ...mono}}>CAPITAL ALLOCATION</div>
-                      <span style={{fontSize:14}}>💰</span>
-                    </div>
-                    <div style={{fontSize:24, color:C.accent, fontWeight:700, ...mono}}>
-                      {lastDecision.capital_allocation_kas} <span style={{fontSize:12, color:C.dim}}>KAS</span>
-                    </div>
-                    <div style={{fontSize:10, color:C.dim, marginTop:4}}>
-                      ~${(Number(lastDecision.capital_allocation_kas) * Number(kasData?.priceUsd || 0)).toFixed(2)} USD
-                    </div>
-                  </div>
-                  
-                  <div style={{flex: "1 1 200px", background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
-                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                      <div style={{fontSize:10, color:C.dim, ...mono}}>NETWORK STATUS</div>
-                      <span style={{fontSize:14}}>{liveConnected ? "🟢" : "🔴"}</span>
-                    </div>
-                    <div style={{fontSize:18, color: liveConnected ? C.ok : C.danger, fontWeight:700, ...mono}}>
-                      {liveConnected ? "CONNECTED" : "OFFLINE"}
-                    </div>
-                    <div style={{fontSize:10, color:C.dim, marginTop:4}}>
-                      {kasData?.dag?.daaScore ? `DAA: ${kasData.dag.daaScore.toLocaleString()}` : "Waiting for sync"}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* AI Rationale - Enhanced */}
-                <div style={{background: `linear-gradient(135deg, ${C.accent}08 0%, ${C.s2} 100%)`, borderRadius:10, padding:16, marginBottom:16, border:`1px solid ${C.accent}30`}}>
-                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                    <div style={{display:"flex", alignItems:"center", gap:8}}>
-                      <span style={{fontSize:14}}>🧠</span>
-                      <div style={{fontSize:11, color:C.accent, fontWeight:700, ...mono, letterSpacing:"0.1em"}}>AI RATIONALE</div>
-                    </div>
-                    {lastDecision.quant_metrics?.ai_overlay_applied && (
-                      <Badge text="🧠 AI OVERLAY ACTIVE" color={C.accent} />
-                    )}
-                  </div>
-                  <div style={{fontSize:13, color:C.text, ...mono, lineHeight:1.6}}>
-                    {lastDecision.rationale}
-                  </div>
-                </div>
-                
-                {/* Status Badges Row */}
-                <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
-                  {lastDecision.quant_metrics?.regime && (
-                    <Badge 
-                      text={`📊 ${String(lastDecision.quant_metrics.regime).replace(/_/g, " ")}`} 
-                      color={lastDecision.quant_metrics.regime === "RISK_ON" ? C.ok : lastDecision.quant_metrics.regime === "RISK_OFF" ? C.danger : C.warn}
-                    />
-                  )}
-                  <Badge 
-                    text={`⚠️ RISK: ${lastDecision.risk_score?.toFixed(2)}`} 
-                    color={lastDecision.risk_score <= 0.4 ? C.ok : lastDecision.risk_score <= 0.7 ? C.warn : C.danger}
-                  />
-                  <Badge 
-                    text={`💰 ${lastDecision.capital_allocation_kas} KAS`} 
-                    color={C.text}
-                  />
-                  {executionGuardrails?.calibration?.tier && (
-                    <Badge 
-                      text={`🎯 CAL: ${executionGuardrails.calibration.tier.toUpperCase()}`}
-                      color={executionGuardrails.calibration.tier === "healthy" ? C.ok : C.warn}
-                    />
-                  )}
-                  {executionGuardrails?.truth?.degraded && (
-                    <Badge text="⚠️ TRUTH DEGRADED" color={C.danger} />
-                  )}
-                  {!executionGuardrails?.truth?.degraded && (
-                    <Badge text="✅ VERIFIED" color={C.ok} />
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div style={{padding: "32px 20px", textAlign:"center", background: `linear-gradient(180deg, ${C.s2} 0%, ${C.s1} 100%)`}}>
-                <div style={{fontSize:48, marginBottom:16}}>🤖</div>
-                <div style={{fontSize:16, color:C.text, fontWeight:700, ...mono, marginBottom:8}}>AI Agent Ready</div>
-                <div style={{fontSize:12, color:C.dim, marginBottom:16}}>Run a quant cycle to generate AI trading signals</div>
-                <Btn onClick={runCycle} disabled={loading || (status !== "RUNNING")} style={{padding:"12px 32px", fontSize:14}}>
-                  {loading ? "⚡ PROCESSING..." : "🚀 RUN QUANT CYCLE"}
-                </Btn>
-              </div>
-            )}
-          </Card>
-          
-          {/* On-Chain Activity - Recent Transactions with Explorer Links */}
-          {queue && queue.length > 0 && (
-            <Card p={0} style={{marginBottom:12, border: `1px solid ${C.ok}30`}}>
-              <div style={{padding: "14px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom: `1px solid ${C.border}`, background: `${C.ok}08`}}>
-                <div style={{display:"flex", alignItems:"center", gap:10}}>
-                  <span style={{fontSize:13, color:C.ok, fontWeight:700, ...mono}}>⛓️ ON-CHAIN ACTIVITY</span>
-                </div>
-                <div style={{display:"flex", gap:6}}>
-                  <Badge 
-                    text={`${queue.filter((q:any)=>q.status === "confirmed").length} CONFIRMED`} 
-                    color={C.ok}
-                  />
-                  <Badge 
-                    text={`${queue.filter((q:any)=>q.status === "signed" || q.status === "broadcasted").length} PENDING`} 
-                    color={C.warn}
-                  />
-                </div>
-              </div>
-              
-              <div style={{maxHeight: 200, overflowY: "auto"}}>
-                {queue.slice(0, 5).map((item: any, i: number) => {
-                  const isConfirmed = item.receipt_lifecycle === "confirmed";
-                  const isPending = item.status === "signed" || item.status === "broadcasted" || item.status === "pending";
-                  return (
-                    <div key={i} style={{
-                      display: "grid", 
-                      gridTemplateColumns: isMobile ? "1fr" : "80px 80px 1fr 100px 80px", 
-                      gap: 8, 
-                      padding: "12px 20px", 
-                      borderBottom: `1px solid ${C.border}`,
-                      background: isConfirmed ? `${C.ok}08` : isPending ? `${C.warn}08` : C.s1
-                    }}>
-                      <div>
-                        <div style={{fontSize:10, color:C.dim, ...mono}}>ACTION</div>
-                        <div style={{fontSize:12, color: item.type === "ACCUMULATE" ? C.ok : item.type === "REDUCE" ? C.danger : C.text, fontWeight:700, ...mono}}>
-                          {item.type}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{fontSize:10, color:C.dim, ...mono}}>AMOUNT</div>
-                        <div style={{fontSize:12, color:C.text, fontWeight:700, ...mono}}>
-                          {item.amount_kas} KAS
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{fontSize:10, color:C.dim, ...mono}}>TXID</div>
-                        <div style={{fontSize:11, color:C.accent, ...mono, wordBreak: "break-all"}}>
-                          {item.txid ? `${item.txid.slice(0, 20)}...` : "—"}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{fontSize:10, color:C.dim, ...mono}}>STATUS</div>
-                        <Badge 
-                          text={isConfirmed ? "CONFIRMED ✓" : isPending ? "PENDING" : item.status?.toUpperCase() || "—"} 
-                          color={isConfirmed ? C.ok : isPending ? C.warn : C.dim}
-                        />
-                      </div>
-                      <div>
-                        {item.txid && (
-                          <ExtLink href={`${EXPLORER}/txs/${item.txid}`} label="VERIFY ↗"/>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              <div style={{padding: "10px 20px", borderTop: `1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-                <span style={{fontSize:11, color:C.dim, ...mono}}>Click "VERIFY ↗" to view transaction on Kaspa Explorer</span>
-                <Btn onClick={() => setTab("queue")} variant="ghost" size="sm">VIEW ALL TRANSACTIONS →</Btn>
-              </div>
-            </Card>
-          )}
-          
-          {/* Performance Tracker - High Frequency Trading Metrics */}
-          <Card p={0} style={{marginBottom:12, background: `linear-gradient(135deg, rgba(16,25,35,0.48) 0%, rgba(11,17,24,0.32) 100%)`, border: `1px solid ${C.ok}30`, boxShadow: `0 4px 20px ${C.ok}10`}}>
-            {/* Header */}
-            <div style={{padding: "16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom: `1px solid ${C.border}`, background: `linear-gradient(90deg, ${C.ok}10 0%, transparent 100%)`}}>
-              <div style={{display:"flex", alignItems:"center", gap:10}}>
-                <span style={{fontSize:16}}>📈</span>
-                <span style={{fontSize:14, color:C.text, fontWeight:700, ...mono}}>PERFORMANCE TRACKER</span>
-              </div>
-              <div style={{display:"flex", gap:8, alignItems:"center"}}>
-                <div style={{display:"flex", alignItems:"center", gap:6, background:`${C.s2}90`, padding:"4px 10px", borderRadius:20, border:`1px solid ${C.border}`}}>
-                  <span style={{fontSize:10, color:C.dim, ...mono}}>TODAY'S P&L</span>
-                  <span style={{fontSize:12, color: pnlAttribution?.netPnlKas > 0 ? C.ok : C.danger, fontWeight:700, ...mono}}>
-                    {pnlAttribution?.netPnlKas > 0 ? "+" : ""}{Number(pnlAttribution?.netPnlKas || 0).toFixed(4)} KAS
-                  </span>
-                </div>
-                <Badge text={`${queue?.filter((q:any)=>q.status === "confirmed").length} TXS`} color={C.accent} />
-              </div>
-            </div>
-            
-            {/* Main Stats Grid */}
-            <div style={{padding: "16px 20px"}}>
-              <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap:12, marginBottom:16}}>
-                {/* Total PnL */}
-                <div style={{background: `linear-gradient(135deg, ${pnlAttribution?.netPnlKas > 0 ? C.ok : C.danger}15 0%, ${C.s2} 100%)`, borderRadius:10, padding:14, border:`1px solid ${pnlAttribution?.netPnlKas > 0 ? C.ok : C.danger}40`}}>
-                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                    <div style={{fontSize:10, color:C.dim, ...mono}}>TOTAL P&L</div>
-                    <span style={{fontSize:14}}>{pnlAttribution?.netPnlKas > 0 ? "📈" : "📉"}</span>
-                  </div>
-                  <div style={{fontSize:24, color:pnlAttribution?.netPnlKas > 0 ? C.ok : C.danger, fontWeight:700, ...mono}}>
-                    {pnlAttribution?.netPnlKas > 0 ? "+" : ""}{Number(pnlAttribution?.netPnlKas || 0).toFixed(4)}
-                  </div>
-                  <div style={{fontSize:10, color:C.dim, ...mono}}>KAS</div>
-                </div>
-                
-                {/* Trade Count */}
-                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
-                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                    <div style={{fontSize:10, color:C.dim, ...mono}}>TRADES</div>
-                    <span style={{fontSize:14}}>🔢</span>
-                  </div>
-                  <div style={{fontSize:24, color:C.accent, fontWeight:700, ...mono}}>
-                    {queue?.filter((q:any)=>q.status === "confirmed" || q.status === "broadcasted").length || 0}
-                  </div>
-                  <div style={{fontSize:10, color:C.dim, ...mono}}>executions</div>
-                </div>
-                
-                {/* Win Rate */}
-                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
-                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                    <div style={{fontSize:10, color:C.dim, ...mono}}>WIN RATE</div>
-                    <span style={{fontSize:14}}>🎯</span>
-                  </div>
-                  <div style={{fontSize:24, color:C.ok, fontWeight:700, ...mono}}>
-                    {pnlAttribution?.winRatePct || 0}%
-                  </div>
-                  <div style={{fontSize:10, color:C.dim, ...mono}}>profit rate</div>
-                </div>
-                
-                {/* Avg Profit */}
-                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
-                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                    <div style={{fontSize:10, color:C.dim, ...mono}}>AVG PROFIT</div>
-                    <span style={{fontSize:14}}>💎</span>
-                  </div>
-                  <div style={{fontSize:24, color:C.ok, fontWeight:700, ...mono}}>
-                    +{Number(pnlAttribution?.avgProfitKas || 0).toFixed(4)}
-                  </div>
-                  <div style={{fontSize:10, color:C.dim, ...mono}}>KAS per win</div>
-                </div>
-                
-                {/* Best Trade */}
-                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.ok}40`}}>
-                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                    <div style={{fontSize:10, color:C.dim, ...mono}}>BEST TRADE</div>
-                    <span style={{fontSize:14}}>🏆</span>
-                  </div>
-                  <div style={{fontSize:24, color:C.ok, fontWeight:700, ...mono}}>
-                    +{Number(pnlAttribution?.bestTradeKas || 0).toFixed(4)}
-                  </div>
-                  <div style={{fontSize:10, color:C.dim, ...mono}}>KAS all-time</div>
-                </div>
-              </div>
-              
-              {/* Secondary Stats */}
-              <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap:12, marginBottom:16}}>
-                {/* Total Fees Paid */}
-                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
-                  <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>TOTAL FEES</div>
-                  <div style={{fontSize:18, color:C.warn, fontWeight:700, ...mono}}>-{totalFees.toFixed(4)}</div>
-                  <div style={{fontSize:10, color:C.dim, ...mono}}>KAS paid</div>
-                </div>
-                
-                {/* Net Profit */}
-                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${(pnlAttribution?.netPnlKas - totalFees) > 0 ? C.ok : C.danger}40`}}>
-                  <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>NET PROFIT</div>
-                  <div style={{fontSize:18, color:(pnlAttribution?.netPnlKas - totalFees) > 0 ? C.ok : C.danger, fontWeight:700, ...mono}}>
-                    {(pnlAttribution?.netPnlKas - totalFees) > 0 ? "+" : ""}{(pnlAttribution?.netPnlKas - totalFees || 0).toFixed(4)}
-                  </div>
-                  <div style={{fontSize:10, color:C.dim, ...mono}}>KAS after fees</div>
-                </div>
-                
-                {/* Decisions Made */}
-                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
-                  <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>DECISIONS</div>
-                  <div style={{fontSize:18, color:C.text, fontWeight:700, ...mono}}>{decisions.length}</div>
-                  <div style={{fontSize:10, color:C.dim, ...mono}}>AI signals</div>
-                </div>
-                
-                {/* Accuracy */}
-                <div style={{background: "rgba(16,25,35,0.45)", borderRadius:10, padding:14, border:`1px solid ${C.border}`}}>
-                  <div style={{fontSize:10, color:C.dim, ...mono, marginBottom:4}}>ACCURACY</div>
-                  <div style={{fontSize:18, color:C.accent, fontWeight:700, ...mono}}>
-                    {decisions.length > 0 ? Math.round((decisions.filter((d:any)=>d?.dec?.action === "ACCUMULATE" || d?.dec?.action === "HOLD").length / decisions.length) * 100) : 0}%
-                  </div>
-                  <div style={{fontSize:10, color:C.dim, ...mono}}>signal accuracy</div>
-                </div>
-              </div>
-              
-              {/* Quick Stats Row */}
-              <div style={{display:"flex", gap:8, flexWrap:"wrap", justifyContent:"space-between", alignItems:"center"}}>
-                <div style={{display:"flex", gap:8}}>
-                  <Badge text={`💰 Budget: ${agent.capitalLimit} KAS/cycle`} color={C.accent} />
-                  <Badge text={`🎯 Target: ${agent.kpiTarget}% ROI`} color={C.ok} />
-                  <Badge text={`⏱️ Cycle: ${AUTO_CYCLE_SECONDS}s`} color={C.text} />
-                </div>
-                <div style={{display:"flex", gap:8}}>
-                  <Btn onClick={() => setTab("analytics")} variant="ghost" size="sm">
-                    📊 FULL ANALYTICS →
-                  </Btn>
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          {/* AI Agent Overview Panel */}
-          <Suspense fallback={<Card p={18}><Label>Agent Overview</Label><div style={{fontSize:12,color:C.dim}}>Loading agent overview...</div></Card>}>
-            <AgentOverviewPanel 
-              decisions={decisions} 
-              queue={queue} 
-              agent={agent}
-              onNavigate={(tabName: string) => setTab(tabName)}
-            />
-          </Suspense>
-          <div style={{marginBottom:12}}>
-            <Suspense fallback={<Card p={18}><Label>Performance</Label><div style={{fontSize:12,color:C.dim}}>Loading performance chart...</div></Card>}>
-              <PerfChart decisions={decisions} kpiTarget={agent.kpiTarget}/>
-            </Suspense>
-          </div>
-          <div style={{display:"grid", gridTemplateColumns:splitGridCols, gap:12}}>
-            <Card p={18}>
-              <Label>Agent Configuration</Label>
-              {[["Strategy",activeStrategyLabel],["Strategy Class",String(agent?.strategyClass || "custom").toUpperCase()],["Risk",agent.risk.toUpperCase()],["Capital / Cycle",`${agent.capitalLimit} KAS`],["Portfolio Allocator","AUTO"],["Exec Mode",execMode.toUpperCase()],["Auto-Approve ≤",`${adaptiveAutoThreshold.thresholdKas.toFixed(2)} KAS`],["Horizon",`${agent.horizon} days`],["KPI Target",`${agent.kpiTarget}% ROI`]].map(([k,v])=> (
-                <div key={k as any} style={{display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:`1px solid ${C.border}`}}>
-                  <span style={{fontSize:12, color:C.dim, ...mono}}>{k}</span>
-                  <span style={{fontSize:12, color:C.text, ...mono}}>{v}</span>
-                </div>
-              ))}
-              <div style={{fontSize:11, color:C.dim, marginTop:8}}>
-                Shared portfolio weighting and allocator caps are managed automatically. Operator funding is set with <span style={{color:C.text, ...mono}}>Capital / Cycle</span>.
-              </div>
-            </Card>
-          </div>
-        </div>
+        <Suspense fallback={<PanelSkeleton label="Overview" lines={8}/>}>
+          <OverviewPanel
+            kasData={kasData}
+            agent={agent}
+            decisions={decisions}
+            queue={queue}
+            loading={loading}
+            status={status}
+            spendableKas={spendableKas}
+            totalFees={totalFees}
+            pendingCount={pendingCount}
+            paperPnlKas={paperPnlKas}
+            execMode={execMode}
+            liveConnected={liveConnected}
+            liveExecutionArmed={liveExecutionArmed}
+            onToggleAutoTrade={() => setLiveExecutionArmed((v: boolean) => !v)}
+            onRunCycle={runCycle}
+            onPauseResume={() => transitionAgentStatus({ type: status === "RUNNING" ? "PAUSE" : "RESUME" })}
+            onExport={exportAgentConfig}
+            onKillSwitch={killSwitch}
+            onNavigate={setTab}
+            lastDecision={lastDecision}
+            lastDecisionSource={lastDecisionSource}
+            pnlAttribution={pnlAttribution}
+            executionGuardrails={executionGuardrails}
+            adaptiveAutoThreshold={adaptiveAutoThreshold}
+            stopLossState={stopLossState}
+            activePortfolioRow={activePortfolioRow}
+            activeStrategyLabel={activeStrategyLabel}
+            isMobile={isMobile}
+            isNarrowPhone={isNarrowPhone}
+            isTablet={isTablet}
+            summaryGridCols={summaryGridCols}
+            splitGridCols={splitGridCols}
+          />
+        </Suspense>
       )}
 
       {tab==="portfolio" && (
-        <Suspense fallback={<Card p={18}><Label>Portfolio</Label><div style={{fontSize:12,color:C.dim}}>Loading portfolio allocator...</div></Card>}>
+        <Suspense fallback={<PanelSkeleton label="Portfolio" lines={5}/>}>
           <PortfolioPanel
             agents={allAgents}
             activeAgentId={activeAgentId || agent?.agentId}
@@ -1673,24 +1617,47 @@ const [viewportWidth, setViewportWidth] = useState(
       )}
 
       {tab==="intelligence" && (
-        <Suspense fallback={<Card p={18}><Label>Intelligence</Label><div style={{fontSize:12,color:C.dim}}>Loading intelligence panel...</div></Card>}>
+        <Suspense fallback={<PanelSkeleton label="Intelligence" lines={4}/>}>
           <IntelligencePanel decisions={decisions} queue={queue} loading={loading} onRun={runCycle}/>
         </Suspense>
       )}
       
       {tab==="analytics" && (
-        <Suspense fallback={<Card p={18}><Label>Analytics</Label><div style={{fontSize:12,color:C.dim}}>Loading analytics panel...</div></Card>}>
+        <Suspense fallback={<PanelSkeleton label="Analytics" lines={4}/>}>
           <QuantAnalyticsPanel decisions={decisions} queue={queue} />
         </Suspense>
       )}
-      
+
+      {tab==="backtest" && (
+        <Suspense fallback={<PanelSkeleton label="Backtest" lines={5}/>}>
+          <BacktestPanel marketHistory={marketHistory} agent={agent} />
+        </Suspense>
+      )}
+
+      {tab==="leaderboard" && (
+        <Suspense fallback={<PanelSkeleton label="Leaderboard" lines={4}/>}>
+          <LeaderboardPanel
+            onUseConfig={(cfg) => {
+              if (agent?.agentId && onPatchAgent) {
+                onPatchAgent(agent.agentId, {
+                  strategy:   cfg.strategy   || agent.strategy,
+                  risk:       cfg.risk       || agent.risk,
+                  actionMode: cfg.actionMode || agent.actionMode,
+                });
+              }
+            }}
+          />
+        </Suspense>
+      )}
+
+
       {tab==="attribution" && (
-        <Suspense fallback={<Card p={18}><Label>Attribution</Label><div style={{fontSize:12,color:C.dim}}>Loading attribution panel...</div></Card>}>
+        <Suspense fallback={<PanelSkeleton label="Attribution" lines={4}/>}>
           <PnlAttributionPanel summary={pnlAttribution} />
         </Suspense>
       )}
       {tab==="alerts" && (
-        <Suspense fallback={<Card p={18}><Label>Alerts</Label><div style={{fontSize:12,color:C.dim}}>Loading alerts panel...</div></Card>}>
+        <Suspense fallback={<PanelSkeleton label="Alerts" lines={3}/>}>
           <AlertsPanel
             config={alertConfig}
             onPatch={patchAlertConfig}
@@ -1770,101 +1737,27 @@ const [viewportWidth, setViewportWidth] = useState(
         </Card>
       )}
 
-      {/* ── CONTROLS ── */}
+      {/* ── NETWORK ── */}
       {tab==="network" && (
-        <div style={{display:"grid", gridTemplateColumns:controlsGridCols, gap:14}}>
-          <Card p={18} style={{gridColumn:"1 / -1"}}>
-            <Label>Kaspa RPC Endpoint Policy</Label>
-            <div style={{fontSize:11, color:C.dim, marginTop:8, marginBottom:10, ...mono}}>
-              Frontend runtime is env-driven for deterministic builds.
-            </div>
-            <div style={{display:"grid", gridTemplateColumns:isTablet ? "1fr" : "1fr 1fr", gap:12}}>
-              <div style={{background:C.s2, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px"}}>
-                <div style={{fontSize:10, color:C.dim, marginBottom:4, ...mono}}>PRIMARY RPC</div>
-                <div style={{fontSize:12, color:C.text, lineHeight:1.5, ...mono}}>
-                  {KAS_API ? "Configured (hidden)" : "UNSET"}
-                </div>
-              </div>
-              <div style={{background:C.s2, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px"}}>
-                <div style={{fontSize:10, color:C.dim, marginBottom:4, ...mono}}>FALLBACK RPCS</div>
-                {KAS_API_FALLBACKS.length > 0 ? (
-                  <div style={{fontSize:11, color:C.text, lineHeight:1.4, ...mono}}>
-                    {KAS_API_FALLBACKS.length} configured (hidden)
-                  </div>
-                ) : (
-                  <div style={{fontSize:11, color:C.dim, ...mono}}>None configured</div>
-                )}
-              </div>
-            </div>
-          </Card>
-
-          <Card p={18}>
-            <Label>Live Kaspa Feed</Label>
-            <div style={{display:"flex", flexDirection:"column", gap:8, marginTop:10}}>
-              <div style={{display:"flex", justifyContent:"space-between", borderBottom:`1px solid ${C.border}`, paddingBottom:6}}>
-                <span style={{fontSize:11, color:C.dim, ...mono}}>REST Polling</span>
-                <span style={{fontSize:11, color:liveConnected ? C.ok : C.warn, fontWeight:700, ...mono}}>
-                  {liveConnected ? "LIVE" : "DEGRADED"}
-                </span>
-              </div>
-              <div style={{display:"flex", justifyContent:"space-between", borderBottom:`1px solid ${C.border}`, paddingBottom:6}}>
-                <span style={{fontSize:11, color:C.dim, ...mono}}>WS Stream</span>
-                <span style={{fontSize:11, color:streamConnected ? C.ok : C.warn, fontWeight:700, ...mono}}>
-                  {KAS_WS_URL ? (streamConnected ? "CONNECTED" : `RETRYING (${streamRetryCount})`) : "DISABLED"}
-                </span>
-              </div>
-              <div style={{display:"flex", justifyContent:"space-between"}}>
-                <span style={{fontSize:11, color:C.dim, ...mono}}>Latest DAA</span>
-                <span style={{fontSize:11, color:C.text, fontWeight:700, ...mono}}>
-                  {kasData?.dag?.daaScore || "—"}
-                </span>
-              </div>
-              {kasDataError && (
-                <div style={{fontSize:11, color:C.danger, lineHeight:1.4, marginTop:2, ...mono}}>
-                  {String(kasDataError)}
-                </div>
-              )}
-            </div>
-          </Card>
-
-          <Card p={18}>
-            <Label>Security Network Guardrails</Label>
-            <div style={{display:"flex", flexDirection:"column", gap:8, marginTop:10}}>
-              <div style={{display:"flex", justifyContent:"space-between", borderBottom:`1px solid ${C.border}`, paddingBottom:6}}>
-                <span style={{fontSize:11, color:C.dim, ...mono}}>Active Network</span>
-                <span style={{fontSize:11, color:C.text, fontWeight:700, ...mono}}>
-                  {NETWORK_LABEL.toUpperCase()}
-                </span>
-              </div>
-              <div style={{display:"flex", justifyContent:"space-between", borderBottom:`1px solid ${C.border}`, paddingBottom:6}}>
-                <span style={{fontSize:11, color:C.dim, ...mono}}>Wallet Network Enforcement</span>
-                <span style={{fontSize:11, color:ENFORCE_WALLET_NETWORK ? C.ok : C.warn, fontWeight:700, ...mono}}>
-                  {ENFORCE_WALLET_NETWORK ? "ON" : "OFF"}
-                </span>
-              </div>
-              <div style={{display:"flex", justifyContent:"space-between", borderBottom:`1px solid ${C.border}`, paddingBottom:6}}>
-                <span style={{fontSize:11, color:C.dim, ...mono}}>Accepted Prefixes</span>
-                <span style={{fontSize:11, color:C.text, fontWeight:700, ...mono}}>
-                  {ALLOWED_ADDRESS_PREFIXES.join(", ")}
-                </span>
-              </div>
-              <div style={{display:"flex", justifyContent:"space-between"}}>
-                <span style={{fontSize:11, color:C.dim, ...mono}}>Explorer</span>
-                <a href={EXPLORER} target="_blank" rel="noreferrer" style={{fontSize:11, color:C.accent, ...mono}}>
-                  open ↗
-                </a>
-              </div>
-            </div>
-          </Card>
-
-          <Card p={18} style={{gridColumn:"1 / -1"}}>
-            <Label>Operator Notes</Label>
-            <div style={{fontSize:11, color:C.dim, marginTop:8, lineHeight:1.5}}>
-              Configure network/RPC via env vars (`VITE_KAS_API_*`, `VITE_KAS_WS_URL_*`, `VITE_KAS_NETWORK*`) to keep rollout deterministic.
-              For extension-level per-network custom RPC presets, use the extension Security tab.
-            </div>
-          </Card>
-        </div>
+        <Suspense fallback={<PanelSkeleton label="Network" lines={6}/>}>
+          <NetworkPanel
+            kasData={kasData}
+            liveConnected={liveConnected}
+            streamConnected={streamConnected}
+            streamRetryCount={streamRetryCount}
+            streamHeartbeatLabel={streamHeartbeatLabel}
+            lastStreamKindLabel={lastStreamKindLabel}
+            kasDataLoading={kasDataLoading}
+            kasDataError={kasDataError}
+            refreshKasData={refreshKasData}
+            alertConfig={alertConfig}
+            patchAlertConfig={patchAlertConfig}
+            saveAlertConfig={saveAlertConfig}
+            alertSaveBusy={alertSaveBusy}
+            isTablet={isTablet}
+            walletNetworkMismatch={walletNetworkMismatch}
+          />
+        </Suspense>
       )}
 
       {/* ── CONTROLS ── */}
@@ -1939,27 +1832,27 @@ const [viewportWidth, setViewportWidth] = useState(
                   <Inp 
                     label="ROI Target" 
                     value={editForm.kpiTarget} 
-                    onChange={(v: string)=>setEditForm({...editForm, kpiTarget: v})} 
+                    onChange={(v: string)=>setEditForm((prev: any)=>({ ...prev, kpiTarget: v }))} 
                     type="number" 
                     suffix="%"
                   />
                   <Inp 
                     label="Capital / Cycle" 
                     value={editForm.capitalLimit} 
-                    onChange={(v: string)=>setEditForm({...editForm, capitalLimit: v})} 
+                    onChange={(v: string)=>setEditForm((prev: any)=>({ ...prev, capitalLimit: v }))} 
                     type="number" 
                     suffix="KAS"
                   />
                   <Inp 
                     label="Horizon (days)" 
                     value={editForm.horizon} 
-                    onChange={(v: string)=>setEditForm({...editForm, horizon: Number(v)})} 
+                    onChange={(v: string)=>setEditForm((prev: any)=>({ ...prev, horizon: Number(v) }))} 
                     type="number"
                   />
                   <Inp 
                     label="Auto-Approve ≤" 
                     value={editForm.autoApproveThreshold} 
-                    onChange={(v: string)=>setEditForm({...editForm, autoApproveThreshold: v})} 
+                    onChange={(v: string)=>setEditForm((prev: any)=>({ ...prev, autoApproveThreshold: v }))} 
                     type="number" 
                     suffix="KAS"
                   />
@@ -1970,7 +1863,7 @@ const [viewportWidth, setViewportWidth] = useState(
                   {RISK_OPTS.map(r=>{const on = editForm.risk === r.v; return (
                     <div 
                       key={r.v} 
-                      onClick={()=>setEditForm({...editForm, risk: r.v})}
+                      onClick={()=>setEditForm((prev: any)=>({ ...prev, risk: r.v }))}
                       style={{
                         padding:"12px 10px", 
                         borderRadius:4, 
@@ -1991,7 +1884,7 @@ const [viewportWidth, setViewportWidth] = useState(
                   {EXEC_OPTS.map(r=>{const on = editForm.execMode === r.v; return (
                     <div 
                       key={r.v} 
-                      onClick={()=>setEditForm({...editForm, execMode: r.v})}
+                      onClick={()=>setEditForm((prev: any)=>({ ...prev, execMode: r.v }))}
                       style={{
                         padding:"12px 10px", 
                         borderRadius:4, 
@@ -2014,12 +1907,97 @@ const [viewportWidth, setViewportWidth] = useState(
               </div>
             )}
           </Card>
+
+          <Card p={18} style={{gridColumn:"1 / -1"}}>
+            <Label>Per-Agent Execution Profiles</Label>
+            <div style={{fontSize:11, color:C.dim, marginTop:8, marginBottom:10, lineHeight:1.5}}>
+              Every deployed agent can run a distinct strategy template and execution mode. Use this matrix when spinning up new agents so autonomous/manual/notify behavior stays isolated per agent.
+            </div>
+            <div style={{display:"flex", flexDirection:"column", gap:10}}>
+              {allAgents.map((row: any) => {
+                const rowId = String(row?.agentId || row?.name || "").trim();
+                if (!rowId) return null;
+                const isActive = String(agent?.agentId || agent?.name || "") === rowId;
+                const rowStrategy = String(row?.strategyTemplate || "dca_accumulator");
+                const rowExecMode = normalizeExecMode(row?.execMode);
+                return (
+                  <div key={rowId} style={{border:`1px solid ${isActive ? C.accent : C.border}`, borderRadius:8, background:C.s2, padding:"12px 12px 10px"}}>
+                    <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:10, flexWrap:"wrap"}}>
+                      <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+                        <span style={{fontSize:12, color:C.text, fontWeight:700, ...mono}}>{String(row?.name || "Agent")}</span>
+                        {isActive && <Badge text="ACTIVE" color={C.accent} size="sm"/>}
+                        <Badge text={String(row?.strategyClass || "custom").toUpperCase()} color={C.text} size="sm"/>
+                      </div>
+                      {!isActive && (
+                        <Btn onClick={() => onSelectAgent?.(rowId)} size="sm" variant="ghost">
+                          OPEN
+                        </Btn>
+                      )}
+                    </div>
+                    <div style={{display:"grid", gridTemplateColumns:isTablet ? "1fr" : "1.25fr 1fr", gap:10}}>
+                      <div>
+                        <div style={{fontSize:10, color:C.dim, marginBottom:5, ...mono}}>STRATEGY TEMPLATE</div>
+                        <select
+                          value={rowStrategy}
+                          onChange={(event) => handleAgentStrategyQuickChange(row, event.target.value)}
+                          style={{
+                            width:"100%",
+                            background:C.s1,
+                            color:C.text,
+                            border:`1px solid ${C.border}`,
+                            borderRadius:6,
+                            padding:"8px 10px",
+                            fontSize:12,
+                            ...mono,
+                          }}
+                        >
+                          {strategyOptions.map((strategy: any) => (
+                            <option key={String(strategy.id)} value={String(strategy.id)} style={{background:C.s1, color:C.text}}>
+                              {String(strategy.name)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10, color:C.dim, marginBottom:5, ...mono}}>EXECUTION MODE</div>
+                        <div style={{display:"grid", gridTemplateColumns:"repeat(3,minmax(0,1fr))", gap:6}}>
+                          {EXEC_OPTS.map((mode) => {
+                            const on = rowExecMode === mode.v;
+                            return (
+                              <button
+                                key={mode.v}
+                                onClick={() => handleAgentExecModeQuickChange(row, mode.v)}
+                                style={{
+                                  border:`1px solid ${on ? C.accent : C.border}`,
+                                  borderRadius:6,
+                                  background:on ? C.aLow : C.s1,
+                                  color:on ? C.accent : C.text,
+                                  padding:"7px 8px",
+                                  cursor:"pointer",
+                                  fontSize:11,
+                                  fontWeight:600,
+                                  ...mono,
+                                }}
+                                title={mode.desc}
+                              >
+                                {mode.v.toUpperCase()}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
           
           {/* Execution Mode Card */}
           <Card p={18}>
             <Label>Execution Mode</Label>
             {EXEC_OPTS.map(m=>{const on=execMode===m.v; return(
-              <div key={m.v} onClick={()=>setExecMode(m.v)} style={{padding:"12px 14px", borderRadius:4, marginBottom:8, cursor:"pointer", border:`1px solid ${on?C.accent:C.border}`, background:on?C.aLow:C.s2, transition:"all 0.15s"}}>
+              <div key={m.v} onClick={()=>updateActiveExecMode(m.v)} style={{padding:"12px 14px", borderRadius:4, marginBottom:8, cursor:"pointer", border:`1px solid ${on?C.accent:C.border}`, background:on?C.aLow:C.s2, transition:"all 0.15s"}}>
                 <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:3}}>
                   <div style={{width:10, height:10, borderRadius:"50%", background:on?C.accent:C.muted, flexShrink:0}}/>
                   <span style={{fontSize:12, color:on?C.accent:C.text, fontWeight:700, ...mono}}>{m.l}</span>

@@ -87,4 +87,26 @@ describe("dryRunValidate network checks", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes("change address"))).toBe(true);
   });
+
+  it("fails with DUST_OUTPUT when any output is below 20,000 sompi", async () => {
+    const { dryRunValidate } = await import("../../extension/tx/dryRun");
+    const result = await dryRunValidate(baseTx({
+      outputs: [{ address: TEST_TO, amount: 19_999n }],
+      changeOutput: { address: TEST_FROM, amount: 99_979_001n },
+      fee: 1_000n,
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("DUST_OUTPUT"))).toBe(true);
+  });
+
+  it("fails with DUST_CHANGE when change is below 20,000 sompi", async () => {
+    const { dryRunValidate } = await import("../../extension/tx/dryRun");
+    const result = await dryRunValidate(baseTx({
+      outputs: [{ address: TEST_TO, amount: 99_980_000n }],
+      changeOutput: { address: TEST_FROM, amount: 19_000n },
+      fee: 1_000n,
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("DUST_CHANGE"))).toBe(true);
+  });
 });

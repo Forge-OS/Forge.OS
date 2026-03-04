@@ -229,7 +229,7 @@ export default function ForgeOS() {
                 <span style={{ color: C.accent }}>FORGE</span><span style={{ color: C.text }}>-OS</span>
               </div>
             </div>
-            <div style={{ width: 1, height: 14, background: "transparent", margin: "0 4px" }} />
+            <div style={{ width: 1, height: 14, background: C.border, margin: "0 4px" }} />
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "100%", overflowX: "visible", paddingBottom: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, border: `1px solid ${isMainnet ? C.warn : C.ok}50`, background: isMainnet ? C.wLow : C.oLow, borderRadius: 6, padding: "4px 6px" }}>
@@ -265,7 +265,7 @@ export default function ForgeOS() {
               const isActive = String(activeAgent?.agentId || "") === String(row?.agentId || "");
               return (
                 <button
-                  key={String(row?.agentId || row?.name || Math.random())}
+                  key={String(row?.agentId || row?.name || `agent-idx-${agents.indexOf(row)}`)}
                   onClick={() => { setActiveAgentId(String(row?.agentId || "")); setView("dashboard"); }}
                   style={{
                     background: isActive && view === "dashboard" ? C.s2 : "none",
@@ -318,6 +318,7 @@ export default function ForgeOS() {
           onSelectAgent={() => {}}
           onDeleteAgent={() => {}}
           onEditAgent={() => {}}
+          onPatchAgent={() => {}}
           wallet={wallet}
         />
       ) : (
@@ -337,6 +338,17 @@ export default function ForgeOS() {
             setEditingAgent(agent);
             setActiveAgentId(String(agent?.agentId || ""));
             setView("create");
+          }}
+          onPatchAgent={(id: string, patch: Record<string, any>) => {
+            const targetId = String(id || "").trim();
+            if (!targetId || !patch) return;
+            setAgents((prev: any[]) =>
+              prev.map((row: any) =>
+                String(row?.agentId || row?.name || "").trim() === targetId
+                  ? { ...row, ...patch }
+                  : row
+              )
+            );
           }}
           wallet={wallet}
         />

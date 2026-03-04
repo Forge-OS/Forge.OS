@@ -169,7 +169,7 @@ export const PROFESSIONAL_PRESETS = [
       revenueSource: "market-making", execMode: "autonomous", autoApproveThreshold: "500",
       stopLossPct: "1.5", takeProfitPct: "3.0", minConfidence: "50",
       positionSizing: "fixed", daaVelocityFilter: "0", maxDailyActions: "100",
-      cooldownCycles: "0", pairMode: "kas-usdc",
+      cooldownCycles: "0", pairMode: "kas-usdc", actionMode: "full",
     },
   },
   {
@@ -186,7 +186,7 @@ export const PROFESSIONAL_PRESETS = [
       revenueSource: "momentum", execMode: "autonomous", autoApproveThreshold: "75",
       stopLossPct: "5.0", takeProfitPct: "15.0", minConfidence: "58",
       positionSizing: "kelly", daaVelocityFilter: "3", maxDailyActions: "15",
-      cooldownCycles: "1", pairMode: "accumulation",
+      cooldownCycles: "1", pairMode: "accumulation", actionMode: "full",
     },
   },
   {
@@ -203,7 +203,7 @@ export const PROFESSIONAL_PRESETS = [
       revenueSource: "momentum", execMode: "manual", autoApproveThreshold: "50",
       stopLossPct: "4.0", takeProfitPct: "10.0", minConfidence: "55",
       positionSizing: "kelly", daaVelocityFilter: "0", maxDailyActions: "8",
-      cooldownCycles: "1", pairMode: "accumulation",
+      cooldownCycles: "1", pairMode: "accumulation", actionMode: "full",
     },
   },
 ];

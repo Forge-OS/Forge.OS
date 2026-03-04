@@ -1,15 +1,25 @@
 import { DEFAULT_NETWORK, KAS_API, KAS_API_FALLBACKS } from "../constants";
 import { fmt } from "../helpers";
 import { rpcError } from "../runtime/errorTaxonomy";
+import { getCustomApiRoot } from "../network/networkConfig";
 
 const API_ROOT = String(KAS_API || "").replace(/\/+$/, "");
-const API_ROOTS = Array.from(new Set([API_ROOT, ...KAS_API_FALLBACKS.map((v) => String(v || "").replace(/\/+$/, ""))]))
+const API_ROOTS_DEFAULT = Array.from(new Set([API_ROOT, ...KAS_API_FALLBACKS.map((v) => String(v || "").replace(/\/+$/, ""))]))
   .filter(Boolean);
+// Backwards-compat alias — used in resolveApiRoots which now delegates to getEffectiveApiRoots()
+const API_ROOTS = API_ROOTS_DEFAULT;
+
+/** Returns the active API root list, honouring any runtime custom endpoint override. */
+function getEffectiveApiRoots(): string[] {
+  const custom = getCustomApiRoot();
+  return custom ? [custom] : API_ROOTS_DEFAULT;
+}
 const REQUEST_TIMEOUT_MS = 12000;
 const MAX_ATTEMPTS_PER_ROOT = 2;
 const RETRY_BASE_DELAY_MS = 250;
 const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const PRICE_CACHE_TTL_MS = 20000;
+const NODE_STATUS_CACHE_TTL_MS = 15_000;
 
 // Circuit breaker: after 3 consecutive total failures, back off for 20s
 const CIRCUIT_BREAKER_THRESHOLD = 3;
@@ -19,6 +29,8 @@ let circuitOpenUntil = 0;
 
 let priceCache: { value: number; ts: number } | null = null;
 let priceInflight: Promise<number> | null = null;
+let nodeStatusCache: { value: KasNodeStatus; ts: number } | null = null;
+let nodeStatusInflight: Promise<KasNodeStatus> | null = null;
 
 type NetworkHint = "mainnet" | "testnet" | "unknown";
 const PROFILE_NETWORK_HINT: NetworkHint = DEFAULT_NETWORK.startsWith("testnet") ? "testnet" : "mainnet";
@@ -67,20 +79,22 @@ function pathNetworkHint(path: string): NetworkHint {
 }
 
 function resolveApiRoots(path: string) {
+  const roots = getEffectiveApiRoots();
   const pathHint = pathNetworkHint(path);
   const targetHint = pathHint === "unknown" ? PROFILE_NETWORK_HINT : pathHint;
-  if(targetHint === "unknown") return API_ROOTS;
+  if(targetHint === "unknown") return roots;
 
-  const preferred = API_ROOTS.filter((root) => {
+  const preferred = roots.filter((root) => {
     const endpointHint = endpointNetworkHint(root);
     return endpointHint === targetHint || endpointHint === "unknown";
   });
 
-  return preferred.length > 0 ? preferred : API_ROOTS;
+  return preferred.length > 0 ? preferred : roots;
 }
 
 async function fetchJson(path: string) {
-  if (API_ROOTS.length === 0) {
+  const roots = getEffectiveApiRoots();
+  if (roots.length === 0) {
     throw new Error("No Kaspa API endpoints configured");
   }
 
@@ -202,6 +216,17 @@ function extractUtxos(payload: any) {
   return [];
 }
 
+function extractDaaScoreFromPayload(payload: any): number {
+  const score = Number(
+    payload?.blueScore ??
+    payload?.virtualDaaScore ??
+    payload?.daaScore ??
+    payload?.blockdag?.daaScore ??
+    payload?.blockDag?.daaScore,
+  );
+  return Number.isFinite(score) && score > 0 ? Math.round(score) : 0;
+}
+
 export type KasTxReceipt = {
   txid: string;
   found: boolean;
@@ -216,6 +241,12 @@ export type KasTxReceipt = {
   mass?: number;
   sourcePath?: string;
   raw?: any;
+};
+
+export type KasNodeStatus = {
+  isSynced: boolean | null;
+  isUtxoIndexed: boolean | null;
+  source: "kaspad" | "blockdag" | "unknown";
 };
 
 function pickFirstNumber(...values: any[]) {
@@ -391,9 +422,80 @@ export async function kasUtxos(addr: string) {
   return extractUtxos(payload);
 }
 
-export async function kasNetworkInfo() {
+export async function kasBlueScore(): Promise<number | null> {
+  try {
+    const payload = await fetchJson("/info/virtual-chain-blue-score");
+    const score = extractDaaScoreFromPayload(payload);
+    return score > 0 ? score : null;
+  } catch {
+    try {
+      const payload = await fetchJson("/info/blockdag");
+      const info = payload?.blockdag ?? payload?.blockDag ?? payload;
+      const score = extractDaaScoreFromPayload(info);
+      return score > 0 ? score : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+export async function kasBlockdagInfo() {
   const payload = await fetchJson("/info/blockdag");
   return payload?.blockdag ?? payload?.blockDag ?? payload;
+}
+
+export async function kasNodeStatus(): Promise<KasNodeStatus> {
+  const now = Date.now();
+  if (nodeStatusCache && now - nodeStatusCache.ts < NODE_STATUS_CACHE_TTL_MS) {
+    return nodeStatusCache.value;
+  }
+  if (nodeStatusInflight) return nodeStatusInflight;
+
+  nodeStatusInflight = (async () => {
+    try {
+      const payload = await fetchJson("/info/kaspad");
+      const value: KasNodeStatus = {
+        isSynced: typeof payload?.isSynced === "boolean" ? payload.isSynced : null,
+        isUtxoIndexed: typeof payload?.isUtxoIndexed === "boolean" ? payload.isUtxoIndexed : null,
+        source: "kaspad",
+      };
+      nodeStatusCache = { value, ts: Date.now() };
+      return value;
+    } catch {
+      try {
+        const info = await kasBlockdagInfo();
+        const fallback: KasNodeStatus = {
+          isSynced: null,
+          isUtxoIndexed: null,
+          source: info ? "blockdag" : "unknown",
+        };
+        nodeStatusCache = { value: fallback, ts: Date.now() };
+        return fallback;
+      } catch {
+        const unknown: KasNodeStatus = {
+          isSynced: null,
+          isUtxoIndexed: null,
+          source: "unknown",
+        };
+        nodeStatusCache = { value: unknown, ts: Date.now() };
+        return unknown;
+      }
+    }
+  })().finally(() => {
+    nodeStatusInflight = null;
+  });
+
+  return nodeStatusInflight;
+}
+
+export async function kasNetworkInfo() {
+  const blueScore = await kasBlueScore();
+  const fallback = blueScore == null ? await kasBlockdagInfo() : null;
+  const daaScore = blueScore ?? extractDaaScoreFromPayload(fallback);
+  return {
+    ...(fallback || {}),
+    daaScore: daaScore || 0,
+  };
 }
 
 export async function kasTxReceipt(txidRaw: string): Promise<KasTxReceipt> {

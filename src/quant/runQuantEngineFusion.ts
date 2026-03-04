@@ -21,7 +21,29 @@ type FuseParams = {
   aiLatencyMs: number;
   startedAt: number;
   sanitizeDecision: (raw: any, agent: any) => any;
+  /**
+   * Calibration score from computeCalibrationScore() — fraction of recent AI
+   * decisions that were correct (0–1), or null if insufficient history.
+   * Drives adaptive AI weight: poor calibration (<0.40) → weight 0.20;
+   * excellent (>0.70) → weight 0.48; default (no data) → 0.42.
+   */
+  calibrationScore?: number | null;
 };
+
+/**
+ * Compute adaptive AI blend weight based on recent calibration accuracy.
+ *   calibration < 0.40 → weight 0.20  (Claude is unreliable; quant dominates)
+ *   calibration 0.40–0.70 → linear interpolation 0.20–0.42
+ *   calibration > 0.70 → linear interpolation 0.42–0.48 (trust bonus)
+ *   null (no data) → default 0.42
+ */
+function adaptiveAiWeight(calibration: number | null | undefined): number {
+  if (calibration === null || calibration === undefined) return 0.42;
+  if (calibration < 0.40) return round(clamp(0.20 + (calibration / 0.40) * (0.22), 0.20, 0.42), 4);
+  if (calibration <= 0.70) return round(0.20 + (calibration - 0.40) / 0.30 * 0.22, 4);
+  // Above 0.70: small bonus up to 0.48
+  return round(clamp(0.42 + (calibration - 0.70) / 0.30 * 0.06, 0.42, 0.48), 4);
+}
 
 export function resolveAiOverlayPlan(params: ResolveOverlayPlanParams) {
   const { coreDecision, cached, config } = params;
@@ -91,12 +113,16 @@ function mergeRiskFactors(a: any[], b: any[], extra?: string) {
 }
 
 export function fuseWithQuantCore(params: FuseParams) {
-  const { agent, coreDecision, aiDecision, aiLatencyMs, startedAt, sanitizeDecision } = params;
+  const { agent, coreDecision, aiDecision, aiLatencyMs, startedAt, sanitizeDecision, calibrationScore } = params;
   const regime = String(coreDecision?.quant_metrics?.regime || "NEUTRAL");
   const riskCeiling = toFinite(coreDecision?.quant_metrics?.risk_ceiling, 0.65);
   const aiAction = String(aiDecision?.action || "HOLD");
   let action = aiAction;
   let conflict = false;
+
+  // Adaptive AI weight — scales with Claude's recent calibration accuracy
+  const aiW = adaptiveAiWeight(calibrationScore);
+  const quantW = round(1 - aiW, 4);
 
   if (regime === "RISK_OFF" && aiAction === "ACCUMULATE") {
     action = coreDecision.action === "REDUCE" ? "REDUCE" : "HOLD";
@@ -110,7 +136,7 @@ export function fuseWithQuantCore(params: FuseParams) {
   const blendedRisk = round(Math.max(toFinite(coreDecision?.risk_score, 1), toFinite(aiDecision?.risk_score, 1)), 4);
   let blendedConfidence = round(
     clamp(
-      toFinite(coreDecision?.confidence_score, 0.5) * 0.58 + toFinite(aiDecision?.confidence_score, 0.5) * 0.42 - (conflict ? 0.08 : 0),
+      toFinite(coreDecision?.confidence_score, 0.5) * quantW + toFinite(aiDecision?.confidence_score, 0.5) * aiW - (conflict ? 0.08 : 0),
       0,
       1
     ),
@@ -153,10 +179,10 @@ export function fuseWithQuantCore(params: FuseParams) {
       risk_score: blendedRisk,
       kelly_fraction: blendedKelly,
       capital_allocation_kas: action === "HOLD" ? 0 : allocationKas,
-      expected_value_pct: round((toFinite(coreDecision?.expected_value_pct, 0) * 0.6) + (toFinite(aiDecision?.expected_value_pct, 0) * 0.4), 2),
+      expected_value_pct: round((toFinite(coreDecision?.expected_value_pct, 0) * quantW) + (toFinite(aiDecision?.expected_value_pct, 0) * aiW), 2),
       stop_loss_pct: round(Math.max(toFinite(coreDecision?.stop_loss_pct, 0), toFinite(aiDecision?.stop_loss_pct, 0)), 2),
-      take_profit_pct: round((toFinite(coreDecision?.take_profit_pct, 0) * 0.6) + (toFinite(aiDecision?.take_profit_pct, 0) * 0.4), 2),
-      monte_carlo_win_pct: round((toFinite(coreDecision?.monte_carlo_win_pct, 0) * 0.65) + (toFinite(aiDecision?.monte_carlo_win_pct, 0) * 0.35), 2),
+      take_profit_pct: round((toFinite(coreDecision?.take_profit_pct, 0) * quantW) + (toFinite(aiDecision?.take_profit_pct, 0) * aiW), 2),
+      monte_carlo_win_pct: round((toFinite(coreDecision?.monte_carlo_win_pct, 0) * (quantW + 0.065)) + (toFinite(aiDecision?.monte_carlo_win_pct, 0) * (aiW - 0.065)), 2),
       volatility_estimate: coreDecision?.volatility_estimate || aiDecision?.volatility_estimate,
       liquidity_impact: coreDecision?.liquidity_impact || aiDecision?.liquidity_impact,
       strategy_phase: action === "ACCUMULATE" ? coreDecision?.strategy_phase || aiDecision?.strategy_phase : aiDecision?.strategy_phase || coreDecision?.strategy_phase,
@@ -164,12 +190,14 @@ export function fuseWithQuantCore(params: FuseParams) {
       risk_factors: riskFactors,
       next_review_trigger: coreDecision?.next_review_trigger || aiDecision?.next_review_trigger,
       decision_source: "hybrid-ai",
-      decision_source_detail: `regime:${regime};ai_latency_ms:${aiLatencyMs};mode:quant_core_guarded`,
+      decision_source_detail: `regime:${regime};ai_latency_ms:${aiLatencyMs};mode:quant_core_guarded;ai_w:${aiW}${calibrationScore !== null && calibrationScore !== undefined ? `;calib:${(calibrationScore * 100).toFixed(0)}%` : ""}`,
       quant_metrics: {
         ...(coreDecision?.quant_metrics || {}),
         ai_overlay_applied: true,
         ai_action_raw: aiAction,
         ai_confidence_raw: toFinite(aiDecision?.confidence_score, 0),
+        ai_weight: aiW,
+        calibration_score: calibrationScore ?? null,
       },
       engine_latency_ms: Date.now() - startedAt,
     },

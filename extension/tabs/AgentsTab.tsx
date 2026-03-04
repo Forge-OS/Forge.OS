@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { C, mono } from "../../src/tokens";
 import { fmt } from "../../src/helpers";
-import { getAgents } from "../shared/storage";
+import {
+  getAgents,
+  getWalletAccountList,
+  WALLET_ACCOUNT_LIST_STORAGE_KEY,
+  type WalletAccountRef,
+} from "../shared/storage";
+import { getOrSyncUtxosBatch } from "../utxo/utxoSync";
 import { outlineButton, popupTabStack, sectionCard, sectionKicker, sectionTitle } from "../popup/surfaces";
 import {
   buildAgentViewModels,
@@ -12,6 +18,7 @@ import {
   type AgentNetworkFilter,
   type AgentViewModel,
 } from "./agentsView";
+import { buildTrackedAddressPlan } from "./accountSourceAdapter";
 
 const AGENTS_KEY = "forgeos.session.agents.v2";
 
@@ -49,15 +56,24 @@ function modeFilterLabel(filter: AgentModeFilter): string {
 
 export function AgentsTab({ network }: Props) {
   const [agents, setAgents] = useState<AgentViewModel[]>([]);
+  const [canonicalAccounts, setCanonicalAccounts] = useState<WalletAccountRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [networkFilter, setNetworkFilter] = useState<AgentNetworkFilter>("current");
   const [modeFilter, setModeFilter] = useState<AgentModeFilter>("all");
   const [lastSyncAt, setLastSyncAt] = useState(0);
+  const [onChainBalancesKas, setOnChainBalancesKas] = useState<Record<string, number>>({});
+  const [onChainSyncAt, setOnChainSyncAt] = useState(0);
+  const [onChainSyncBusy, setOnChainSyncBusy] = useState(false);
+  const [onChainSyncError, setOnChainSyncError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
   const refreshAgents = useCallback(async () => {
-    const raw = await getAgents();
+    const [raw, accounts] = await Promise.all([
+      getAgents(),
+      getWalletAccountList().catch(() => [] as WalletAccountRef[]),
+    ]);
     setAgents(buildAgentViewModels(raw, network));
+    setCanonicalAccounts(accounts);
     setLastSyncAt(Date.now());
     setLoading(false);
   }, [network]);
@@ -77,7 +93,7 @@ export function AgentsTab({ network }: Props) {
   useEffect(() => {
     const onChanged = (changes: Record<string, unknown>, areaName: string) => {
       if (areaName !== "local") return;
-      if (!(AGENTS_KEY in changes)) return;
+      if (!(AGENTS_KEY in changes) && !(WALLET_ACCOUNT_LIST_STORAGE_KEY in changes)) return;
       refreshAgents().catch(() => {});
     };
     chrome.storage.onChanged.addListener(onChanged as any);
@@ -98,13 +114,75 @@ export function AgentsTab({ network }: Props) {
     [agents, modeFilter, network, networkFilter],
   );
 
+  const trackedAddressPlan = useMemo(() => {
+    return buildTrackedAddressPlan(visibleAgents, network, canonicalAccounts);
+  }, [canonicalAccounts, network, visibleAgents]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncOnChainBalances = async () => {
+      if (trackedAddressPlan.groups.length === 0) {
+        if (cancelled) return;
+        setOnChainBalancesKas({});
+        setOnChainSyncError(null);
+        setOnChainSyncBusy(false);
+        setOnChainSyncAt(Date.now());
+        return;
+      }
+
+      if (cancelled) return;
+      setOnChainSyncBusy(true);
+      setOnChainSyncError(null);
+
+      try {
+        const groupResults = await Promise.all(
+          trackedAddressPlan.groups.map(async (group) => ({
+            group,
+            utxosByAddress: await getOrSyncUtxosBatch(group.addresses, group.rpcNetwork),
+          })),
+        );
+
+        if (cancelled) return;
+        const nextBalances: Record<string, number> = {};
+        for (const { group, utxosByAddress } of groupResults) {
+          for (const address of group.addresses) {
+            const mapped = utxosByAddress[address];
+            const kas = mapped ? Number(mapped.confirmedBalance) / 1e8 : 0;
+            const ids = group.addressToAgentIds[address] ?? [];
+            for (const id of ids) nextBalances[id] = kas;
+          }
+        }
+
+        setOnChainBalancesKas(nextBalances);
+        setOnChainSyncAt(Date.now());
+      } catch (err) {
+        if (cancelled) return;
+        setOnChainSyncError(err instanceof Error ? err.message : "Failed to sync on-chain balances.");
+      } finally {
+        if (!cancelled) setOnChainSyncBusy(false);
+      }
+    };
+
+    syncOnChainBalances().catch(() => {});
+    const id = setInterval(() => {
+      syncOnChainBalances().catch(() => {});
+    }, 25_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [trackedAddressPlan.signature]);
+
   const summary = useMemo(() => {
     const total = visibleAgents.length;
     const bots = visibleAgents.filter((a) => a.isBot).length;
     const active = visibleAgents.filter((a) => a.isActive).length;
     const pnlUsd = visibleAgents.reduce((sum, a) => sum + a.pnlUsd, 0);
-    return { total, bots, active, pnlUsd };
-  }, [visibleAgents]);
+    const onChainKas = Object.values(onChainBalancesKas).reduce((sum, value) => sum + value, 0);
+    return { total, bots, active, pnlUsd, onChainKas };
+  }, [onChainBalancesKas, visibleAgents]);
 
   if (loading) {
     return <div style={{ ...popupTabStack, paddingTop: 20, fontSize: 9, color: C.dim, textAlign: "center" }}>Loading agents…</div>;
@@ -205,6 +283,27 @@ export function AgentsTab({ network }: Props) {
               {summary.pnlUsd >= 0 ? "+" : "-"}${fmt(Math.abs(summary.pnlUsd), 2)}
             </div>
           </div>
+        </div>
+
+        <div style={{ background: "rgba(16,25,35,0.45)", border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 8px", marginBottom: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 8, color: C.dim, ...mono }}>ON-CHAIN KAS (TRACKED)</span>
+            <span style={{ fontSize: 9, color: C.accent, fontWeight: 700, ...mono }}>
+              {onChainSyncBusy ? "SYNCING…" : `${fmt(summary.onChainKas, 4)} KAS`}
+            </span>
+          </div>
+          <div style={{ fontSize: 8, color: C.dim, marginTop: 4 }}>
+            {trackedAddressPlan.trackedAgentCount}/{summary.total} agents with mapped wallet addresses
+            {onChainSyncAt > 0 ? ` · synced ${formatTimeAgo(onChainSyncAt, now)}` : ""}
+          </div>
+          <div style={{ fontSize: 8, color: C.dim, marginTop: 3 }}>
+            Source: {trackedAddressPlan.sourceMode === "canonical" ? "CANONICAL ACCOUNTS" : "AGENT FALLBACK"}
+          </div>
+          {onChainSyncError && (
+            <div style={{ fontSize: 8, color: C.warn, marginTop: 4 }}>
+              {onChainSyncError}
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 7 }}>
@@ -320,6 +419,12 @@ export function AgentsTab({ network }: Props) {
               <div>
                 <div style={{ fontSize: 8, color: C.dim, marginBottom: 1 }}>RISK</div>
                 <div style={{ fontSize: 8, color: C.text }}>{String(agent.risk || "—").toUpperCase()}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 8, color: C.dim, marginBottom: 1 }}>ON-CHAIN KAS</div>
+                <div style={{ fontSize: 8, color: C.accent }}>
+                  {Number.isFinite(onChainBalancesKas[agent.id]) ? `${fmt(onChainBalancesKas[agent.id], 4)} KAS` : "—"}
+                </div>
               </div>
             </div>
           </div>

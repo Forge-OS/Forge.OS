@@ -13,6 +13,8 @@ const KEYS = {
   activeAgent: "forgeos.session.activeAgent.v2",
   // Wallet address + network only — phrase is in the vault, never here
   walletMeta: "forgeos.wallet.meta.v2",
+  // Canonical multi-account wallet list (non-sensitive: address + network + id metadata)
+  walletAccounts: "forgeos.wallet.accounts.v1",
   network: "forgeos.network",
   lastProvider: "forgeos.wallet.lastProvider.mainnet",
   // Auto-lock settings (minutes)
@@ -29,13 +31,18 @@ const KEYS = {
   customKaspaRpcMap: "forgeos.kaspa.custom-rpc.v1",
   // Optional per-network provider pool overrides (official/igra/kasplex)
   kaspaRpcPoolOverrideMap: "forgeos.kaspa.rpc-pool-overrides.v1",
+  // Fee estimate tier by network id (priority/normal/low)
+  kaspaFeeEstimateTierMap: "forgeos.kaspa.fee-tier.v1",
   // Local node mode controls
   localNodeEnabled: "forgeos.local-node.enabled.v1",
   localNodeNetworkProfile: "forgeos.local-node.network-profile.v1",
   localNodeDataDir: "forgeos.local-node.data-dir.v1",
+  // Desktop push notifications preference
+  desktopNotificationsEnabled: "forgeos.notifications.desktop.v1",
 } as const;
 
 export const NETWORK_STORAGE_KEY = KEYS.network;
+export const WALLET_ACCOUNT_LIST_STORAGE_KEY = KEYS.walletAccounts;
 
 const AUTO_LOCK_MIN = 1;
 const AUTO_LOCK_MAX = 24 * 60; // 24h
@@ -45,6 +52,15 @@ const DEFAULT_KASPA_RPC_PROVIDER_PRESET = "official" as const;
 export type KaspaRpcProviderPreset = "official" | "igra" | "kasplex" | "custom" | "local";
 export type KaspaRpcPoolOverridePreset = "official" | "igra" | "kasplex";
 export type LocalNodeNetworkProfile = "mainnet" | "testnet-10" | "testnet-11" | "testnet-12";
+export type KaspaFeeEstimateTier = "priority" | "normal" | "low";
+
+export interface WalletAccountRef {
+  accountId: string;
+  address: string;
+  network: string;
+  label?: string;
+  updatedAt: number;
+}
 
 function normalizeAutoLockMinutes(raw: unknown): number {
   if (raw === AUTO_LOCK_NEVER) return AUTO_LOCK_NEVER;
@@ -103,12 +119,74 @@ function normalizeKaspaRpcProviderPreset(raw: unknown): KaspaRpcProviderPreset {
   return DEFAULT_KASPA_RPC_PROVIDER_PRESET;
 }
 
+function normalizeKaspaFeeEstimateTier(raw: unknown): KaspaFeeEstimateTier {
+  if (raw === "priority") return "priority";
+  if (raw === "low") return "low";
+  return "normal";
+}
+
 function normalizeLocalNodeNetworkProfile(raw: unknown): LocalNodeNetworkProfile {
   const v = String(raw || "").trim().toLowerCase().replace(/_/g, "-");
   if (v === "testnet-10" || v === "tn10") return "testnet-10";
   if (v === "testnet-11" || v === "tn11") return "testnet-11";
   if (v === "testnet-12" || v === "tn12") return "testnet-12";
   return "mainnet";
+}
+
+function normalizeWalletAccountNetwork(raw: unknown): string {
+  const v = String(raw || "").trim().toLowerCase().replace(/_/g, "-");
+  if (!v) return "";
+  if (v === "mainnet" || v === "main" || v === "livenet" || v === "kaspa") return "mainnet";
+  if (v === "testnet-10" || v === "tn10") return "testnet-10";
+  if (v === "testnet-11" || v === "tn11") return "testnet-11";
+  if (v === "testnet-12" || v === "tn12") return "testnet-12";
+  if (v === "testnet" || v.startsWith("testnet") || v.startsWith("tn") || v === "kaspatest") return "testnet";
+  return "";
+}
+
+function normalizeWalletAccountAddress(raw: unknown): string {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "";
+  if (value.startsWith("kaspa:")) return value;
+  if (value.startsWith("kaspatest:")) return value;
+  return "";
+}
+
+function normalizeWalletAccountList(raw: unknown): WalletAccountRef[] {
+  const source = Array.isArray(raw) ? raw : [];
+  const out: WalletAccountRef[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of source) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const row = candidate as Record<string, unknown>;
+    const address = normalizeWalletAccountAddress(row.address);
+    if (!address) continue;
+    const network = normalizeWalletAccountNetwork(row.network);
+    if (!network) continue;
+
+    const accountIdRaw = String(row.accountId ?? row.id ?? address).trim();
+    const accountId = accountIdRaw || address;
+    const labelRaw = String(row.label ?? "").trim();
+    const label = labelRaw ? labelRaw.slice(0, 48) : undefined;
+    const updatedAtRaw = Number(row.updatedAt ?? row.ts ?? Date.now());
+    const updatedAt = Number.isFinite(updatedAtRaw) && updatedAtRaw > 0 ? Math.floor(updatedAtRaw) : Date.now();
+
+    const dedupeKey = `${network}|${address}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    out.push({
+      accountId,
+      address,
+      network,
+      ...(label ? { label } : {}),
+      updatedAt,
+    });
+  }
+
+  out.sort((a, b) => b.updatedAt - a.updatedAt);
+  return out;
 }
 
 function normalizeKaspaRpcProviderPresetMap(
@@ -120,6 +198,19 @@ function normalizeKaspaRpcProviderPresetMap(
     const key = String(k || "").trim();
     if (!key) continue;
     out[key] = normalizeKaspaRpcProviderPreset(v);
+  }
+  return out;
+}
+
+function normalizeKaspaFeeEstimateTierMap(
+  raw: unknown,
+): Record<string, KaspaFeeEstimateTier> {
+  if (typeof raw !== "object" || raw === null) return {};
+  const out: Record<string, KaspaFeeEstimateTier> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = String(k || "").trim();
+    if (!key) continue;
+    out[key] = normalizeKaspaFeeEstimateTier(v);
   }
   return out;
 }
@@ -222,6 +313,43 @@ export async function clearWalletMeta(): Promise<void> {
   });
 }
 
+/**
+ * Canonical wallet account list (future multi-account source of truth).
+ * Non-sensitive metadata only: address/network/account-id.
+ */
+export async function getWalletAccountList(): Promise<WalletAccountRef[]> {
+  const store = chromeStorage();
+  if (!store) return [];
+  return new Promise((resolve) => {
+    store.get(KEYS.walletAccounts, (result) => {
+      try {
+        const raw = result[KEYS.walletAccounts];
+        const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+        resolve(normalizeWalletAccountList(parsed));
+      } catch {
+        resolve([]);
+      }
+    });
+  });
+}
+
+export async function setWalletAccountList(accounts: WalletAccountRef[]): Promise<void> {
+  const store = chromeStorage();
+  if (!store) return;
+  const normalized = normalizeWalletAccountList(accounts);
+  return new Promise((resolve) => {
+    store.set({ [KEYS.walletAccounts]: JSON.stringify(normalized) }, resolve);
+  });
+}
+
+export async function clearWalletAccountList(): Promise<void> {
+  const store = chromeStorage();
+  if (!store) return;
+  return new Promise((resolve) => {
+    store.remove(KEYS.walletAccounts, resolve);
+  });
+}
+
 // ── Network ───────────────────────────────────────────────────────────────────
 
 export async function getNetwork(): Promise<string> {
@@ -275,6 +403,26 @@ export async function setPersistUnlockSession(enabled: boolean): Promise<void> {
   if (!store) return;
   return new Promise((resolve) => {
     store.set({ [KEYS.persistUnlockSession]: enabled === true }, resolve);
+  });
+}
+
+// ── Desktop notification preference ─────────────────────────────────────────
+
+export async function getDesktopNotificationsEnabled(): Promise<boolean> {
+  const store = chromeStorage();
+  if (!store) return false;
+  return new Promise((resolve) => {
+    store.get(KEYS.desktopNotificationsEnabled, (result) => {
+      resolve(result[KEYS.desktopNotificationsEnabled] === true);
+    });
+  });
+}
+
+export async function setDesktopNotificationsEnabled(enabled: boolean): Promise<void> {
+  const store = chromeStorage();
+  if (!store) return;
+  return new Promise((resolve) => {
+    store.set({ [KEYS.desktopNotificationsEnabled]: enabled === true }, resolve);
   });
 }
 
@@ -461,6 +609,46 @@ export async function setKaspaRpcPoolOverride(
   });
 }
 
+export async function getKaspaFeeEstimateTierMap(): Promise<Record<string, KaspaFeeEstimateTier>> {
+  const store = chromeStorage();
+  if (!store) return {};
+  return new Promise((resolve) => {
+    store.get(KEYS.kaspaFeeEstimateTierMap, (result) => {
+      try {
+        const raw = result[KEYS.kaspaFeeEstimateTierMap];
+        const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+        resolve(normalizeKaspaFeeEstimateTierMap(parsed));
+      } catch {
+        resolve({});
+      }
+    });
+  });
+}
+
+export async function getKaspaFeeEstimateTier(network: string): Promise<KaspaFeeEstimateTier> {
+  const key = String(network || "").trim();
+  if (!key) return "normal";
+  const map = await getKaspaFeeEstimateTierMap();
+  return map[key] ?? "normal";
+}
+
+export async function setKaspaFeeEstimateTier(
+  network: string,
+  tier: KaspaFeeEstimateTier,
+): Promise<void> {
+  const store = chromeStorage();
+  if (!store) return;
+  const key = String(network || "").trim();
+  if (!key) return;
+
+  const map = await getKaspaFeeEstimateTierMap();
+  map[key] = normalizeKaspaFeeEstimateTier(tier);
+
+  return new Promise((resolve) => {
+    store.set({ [KEYS.kaspaFeeEstimateTierMap]: JSON.stringify(map) }, resolve);
+  });
+}
+
 // ── Local node mode settings ────────────────────────────────────────────────
 
 export async function getLocalNodeEnabled(): Promise<boolean> {
@@ -547,6 +735,53 @@ export async function setManagedWallet(data: Pick<ManagedWallet, "address" | "ne
 /** @deprecated Use resetWallet() from vault/vault.ts for a full wipe. */
 export async function clearManagedWallet(): Promise<void> {
   return clearWalletMeta();
+}
+
+// ── Address book ─────────────────────────────────────────────────────────────
+
+const ADDRESS_BOOK_KEY = "forgeos.address.book.v1";
+
+export interface AddressContact {
+  id: string;
+  label: string;
+  address: string;
+  addedAt: number;
+}
+
+function abStore() {
+  const s = chromeStorage();
+  return s ?? { get: (_: string, cb: (r: Record<string, unknown>) => void) => cb({}), set: (_: Record<string, unknown>, cb: () => void) => cb() } as unknown as chrome.storage.LocalStorageArea;
+}
+
+export async function getAddressBook(): Promise<AddressContact[]> {
+  return new Promise((resolve) => {
+    abStore().get(ADDRESS_BOOK_KEY, (result) => {
+      const raw = result?.[ADDRESS_BOOK_KEY];
+      resolve(Array.isArray(raw) ? (raw as AddressContact[]) : []);
+    });
+  });
+}
+
+export async function addContact(label: string, address: string): Promise<AddressContact> {
+  const contacts = await getAddressBook();
+  const contact: AddressContact = {
+    id: crypto.randomUUID(),
+    label: label.trim().slice(0, 40),
+    address: address.trim(),
+    addedAt: Date.now(),
+  };
+  contacts.push(contact);
+  return new Promise((resolve) => {
+    abStore().set({ [ADDRESS_BOOK_KEY]: contacts }, () => resolve(contact));
+  });
+}
+
+export async function removeContact(id: string): Promise<void> {
+  const contacts = await getAddressBook();
+  const filtered = contacts.filter((c) => c.id !== id);
+  return new Promise((resolve) => {
+    abStore().set({ [ADDRESS_BOOK_KEY]: filtered }, resolve);
+  });
 }
 
 // ── Per-origin dApp allowlist (B6) ───────────────────────────────────────────

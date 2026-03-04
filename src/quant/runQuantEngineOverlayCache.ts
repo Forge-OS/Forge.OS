@@ -39,7 +39,7 @@ export function createOverlayDecisionCache(maxEntries: number) {
   };
 }
 
-export function agentOverlayCacheKey(agent: any, kasData?: any) {
+export function agentOverlayCacheKey(agent: any, kasData?: any, regime?: string) {
   const agentId = String(agent?.agentId || agent?.name || "default").trim().toLowerCase();
   const risk = String(agent?.risk || "medium").trim().toLowerCase();
   const strategyTemplate = String(agent?.strategyTemplate || agent?.strategyLabel || "custom").trim().toLowerCase();
@@ -50,6 +50,9 @@ export function agentOverlayCacheKey(agent: any, kasData?: any) {
   const autoApprove = round(Math.max(0, toFinite(agent?.autoApproveThreshold, 0)), 6);
   const address = String(kasData?.address || "").trim().toLowerCase();
   const network = String(kasData?.dag?.networkName || kasData?.dag?.network || "").trim().toLowerCase();
+  // Regime-aware key: cache is invalidated when the market regime changes, ensuring
+  // AI overlay decisions are always contextually fresh after a regime transition.
+  const regimePart = String(regime || "").trim().toLowerCase() || "na";
   return [
     agentId,
     risk,
@@ -61,6 +64,7 @@ export function agentOverlayCacheKey(agent: any, kasData?: any) {
     `aa:${autoApprove}`,
     `addr:${address}`,
     `net:${network}`,
+    `rg:${regimePart}`,
   ].join("|");
 }
 

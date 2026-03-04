@@ -13,6 +13,13 @@ import type { Token, TokenId, TokenRegistry } from "./types";
 export const STABLES_ENABLED = true;
 export const ZEROX_ENABLED = true;
 
+// KRC20 tick for the stablecoin used in pair trading.
+// Set via VITE_PAIR_STABLE_TICK (default "USDC").
+// After the May 2026 Kaspa upgrade confirms the official KRC20 USDC tick, hardcode it here.
+const ENV = (typeof import.meta !== "undefined" && (import.meta as any)?.env) ?? {};
+export const PAIR_STABLE_TICK: string =
+  String(ENV?.VITE_PAIR_STABLE_TICK ?? "USDC").trim().toUpperCase() || "USDC";
+
 // ── Default registry ──────────────────────────────────────────────────────────
 export const DEFAULT_REGISTRY: TokenRegistry = {
   version: 1,
@@ -31,7 +38,8 @@ export const DEFAULT_REGISTRY: TokenRegistry = {
       symbol: "USDT",
       name: "Tether USD",
       decimals: 6,
-      assetId: null,       // future Kaspa native asset ID
+      assetId: null,       // future Kaspa native asset ID (post-bridge)
+      krc20Tick: "USDT",   // KRC20 tick on Kaspa (Kasplex inscription protocol)
       enabled: STABLES_ENABLED,
       disabledReason: STABLES_ENABLED ? null : "Temporarily disabled in this wallet build.",
     },
@@ -40,7 +48,10 @@ export const DEFAULT_REGISTRY: TokenRegistry = {
       symbol: "USDC",
       name: "USD Coin",
       decimals: 6,
-      assetId: null,
+      assetId: null,       // future Kaspa native asset ID (post-bridge)
+      // KRC20 tick sourced from env so it can be updated without a code change if the
+      // official Kaspa-native USDC tick differs. Expected value post-upgrade: "USDC".
+      krc20Tick: PAIR_STABLE_TICK,
       enabled: STABLES_ENABLED,
       disabledReason: STABLES_ENABLED ? null : "Temporarily disabled in this wallet build.",
     },

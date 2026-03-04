@@ -56,4 +56,46 @@ describe("local node storage config", () => {
     await storage.setLocalNodeDataDir("   ");
     expect(await storage.getLocalNodeDataDir()).toBeNull();
   });
+
+  it("persists fee estimate tier per network", async () => {
+    const storage = await import("../../extension/shared/storage");
+
+    await storage.setKaspaFeeEstimateTier("mainnet", "priority");
+    await storage.setKaspaFeeEstimateTier("testnet-11", "low");
+
+    expect(await storage.getKaspaFeeEstimateTier("mainnet")).toBe("priority");
+    expect(await storage.getKaspaFeeEstimateTier("testnet-11")).toBe("low");
+    expect(await storage.getKaspaFeeEstimateTier("testnet-10")).toBe("normal");
+  });
+
+  it("normalizes canonical wallet account list entries", async () => {
+    const storage = await import("../../extension/shared/storage");
+
+    await storage.setWalletAccountList([
+      {
+        accountId: "acc-main",
+        address: " KASPA:QMAIN11111111111111111111111111111111111111111111111111111 ",
+        network: "main",
+        updatedAt: 100,
+      },
+      {
+        accountId: "acc-main-dup",
+        address: "kaspa:qmain11111111111111111111111111111111111111111111111111111",
+        network: "mainnet",
+        updatedAt: 200,
+      },
+      {
+        accountId: "acc-tn11",
+        address: "kaspatest:qtn111111111111111111111111111111111111111111111111111111",
+        network: "tn11",
+        updatedAt: 300,
+      },
+    ] as any);
+
+    const list = await storage.getWalletAccountList();
+    expect(list).toHaveLength(2);
+    expect(list[0].network).toBe("testnet-11");
+    expect(list[1].network).toBe("mainnet");
+    expect(list[1].address).toMatch(/^kaspa:/);
+  });
 });

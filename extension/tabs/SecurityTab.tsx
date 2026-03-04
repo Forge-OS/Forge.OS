@@ -6,8 +6,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { C, mono } from "../../src/tokens";
 import { fmt, shortAddr } from "../../src/helpers";
 import { unlockVault, changePassword, resetWallet } from "../vault/vault";
+import { VPROG_ENABLED, describeVProgStatus } from "../tx/covenant";
 import {
   describeKaspaProviderPreset,
+  fetchNodeStatus,
   getKaspaBackendSelection,
   invalidateEndpointPoolCache,
   probeKaspaEndpointPool,
@@ -15,17 +17,22 @@ import {
 } from "../network/kaspaClient";
 import {
   getCustomKaspaRpc,
+  getDesktopNotificationsEnabled,
   getKaspaRpcPoolOverride,
   getLocalNodeDataDir,
   getLocalNodeEnabled,
   getLocalNodeNetworkProfile,
   getKaspaRpcProviderPreset,
+  getKaspaFeeEstimateTier,
+  setDesktopNotificationsEnabled,
   setLocalNodeDataDir,
   setLocalNodeEnabled,
   setLocalNodeNetworkProfile,
   setKaspaRpcPoolOverride,
   setCustomKaspaRpc,
+  setKaspaFeeEstimateTier,
   setKaspaRpcProviderPreset,
+  type KaspaFeeEstimateTier,
   type LocalNodeNetworkProfile,
   type KaspaRpcPoolOverridePreset,
   type KaspaRpcProviderPreset,
@@ -121,6 +128,8 @@ function evaluateRpcConnectorState(
   const row = rows.find((item) => item.base === activeEndpoint) || rows[0];
   if (!row) return "disconnected";
   if (row.circuit === "open") return "disconnected";
+  if (row.nodeSynced === false) return "degraded";
+  if (row.nodeUtxoIndexed === false) return "degraded";
   if (!row.lastOkAt) return "disconnected";
   const okAgeMs = Math.max(0, now - row.lastOkAt);
   if (okAgeMs <= 60_000) {
@@ -159,6 +168,7 @@ export function SecurityTab({
   // Reset state
   const [resetConfirm, setResetConfirm] = useState(false);
   const [sessionPrefsLoading, setSessionPrefsLoading] = useState(false);
+  const [desktopNotificationsEnabled, setDesktopNotificationsEnabledState] = useState(false);
   const [rpcPreset, setRpcPreset] = useState<KaspaRpcProviderPreset>("official");
   const [customRpcInput, setCustomRpcInput] = useState("");
   const [customRpcLoading, setCustomRpcLoading] = useState(false);
@@ -169,6 +179,10 @@ export function SecurityTab({
   const [rpcPoolOverrideLoading, setRpcPoolOverrideLoading] = useState(false);
   const [rpcPoolOverrideError, setRpcPoolOverrideError] = useState<string | null>(null);
   const [rpcPoolOverrideSaved, setRpcPoolOverrideSaved] = useState(false);
+  const [feeTier, setFeeTier] = useState<KaspaFeeEstimateTier>("normal");
+  const [feeTierLoading, setFeeTierLoading] = useState(false);
+  const [feeTierError, setFeeTierError] = useState<string | null>(null);
+  const [feeTierSavedAt, setFeeTierSavedAt] = useState<number | null>(null);
   const [localNodeEnabled, setLocalNodeEnabledState] = useState(false);
   const [localNodeProfile, setLocalNodeProfileState] = useState<LocalNodeNetworkProfile>("mainnet");
   const [localNodeDataDir, setLocalNodeDataDirState] = useState("");
@@ -189,6 +203,8 @@ export function SecurityTab({
   const [rpcConnectorEndpoint, setRpcConnectorEndpoint] = useState<string | null>(null);
   const [rpcConnectorSource, setRpcConnectorSource] = useState<"local" | "remote" | null>(null);
   const [rpcConnectorCheckedAt, setRpcConnectorCheckedAt] = useState<number | null>(null);
+  const [rpcConnectorNodeSynced, setRpcConnectorNodeSynced] = useState<boolean | null>(null);
+  const [rpcConnectorNodeIndexed, setRpcConnectorNodeIndexed] = useState<boolean | null>(null);
 
   const rpcPresetLabels: Record<KaspaRpcProviderPreset, string> = {
     official: "OFFICIAL",
@@ -306,6 +322,7 @@ export function SecurityTab({
     Promise.all([
       getCustomKaspaRpc(network),
       getKaspaRpcProviderPreset(network),
+      getKaspaFeeEstimateTier(network),
       getKaspaRpcPoolOverride(network, "official"),
       getKaspaRpcPoolOverride(network, "igra"),
       getKaspaRpcPoolOverride(network, "kasplex"),
@@ -317,6 +334,7 @@ export function SecurityTab({
       .then(([
         value,
         preset,
+        tier,
         officialPoolOverride,
         igraPoolOverride,
         kasplexPoolOverride,
@@ -327,6 +345,9 @@ export function SecurityTab({
         if (!active) return;
         setCustomRpcInput(value ?? "");
         setRpcPreset(preset);
+        setFeeTier(tier);
+        setFeeTierError(null);
+        setFeeTierSavedAt(null);
         const nextOverrides = {
           official: officialPoolOverride,
           igra: igraPoolOverride,
@@ -423,6 +444,8 @@ export function SecurityTab({
     setRpcConnectorEndpoint(null);
     setRpcConnectorSource(null);
     setRpcConnectorCheckedAt(null);
+    setRpcConnectorNodeSynced(null);
+    setRpcConnectorNodeIndexed(null);
   }, [network, rpcPreset]);
 
   useEffect(() => {
@@ -447,6 +470,26 @@ export function SecurityTab({
       cancelled = true;
     };
   }, [localNodeShowLogs]);
+
+  // ── Desktop notifications preference ─────────────────────────────────────────
+  useEffect(() => {
+    getDesktopNotificationsEnabled()
+      .then((v) => setDesktopNotificationsEnabledState(v))
+      .catch(() => {});
+  }, []);
+
+  const toggleDesktopNotifications = async () => {
+    const next = !desktopNotificationsEnabled;
+    if (next) {
+      // Check permission level before enabling
+      const level = await new Promise<string>((resolve) => {
+        chrome.notifications.getPermissionLevel((lvl) => resolve(lvl));
+      }).catch(() => "denied");
+      if (level === "denied") return; // user blocked notifications — do nothing silently
+    }
+    await setDesktopNotificationsEnabled(next).catch(() => {});
+    setDesktopNotificationsEnabledState(next);
+  };
 
   // ── Reveal seed phrase ───────────────────────────────────────────────────────
   const handleReveal = async (e: React.FormEvent) => {
@@ -546,12 +589,23 @@ export function SecurityTab({
         return aFail - bFail;
       });
       const selection = await getKaspaBackendSelection(network).catch(() => null);
+      const activeNodeStatus = await fetchNodeStatus(network).catch(() => null);
       const activeEndpoint = selection?.activeEndpoint ?? sorted[0]?.base ?? null;
+      const activeRow = sorted.find((row) => row.base === activeEndpoint) || sorted[0] || null;
       setProviderProbeRows(sorted);
       setProviderProbeAt(Date.now());
       setRpcConnectorEndpoint(activeEndpoint);
       setRpcConnectorSource(selection?.source ?? null);
-      setRpcConnectorState(evaluateRpcConnectorState(sorted, activeEndpoint));
+      const rowState = evaluateRpcConnectorState(sorted, activeEndpoint);
+      const nodeSynced = activeNodeStatus?.isSynced ?? activeRow?.nodeSynced ?? null;
+      const nodeIndexed = activeNodeStatus?.isUtxoIndexed ?? activeRow?.nodeUtxoIndexed ?? null;
+      setRpcConnectorNodeSynced(nodeSynced);
+      setRpcConnectorNodeIndexed(nodeIndexed);
+      setRpcConnectorState(
+        rowState === "connected" && (nodeSynced === false || nodeIndexed === false)
+          ? "degraded"
+          : rowState,
+      );
       setRpcConnectorCheckedAt(Date.now());
     } catch {
       setProviderProbeError("Failed to probe provider feed.");
@@ -559,6 +613,8 @@ export function SecurityTab({
       setRpcConnectorEndpoint(null);
       setRpcConnectorSource(null);
       setRpcConnectorCheckedAt(Date.now());
+      setRpcConnectorNodeSynced(null);
+      setRpcConnectorNodeIndexed(null);
     } finally {
       if (!silent) setProviderProbeBusy(false);
     }
@@ -726,6 +782,21 @@ export function SecurityTab({
       setCustomRpcError("Failed to save RPC provider preset.");
     } finally {
       setCustomRpcLoading(false);
+    }
+  };
+
+  const applyFeeTier = async (tier: KaspaFeeEstimateTier) => {
+    setFeeTierLoading(true);
+    setFeeTierError(null);
+    try {
+      await setKaspaFeeEstimateTier(network, tier);
+      setFeeTier(tier);
+      setFeeTierSavedAt(Date.now());
+      invalidateRpcPoolRuntime();
+    } catch {
+      setFeeTierError("Failed to save fee tier.");
+    } finally {
+      setFeeTierLoading(false);
     }
   };
 
@@ -942,6 +1013,15 @@ export function SecurityTab({
               <div style={{ ...insetCard(), fontSize: 8, color: C.text, padding: "7px 9px" }}>{shortAddr(address)}</div>
             </div>
           )}
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ fontSize: 8, color: C.dim, marginBottom: 3 }}>VPROG / KIP-9</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: VPROG_ENABLED ? C.ok : C.warn, flexShrink: 0 }} />
+              <span style={{ fontSize: 8, color: VPROG_ENABLED ? C.ok : C.dim, lineHeight: 1.4 }}>
+                {describeVProgStatus()}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -974,6 +1054,16 @@ export function SecurityTab({
             <span style={{ ...mono, color: C.text }}>{rpcConnectorEndpointLabel}</span>
           </div>
           <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.45 }}>
+            Node sync:{" "}
+            <span style={{ color: rpcConnectorNodeSynced === false ? C.warn : C.text, fontWeight: 700 }}>
+              {rpcConnectorNodeSynced === null ? "unknown" : (rpcConnectorNodeSynced ? "synced" : "syncing")}
+            </span>
+            {" "}· UTXO index:{" "}
+            <span style={{ color: rpcConnectorNodeIndexed === false ? C.warn : C.text, fontWeight: 700 }}>
+              {rpcConnectorNodeIndexed === null ? "unknown" : (rpcConnectorNodeIndexed ? "ready" : "not-ready")}
+            </span>
+          </div>
+          <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.45 }}>
             Last verified: <span style={{ color: C.text, fontWeight: 700 }}>{relativeSeconds(rpcConnectorCheckedAt)}</span>
           </div>
         </div>
@@ -997,6 +1087,37 @@ export function SecurityTab({
               </button>
             );
           })}
+        </div>
+        <div style={{ ...insetCard(), marginBottom: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.08em" }}>FEE PROFILE</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {(["priority", "normal", "low"] as KaspaFeeEstimateTier[]).map((tier) => {
+              const active = feeTier === tier;
+              return (
+                <button
+                  key={tier}
+                  onClick={() => { void applyFeeTier(tier); }}
+                  disabled={feeTierLoading}
+                  style={{
+                    ...outlineButton(active ? C.accent : C.dim, true),
+                    padding: "5px 7px",
+                    fontSize: 8,
+                    color: active ? C.accent : C.dim,
+                    opacity: feeTierLoading ? 0.7 : 1,
+                  }}
+                >
+                  {tier.toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.45 }}>
+            Tx builder uses this tier for fee estimation on {network.toUpperCase()}.
+            {feeTierSavedAt ? ` Saved ${relativeSeconds(feeTierSavedAt)}.` : ""}
+          </div>
+          {feeTierError && (
+            <div style={{ fontSize: 8, color: C.danger }}>{feeTierError}</div>
+          )}
         </div>
         <input
           value={customRpcInput}
@@ -1073,6 +1194,8 @@ export function SecurityTab({
                 <div style={{ fontSize: 8, color: C.text, lineHeight: 1.35 }}>Endpoint #{index + 1}</div>
                 <div style={{ fontSize: 7, color: row.circuit === "open" ? C.danger : C.ok }}>
                   {row.circuit.toUpperCase()} · {row.lastLatencyMs ? `${Math.round(row.lastLatencyMs)}ms` : "n/a"}
+                  {row.nodeSynced === false ? " · SYNCING" : row.nodeSynced === true ? " · SYNCED" : ""}
+                  {row.nodeUtxoIndexed === false ? " · INDEXING" : row.nodeUtxoIndexed === true ? " · INDEXED" : ""}
                 </div>
               </div>
             ))}
@@ -1465,6 +1588,26 @@ export function SecurityTab({
 
           <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginTop: 6 }}>
             Stores unlocked session in browser session memory only; lock manually on shared devices.
+          </div>
+
+          <button
+            onClick={() => { void toggleDesktopNotifications(); }}
+            style={{
+              ...outlineButton(desktopNotificationsEnabled ? C.ok : C.dim, true),
+              width: "100%",
+              padding: "8px 10px",
+              color: desktopNotificationsEnabled ? C.ok : C.dim,
+              textAlign: "left",
+              marginTop: 8,
+            }}
+          >
+            {desktopNotificationsEnabled
+              ? "✓ DESKTOP NOTIFICATIONS ON"
+              : "DESKTOP NOTIFICATIONS OFF"}
+          </button>
+
+          <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.5, marginTop: 6 }}>
+            Alerts for low balance and timed-out transactions. Requires browser notification permission.
           </div>
 
         </div>

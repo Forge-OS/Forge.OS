@@ -9,6 +9,49 @@ import { buildKaspaWasmTx } from "./builder";
 import { loadKaspaWasm } from "../../src/wallet/kaspaWasmLoader";
 import { DEFAULT_KASPA_DERIVATION, normalizeKaspaDerivation } from "../../src/wallet/derivation";
 
+/**
+ * Sign a pre-built kaspa-wasm Generator pending transaction using an explicit
+ * private key hex (not derived from BIP44). Used for escrow claim/refund where
+ * the private key is the ephemeral escrow key, not the wallet's BIP44 key.
+ *
+ * @param privKeyHex  Hex-encoded 32-byte private key (ephemeral, e.g. from EscrowOffer)
+ * @param wasmPending The kaspa-wasm pending transaction returned by Generator.next()
+ * @returns           Serialized signed transaction JSON string
+ * @throws            "SIGN_WITH_EXPLICIT_KEY_FAILED" wrapping the underlying error
+ */
+export async function signWithExplicitKey(
+  privKeyHex: string,
+  wasmPending: unknown,
+): Promise<string> {
+  const kaspa = await loadKaspaWasm();
+  const PrivateKey = (kaspa as Record<string, unknown>).PrivateKey as
+    | (new (hex: string) => unknown)
+    | undefined;
+  if (!PrivateKey) throw new Error("KASPA_WASM_PRIVKEY_UNAVAILABLE");
+
+  let keyRef: unknown = null;
+  try {
+    keyRef = new PrivateKey(privKeyHex);
+    const pending = wasmPending as {
+      sign: (keys: unknown[]) => Promise<void>;
+      serializeToObject?: () => unknown;
+      toJSON?: () => string;
+    };
+    await pending.sign([keyRef]);
+    if (typeof pending.serializeToObject === "function") {
+      return JSON.stringify({ transaction: pending.serializeToObject() });
+    } else if (typeof pending.toJSON === "function") {
+      return pending.toJSON();
+    }
+    return JSON.stringify({ transaction: pending });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`SIGN_WITH_EXPLICIT_KEY_FAILED: ${msg}`);
+  } finally {
+    keyRef = null;
+  }
+}
+
 // Lazy-load kaspa-wasm
 const loadKaspa = loadKaspaWasm;
 

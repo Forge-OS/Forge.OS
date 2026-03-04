@@ -22,8 +22,8 @@
     "file": "assets/react-vendor-D4yGots9.js",
     "name": "react-vendor"
   },
-  "_recharts-vendor-DS4t48dv.js": {
-    "file": "assets/recharts-vendor-DS4t48dv.js",
+  "_recharts-vendor-BR8SSTiW.js": {
+    "file": "assets/recharts-vendor-BR8SSTiW.js",
     "name": "recharts-vendor",
     "imports": [
       "_react-vendor-D4yGots9.js",
@@ -32,28 +32,30 @@
     ]
   },
   "index.html": {
-    "file": "assets/index-D4nDuWjr.js",
+    "file": "assets/index-BK_eIaqx.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
-      "_recharts-vendor-DS4t48dv.js",
+      "_recharts-vendor-BR8SSTiW.js",
       "_d3-render-vendor-RkpHolfk.js",
       "_d3-scale-vendor-BynLqmir.js"
     ],
     "dynamicImports": [
       "_kaspa_wasm-C4v5X6f6.js",
-      "src/components/dashboard/PerfChart.tsx",
-      "src/components/dashboard/AgentOverviewPanel.tsx",
       "src/components/dashboard/IntelligencePanel.tsx",
       "src/components/dashboard/PortfolioPanel.tsx",
       "src/components/dashboard/PnlAttributionPanel.tsx",
       "src/components/dashboard/AlertsPanel.tsx",
-      "src/components/dashboard/QuantAnalyticsPanel.tsx"
+      "src/components/dashboard/QuantAnalyticsPanel.tsx",
+      "src/components/dashboard/BacktestPanel.tsx",
+      "src/components/dashboard/LeaderboardPanel.tsx",
+      "src/components/dashboard/NetworkPanel.tsx",
+      "src/components/dashboard/OverviewPanel.tsx"
     ],
     "css": [
-      "assets/index-CdNtjBMZ.css"
+      "assets/index-DTqnrWUf.css"
     ],
     "assets": [
       "assets/kaspa_wasm_bg-CtmpV7Oa.wasm"
@@ -64,92 +66,148 @@
     "src": "node_modules/kaspa-wasm/kaspa_wasm_bg.wasm"
   },
   "src/components/dashboard/AgentOverviewPanel.tsx": {
-    "file": "assets/AgentOverviewPanel-C2VwTWcx.js",
+    "file": "assets/AgentOverviewPanel-wru_Gko2.js",
     "name": "AgentOverviewPanel",
     "src": "src/components/dashboard/AgentOverviewPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
       "index.html",
-      "_recharts-vendor-DS4t48dv.js",
+      "_recharts-vendor-BR8SSTiW.js",
       "_d3-render-vendor-RkpHolfk.js",
       "_d3-scale-vendor-BynLqmir.js"
     ]
   },
   "src/components/dashboard/AlertsPanel.tsx": {
-    "file": "assets/AlertsPanel-VhSZBLYd.js",
+    "file": "assets/AlertsPanel-DnXRs9a5.js",
     "name": "AlertsPanel",
     "src": "src/components/dashboard/AlertsPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
       "index.html",
-      "_recharts-vendor-DS4t48dv.js",
+      "_recharts-vendor-BR8SSTiW.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
+    ]
+  },
+  "src/components/dashboard/BacktestPanel.tsx": {
+    "file": "assets/BacktestPanel-CgoKBVOb.js",
+    "name": "BacktestPanel",
+    "src": "src/components/dashboard/BacktestPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-D4yGots9.js",
+      "index.html",
+      "_recharts-vendor-BR8SSTiW.js",
       "_d3-render-vendor-RkpHolfk.js",
       "_d3-scale-vendor-BynLqmir.js"
     ]
   },
   "src/components/dashboard/IntelligencePanel.tsx": {
-    "file": "assets/IntelligencePanel-WYDD-wPC.js",
+    "file": "assets/IntelligencePanel-Csmva2ID.js",
     "name": "IntelligencePanel",
     "src": "src/components/dashboard/IntelligencePanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
       "index.html",
-      "_recharts-vendor-DS4t48dv.js",
+      "_recharts-vendor-BR8SSTiW.js",
       "_d3-render-vendor-RkpHolfk.js",
       "_d3-scale-vendor-BynLqmir.js"
     ]
   },
+  "src/components/dashboard/LeaderboardPanel.tsx": {
+    "file": "assets/LeaderboardPanel-NHIkR_jU.js",
+    "name": "LeaderboardPanel",
+    "src": "src/components/dashboard/LeaderboardPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-D4yGots9.js",
+      "index.html",
+      "_recharts-vendor-BR8SSTiW.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
+    ]
+  },
+  "src/components/dashboard/NetworkPanel.tsx": {
+    "file": "assets/NetworkPanel-Cpqsx1MY.js",
+    "name": "NetworkPanel",
+    "src": "src/components/dashboard/NetworkPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-D4yGots9.js",
+      "index.html",
+      "_recharts-vendor-BR8SSTiW.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
+    ]
+  },
+  "src/components/dashboard/OverviewPanel.tsx": {
+    "file": "assets/OverviewPanel-CCtlZKXf.js",
+    "name": "OverviewPanel",
+    "src": "src/components/dashboard/OverviewPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_react-vendor-D4yGots9.js",
+      "_recharts-vendor-BR8SSTiW.js",
+      "_d3-render-vendor-RkpHolfk.js",
+      "_d3-scale-vendor-BynLqmir.js"
+    ],
+    "dynamicImports": [
+      "src/components/dashboard/AgentOverviewPanel.tsx",
+      "src/components/dashboard/PerfChart.tsx"
+    ]
+  },
   "src/components/dashboard/PerfChart.tsx": {
-    "file": "assets/PerfChart-clJmahtp.js",
+    "file": "assets/PerfChart-YwrfD_qr.js",
     "name": "PerfChart",
     "src": "src/components/dashboard/PerfChart.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
       "index.html",
-      "_recharts-vendor-DS4t48dv.js",
+      "_recharts-vendor-BR8SSTiW.js",
       "_d3-render-vendor-RkpHolfk.js",
       "_d3-scale-vendor-BynLqmir.js"
     ]
   },
   "src/components/dashboard/PnlAttributionPanel.tsx": {
-    "file": "assets/PnlAttributionPanel-CK9N9Nur.js",
+    "file": "assets/PnlAttributionPanel-CiT7Aa1W.js",
     "name": "PnlAttributionPanel",
     "src": "src/components/dashboard/PnlAttributionPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
       "index.html",
-      "_recharts-vendor-DS4t48dv.js",
+      "_recharts-vendor-BR8SSTiW.js",
       "_d3-render-vendor-RkpHolfk.js",
       "_d3-scale-vendor-BynLqmir.js"
     ]
   },
   "src/components/dashboard/PortfolioPanel.tsx": {
-    "file": "assets/PortfolioPanel-BTzEouZl.js",
+    "file": "assets/PortfolioPanel-ba-Zx1J0.js",
     "name": "PortfolioPanel",
     "src": "src/components/dashboard/PortfolioPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
       "index.html",
-      "_recharts-vendor-DS4t48dv.js",
+      "_recharts-vendor-BR8SSTiW.js",
       "_d3-render-vendor-RkpHolfk.js",
       "_d3-scale-vendor-BynLqmir.js"
     ]
   },
   "src/components/dashboard/QuantAnalyticsPanel.tsx": {
-    "file": "assets/QuantAnalyticsPanel-BdGNbI_3.js",
+    "file": "assets/QuantAnalyticsPanel-rRaNoTDN.js",
     "name": "QuantAnalyticsPanel",
     "src": "src/components/dashboard/QuantAnalyticsPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-D4yGots9.js",
       "index.html",
-      "_recharts-vendor-DS4t48dv.js",
+      "_recharts-vendor-BR8SSTiW.js",
       "_d3-render-vendor-RkpHolfk.js",
       "_d3-scale-vendor-BynLqmir.js"
     ]

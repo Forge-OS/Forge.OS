@@ -1,10 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { PendingTx } from "../../extension/tx/types";
 import { probeKaspaReceipt, waitForKaspaConfirmation } from "../../extension/tx/receiptReconciler";
-import { fetchTransaction, getKaspaBackendSelection } from "../../extension/network/kaspaClient";
+import { fetchTransactionAcceptance, getKaspaBackendSelection } from "../../extension/network/kaspaClient";
 
 vi.mock("../../extension/network/kaspaClient", () => ({
-  fetchTransaction: vi.fn(),
+  fetchTransactionAcceptance: vi.fn(),
   getKaspaBackendSelection: vi.fn(),
 }));
 
@@ -35,12 +35,13 @@ describe("receipt reconciler", () => {
   });
 
   it("probes receipt and returns backend snapshot", async () => {
-    vi.mocked(fetchTransaction).mockResolvedValue({
-      transactionId: "kaspa_txid",
-      acceptingBlockHash: "blockhash",
-      inputs: [],
-      outputs: [],
-    });
+    vi.mocked(fetchTransactionAcceptance).mockResolvedValue([
+      {
+        transactionId: "kaspa_txid",
+        isAccepted: true,
+        acceptingBlockHash: "blockhash",
+      },
+    ]);
 
     const probe = await probeKaspaReceipt("kaspa_txid", "mainnet");
     expect(probe.confirmed).toBe(true);
@@ -50,12 +51,13 @@ describe("receipt reconciler", () => {
   });
 
   it("waits for confirmation and updates pending tx to CONFIRMED", async () => {
-    vi.mocked(fetchTransaction).mockResolvedValue({
-      transactionId: "kaspa_txid",
-      acceptingBlockHash: "blockhash",
-      inputs: [],
-      outputs: [],
-    });
+    vi.mocked(fetchTransactionAcceptance).mockResolvedValue([
+      {
+        transactionId: "kaspa_txid",
+        isAccepted: true,
+        acceptingBlockHash: "blockhash",
+      },
+    ]);
 
     const tx = makePendingTx();
     const result = await waitForKaspaConfirmation(tx, {
@@ -70,7 +72,13 @@ describe("receipt reconciler", () => {
   });
 
   it("times out to FAILED when receipt never confirms", async () => {
-    vi.mocked(fetchTransaction).mockResolvedValue(null);
+    vi.mocked(fetchTransactionAcceptance).mockResolvedValue([
+      {
+        transactionId: "kaspa_txid",
+        isAccepted: false,
+        acceptingBlockHash: null,
+      },
+    ]);
 
     const tx = makePendingTx();
     const result = await waitForKaspaConfirmation(tx, {
@@ -82,4 +90,3 @@ describe("receipt reconciler", () => {
     expect(String(result.error || "")).toContain("CONFIRM_TIMEOUT");
   });
 });
-

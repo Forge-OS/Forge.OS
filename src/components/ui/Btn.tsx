@@ -13,13 +13,7 @@ export const Btn = ({children, onClick, variant = "primary", disabled, style = {
       {...rest}
       onClick={onClick}
       disabled={disabled}
-      onMouseEnter={(e)=>{if(!disabled){e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.filter="brightness(1.06)";}}
-      }
-      onMouseLeave={(e)=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.filter="brightness(1)";}}
-      onMouseDown={(e)=>{if(!disabled){e.currentTarget.style.transform="translateY(0) scale(0.995)";}}
-      }
-      onMouseUp={(e)=>{if(!disabled){e.currentTarget.style.transform="translateY(-1px) scale(1)";}}
-      }
+      className={`forge-btn${rest.className ? ` ${rest.className}` : ""}`}
       style={{
         background:s.bg,
         color:s.color,

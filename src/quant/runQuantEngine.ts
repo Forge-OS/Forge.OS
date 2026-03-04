@@ -1,4 +1,5 @@
 import { buildQuantCoreDecision, type QuantContext } from "./quantCore";
+import { computeCalibrationScore } from "./tradeOutcomes";
 import { clamp, round, toFinite } from "./math";
 import {
   agentOverlayCacheKey,
@@ -120,7 +121,7 @@ function sanitizeDecision(raw: any, agent: any) {
   const action = ["ACCUMULATE", "REDUCE", "HOLD", "REBALANCE"].includes(actionRaw) ? actionRaw : "HOLD";
 
   const capitalLimit = Math.max(0, toFinite(agent?.capitalLimit, 0));
-  const allocation = clamp(toFinite(raw?.capital_allocation_kas, 0), 0, capitalLimit);
+  let allocation = clamp(toFinite(raw?.capital_allocation_kas, 0), 0, capitalLimit);
   const allocationPct =
     capitalLimit > 0
       ? clamp((allocation / capitalLimit) * 100, 0, 100)
@@ -141,6 +142,15 @@ function sanitizeDecision(raw: any, agent: any) {
   const riskFactors = Array.isArray(raw?.risk_factors)
     ? raw.risk_factors.map((v: any) => String(v)).filter(Boolean).slice(0, 6)
     : [];
+
+  // AI RATIONALE VALIDATION (item 8): detect contradictory AI outputs where the rationale
+  // expresses caution but the action is ACCUMULATE. Halve allocation and flag it.
+  const rationaleText = String(raw?.rationale || "").toLowerCase();
+  const cautionKeywords = ["caution", "risky", "uncertain", "bearish", "danger", "warning", "declining", "avoid", "negative outlook"];
+  if (action === "ACCUMULATE" && cautionKeywords.some((k) => rationaleText.includes(k))) {
+    allocation = round(allocation * 0.5, 6);
+    riskFactors.push("AI rationale-action contradiction — allocation halved");
+  }
 
   const decisionSourceRaw = String(raw?.decision_source || "ai").toLowerCase();
   const decisionSource = ["ai", "fallback", "quant-core", "hybrid-ai"].includes(decisionSourceRaw)
@@ -346,7 +356,9 @@ export async function runQuantEngine(agent: any, kasData: any, context?: QuantCo
     },
     agent
   );
-  const cacheKey = agentOverlayCacheKey(agent, kasData);
+  // Extract current regime for regime-aware cache key (item 7).
+  const currentRegime = String(quantCoreDecision?.quant_metrics?.regime || "NA");
+  const cacheKey = agentOverlayCacheKey(agent, kasData, currentRegime);
   const cachedOverlay = getCachedOverlay(cacheKey);
   const overlayPlan = resolveAiOverlayPlan({
     coreDecision: quantCoreDecision,
@@ -397,6 +409,7 @@ export async function runQuantEngine(agent: any, kasData: any, context?: QuantCo
       agent,
       kasData,
       quantCoreDecision,
+      extra: context?.extra,
       config: {
         apiUrl: CFG.aiApiUrl,
         model: CFG.aiModel,
@@ -408,13 +421,29 @@ export async function runQuantEngine(agent: any, kasData: any, context?: QuantCo
       sanitizeDecision,
     });
     const aiLatencyMs = Date.now() - aiStartedAt;
+    // AI LATENCY RISK ADJUSTMENT (item 9): if the AI call took > 3s the decision may be
+    // stale relative to fast Kaspa market conditions — reduce confidence and allocation.
+    let adjustedAiDecision = aiDecision;
+    if (aiLatencyMs > 3000) {
+      adjustedAiDecision = {
+        ...aiDecision,
+        confidence_score: round(clamp(toFinite(aiDecision?.confidence_score, 0) - 0.1, 0, 1), 4),
+        capital_allocation_kas: round(Math.max(0, toFinite(aiDecision?.capital_allocation_kas, 0) * 0.8), 6),
+        risk_factors: [
+          ...(Array.isArray(aiDecision?.risk_factors) ? aiDecision.risk_factors : []),
+          `ai_high_latency_${aiLatencyMs}ms`,
+        ],
+      };
+    }
+    const calibration = computeCalibrationScore(agent?.agentId ?? "default");
     const fused = fuseWithQuantCore({
       agent,
       coreDecision: quantCoreDecision,
-      aiDecision,
+      aiDecision: adjustedAiDecision,
       aiLatencyMs,
       startedAt,
       sanitizeDecision,
+      calibrationScore: calibration?.score ?? null,
     });
     fused.decision_source_detail = appendSourceDetail(fused?.decision_source_detail, `overlay_plan:${overlayPlan.reason}`);
     setCachedOverlay(cacheKey, overlayPlan.signature, fused);

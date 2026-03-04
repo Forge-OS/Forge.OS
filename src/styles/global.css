@@ -60,6 +60,64 @@ body {
   overflow-y: auto;
 }
 
+/* ── Forge button system: CSS hover/active instead of JS mouse events ── */
+.forge-btn {
+  transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
+}
+.forge-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+.forge-btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.995);
+  filter: brightness(0.98);
+}
+
+/* ── Shimmer skeleton animation — GPU composited (transform only, no Paint trigger) ── */
+@keyframes forge-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.forge-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: #101923;
+}
+.forge-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(22, 34, 47, 0.85) 50%,
+    transparent 100%
+  );
+  animation: forge-shimmer 1.6s ease infinite;
+  will-change: transform;
+}
+
+/* ── Dashboard tab bar ── */
+.forge-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  border-radius: 4px 4px 0 0;
+  margin-bottom: -1px;
+}
+.forge-tab-btn:hover {
+  background: rgba(57, 221, 182, 0.07);
+}
+.forge-tab-btn.active {
+  border-bottom-color: #39DDB6;
+  color: #39DDB6;
+  background: rgba(57, 221, 182, 0.09);
+}
+
 .forge-ui-scale {
   transform-origin: top center;
 }

@@ -13,8 +13,8 @@ type PendingResolver = {
 let worker: Worker | null = null;
 let workerReady = false;
 let workerInitAttempted = false;
-let nextReqId = 1;
-const pending = new Map<number, PendingResolver>();
+// Use crypto.randomUUID() for request IDs — collision-free, no global counter drift.
+const pending = new Map<string, PendingResolver>();
 
 function teardownWorker() {
   if (worker) {
@@ -37,9 +37,9 @@ function initWorker() {
     worker = new Worker(new URL("../workers/quantEngine.worker.ts", import.meta.url), { type: "module" });
     worker.onmessage = (event: MessageEvent<any>) => {
       const msg = event.data;
-      const entry = pending.get(Number(msg?.id));
+      const entry = pending.get(String(msg?.id));
       if (!entry) return;
-      pending.delete(Number(msg.id));
+      pending.delete(String(msg.id));
       clearTimeout(entry.timeoutId);
       if (msg?.ok) entry.resolve(msg.decision);
       else entry.reject(new Error(String(msg?.error || "Quant worker error")));
@@ -64,7 +64,7 @@ export async function runQuantEngineClient(agent: any, kasData: any, context?: a
   const w = initWorker();
   if (!w) return runQuantEngine(agent, kasData, context);
 
-  const id = nextReqId++;
+  const id = crypto.randomUUID();
   return new Promise<any>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       pending.delete(id);

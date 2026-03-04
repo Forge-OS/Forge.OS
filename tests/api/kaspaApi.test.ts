@@ -87,4 +87,22 @@ describe('kaspaApi', () => {
     expect(receipt.status).toBe('pending');
     expect(receipt.confirmations).toBe(0);
   });
+
+  it('reads node sync/index status from /info/kaspad', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/info/kaspad')) {
+        return {
+          ok: true,
+          json: async () => ({ isSynced: true, isUtxoIndexed: false }),
+        } as any;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as any;
+    }));
+
+    const api = await import('../../src/api/kaspaApi');
+    const status = await api.kasNodeStatus();
+    expect(status.isSynced).toBe(true);
+    expect(status.isUtxoIndexed).toBe(false);
+    expect(status.source).toBe('kaspad');
+  });
 });

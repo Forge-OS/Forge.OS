@@ -7,7 +7,8 @@ import QRCode from "qrcode";
 import { C, mono } from "../../src/tokens";
 import { fmt, isKaspaAddress } from "../../src/helpers";
 import { fetchKasUsdPrice } from "../shared/api";
-import { fetchDagInfo, NETWORK_BPS } from "../network/kaspaClient";
+import { fetchBlueScore, NETWORK_BPS, fetchTransactionHistory } from "../network/kaspaClient";
+import type { KaspaHistoricalTx } from "../network/kaspaClient";
 import { getSession } from "../vault/vault";
 import { createExecutionRunId } from "../tx/executionTelemetry";
 import { updatePendingTx } from "../tx/store";
@@ -15,6 +16,7 @@ import { getOrSyncUtxos, sompiToKas, syncUtxos } from "../utxo/utxoSync";
 import { getAllTokens } from "../tokens/registry";
 import {
   fetchKrcPortfolio,
+  getKrcPortfolioDiagnostics,
   loadPrefetchedKrcPortfolio,
   savePrefetchedKrcPortfolio,
 } from "../portfolio/krcPortfolio";
@@ -23,8 +25,9 @@ import type { KrcPortfolioToken } from "../portfolio/types";
 import { resolveTokenFromAddress, resolveTokenFromQuery } from "../swap/tokenResolver";
 import type { KaspaTokenStandard, SwapCustomToken } from "../swap/types";
 import type { PendingTx } from "../tx/types";
-import type { TokenId } from "../tokens/types";
 import type { Utxo } from "../utxo/types";
+import type { EscrowOffer } from "../tx/escrow";
+import type { AddressContact } from "../shared/storage";
 import {
   divider,
   insetCard,
@@ -48,6 +51,8 @@ interface Props {
   modeRequestId?: number;
   onModeConsumed?: () => void;
   onBalanceInvalidated?: () => void;
+  /** Called whenever the KRC portfolio USD total changes so Popup can include it in the hero value */
+  onKrcPortfolioUpdate?: (totalUsd: number) => void;
 }
 
 type SendStep =
@@ -126,6 +131,7 @@ export function WalletTab({
   modeRequestId,
   onModeConsumed,
   onBalanceInvalidated,
+  onKrcPortfolioUpdate,
 }: Props) {
   const [sendStep, setSendStep] = useState<SendStep>("idle");
   const [showReceive, setShowReceive] = useState(false);
@@ -143,7 +149,7 @@ export function WalletTab({
   const [utxoError, setUtxoError] = useState<string | null>(null);
   const [utxoUpdatedAt, setUtxoUpdatedAt] = useState<number | null>(null);
   const [utxoReloadNonce, setUtxoReloadNonce] = useState(0);
-  const [selectedTokenId, setSelectedTokenId] = useState<TokenId | null>(null);
+  const [selectedTokenId, setSelectedTokenId] = useState<"KAS" | null>(null);
   const [liveKasPrice, setLiveKasPrice] = useState(usdPrice);
   const [kasPriceSeries, setKasPriceSeries] = useState<PricePoint[]>([]);
   const [kasFeedUpdatedAt, setKasFeedUpdatedAt] = useState<number | null>(null);
@@ -163,6 +169,55 @@ export function WalletTab({
   const [krc721ChartMode, setKrc721ChartMode] = useState<"floor" | "volume">("floor");
   const [krc721ChartWindow, setKrc721ChartWindow] = useState<number>(KRC721_CHART_DEFAULT_WINDOW);
   const [sendExecutionRunId, setSendExecutionRunId] = useState<string | null>(null);
+
+  // ── OTC Escrow state ──────────────────────────────────────────────────────
+  const [escrowMode, setEscrowMode] = useState<"none" | "create" | "claim">("none");
+  const [escrowOffers, setEscrowOffers] = useState<EscrowOffer[]>([]);
+  const [escrowAmount, setEscrowAmount] = useState("");
+  const [escrowTtl, setEscrowTtl] = useState(3_600_000); // 1 hour default
+  const [escrowLabel, setEscrowLabel] = useState("");
+  const [escrowClaimOfferAddress, setEscrowClaimOfferAddress] = useState("");
+  const [escrowClaimPrivKey, setEscrowClaimPrivKey] = useState("");
+  const [escrowClaimToAddress, setEscrowClaimToAddress] = useState("");
+  const [escrowBusy, setEscrowBusy] = useState(false);
+  const [escrowError, setEscrowError] = useState<string | null>(null);
+  const [escrowSuccessTxId, setEscrowSuccessTxId] = useState<string | null>(null);
+  const [createdOffer, setCreatedOffer] = useState<EscrowOffer | null>(null);
+  const [privKeyRevealed, setPrivKeyRevealed] = useState(false);
+
+  // ── KRC-20 send state ─────────────────────────────────────────────────────
+  const [krc20SendMode, setKrc20SendMode] = useState(false);
+  const [krc20SendTo, setKrc20SendTo] = useState("");
+  const [krc20SendAmt, setKrc20SendAmt] = useState("");
+  const [krc20Busy, setKrc20Busy] = useState(false);
+  const [krc20Error, setKrc20Error] = useState<string | null>(null);
+  const [krc20TxId, setKrc20TxId] = useState<string | null>(null);
+
+  // ── Transaction history state ─────────────────────────────────────────────
+  const [txHistory, setTxHistory] = useState<KaspaHistoricalTx[]>([]);
+  const [txHistoryLoading, setTxHistoryLoading] = useState(false);
+  const [txHistoryLoaded, setTxHistoryLoaded] = useState(false);
+  const [txHistoryError, setTxHistoryError] = useState<string | null>(null);
+
+  // ── Batch send state ──────────────────────────────────────────────────────
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchRecipients, setBatchRecipients] = useState<Array<{ address: string; amountKas: string }>>([
+    { address: "", amountKas: "" },
+  ]);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchTxId, setBatchTxId] = useState<string | null>(null);
+
+  // ── Address book state ────────────────────────────────────────────────────
+  const [contacts, setContacts] = useState<AddressContact[]>([]);
+  const [showContacts, setShowContacts] = useState(false);
+  const [saveContactLabel, setSaveContactLabel] = useState("");
+  const [showSaveContact, setShowSaveContact] = useState(false);
+
+  // ── UTXO consolidation state ──────────────────────────────────────────────
+  const [consolidateBusy, setConsolidateBusy] = useState(false);
+  const [consolidateError, setConsolidateError] = useState<string | null>(null);
+  const [consolidateTxId, setConsolidateTxId] = useState<string | null>(null);
 
   // Open send/receive panel when triggered from parent (hero buttons)
   useEffect(() => {
@@ -286,9 +341,9 @@ export function WalletTab({
 
     const pollKasFeed = async () => {
       try {
-        const [price, dagInfo] = await Promise.all([
+        const [price, blueScore] = await Promise.all([
           fetchKasUsdPrice(network),
-          fetchDagInfo(network),
+          fetchBlueScore(network),
         ]);
         if (!alive) return;
         const now = Date.now();
@@ -304,8 +359,8 @@ export function WalletTab({
         });
         setKasFeedUpdatedAt(now);
         setKasFeedError(price > 0 ? null : "Price endpoint stale — plotting last known value.");
-        if (dagInfo?.virtualDaaScore) {
-          setNetworkDaaScore(dagInfo.virtualDaaScore);
+        if (blueScore != null && Number.isFinite(blueScore) && blueScore > 0) {
+          setNetworkDaaScore(String(Math.trunc(blueScore)));
         }
       } catch (err) {
         if (!alive) return;
@@ -385,6 +440,13 @@ export function WalletTab({
       return refreshed ?? null;
     });
   }, [krcPortfolioTokens]);
+
+  // Propagate KRC USD total up to Popup so the hero balance includes it
+  useEffect(() => {
+    if (!onKrcPortfolioUpdate) return;
+    const total = krcPortfolioTokens.reduce((sum, t) => sum + (t.valueUsd ?? 0), 0);
+    onKrcPortfolioUpdate(total);
+  }, [krcPortfolioTokens, onKrcPortfolioUpdate]);
 
   const session = getSession();
   const isManaged = Boolean(session?.mnemonic);
@@ -507,7 +569,7 @@ export function WalletTab({
     try { await navigator.clipboard.writeText(address); setAddrCopied(true); setTimeout(() => setAddrCopied(false), 2000); } catch { /* noop */ }
   };
 
-  const openTokenDetails = (tokenId: TokenId) => {
+  const openTokenDetails = (tokenId: "KAS") => {
     setSelectedKrcToken(null);
     setSelectedTokenId(tokenId);
   };
@@ -566,21 +628,232 @@ export function WalletTab({
     }
   };
 
-  const displayTokens = [...getAllTokens()].sort((a, b) => {
-    if (a.id === "KAS") return -1;
-    if (b.id === "KAS") return 1;
-    return 0;
-  });
+  // ── Escrow handlers ────────────────────────────────────────────────────────
+
+  // Load persisted offers on mount and after any mutation
+  useEffect(() => {
+    import("../tx/escrow").then(({ loadEscrowOffers }) => {
+      loadEscrowOffers().then(setEscrowOffers).catch(() => {});
+    });
+  }, [escrowSuccessTxId, createdOffer]);
+
+  const handleCreateEscrow = async () => {
+    const amountNum = parseFloat(escrowAmount);
+    if (!amountNum || amountNum <= 0) { setEscrowError("Enter a valid KAS amount."); return; }
+    if (!address) { setEscrowError("No wallet connected."); return; }
+    setEscrowBusy(true);
+    setEscrowError(null);
+    setEscrowSuccessTxId(null);
+    setCreatedOffer(null);
+    setPrivKeyRevealed(false);
+    try {
+      const { createEscrowOffer, lockEscrow } = await import("../tx/escrow");
+      const offer = await createEscrowOffer(amountNum, escrowTtl, network, escrowLabel || undefined);
+      setCreatedOffer(offer);
+      const txId = await lockEscrow(offer, address);
+      setEscrowSuccessTxId(txId);
+      setEscrowAmount("");
+      setEscrowLabel("");
+    } catch (err) {
+      setEscrowError(err instanceof Error ? err.message : "Escrow creation failed.");
+    } finally {
+      setEscrowBusy(false);
+    }
+  };
+
+  const handleClaimEscrow = async () => {
+    if (!escrowClaimOfferAddress.trim()) { setEscrowError("Enter the escrow address."); return; }
+    if (!escrowClaimPrivKey.trim()) { setEscrowError("Paste the revealed private key."); return; }
+    const recipient = escrowClaimToAddress.trim() || address || "";
+    if (!recipient) { setEscrowError("No recipient address available."); return; }
+    setEscrowBusy(true);
+    setEscrowError(null);
+    setEscrowSuccessTxId(null);
+    try {
+      const { claimEscrow, loadEscrowOffers } = await import("../tx/escrow");
+      const offers = await loadEscrowOffers();
+      const match = offers.find((o) => o.escrowAddress === escrowClaimOfferAddress.trim());
+      if (!match) {
+        // Manual claim: build a synthetic offer from the form inputs
+        const syntheticOffer = {
+          id: crypto.randomUUID(),
+          amountKas: 0,
+          ttlMs: 0,
+          network,
+          escrowAddress: escrowClaimOfferAddress.trim(),
+          privKeyHex: escrowClaimPrivKey.trim(),
+          createdAt: 0,
+          expiresAt: 0,
+          status: "locked" as const,
+        };
+        const txId = await claimEscrow(syntheticOffer, recipient);
+        setEscrowSuccessTxId(txId);
+      } else {
+        const withKey = { ...match, privKeyHex: escrowClaimPrivKey.trim() };
+        const txId = await claimEscrow(withKey, recipient);
+        setEscrowSuccessTxId(txId);
+      }
+      setEscrowClaimOfferAddress("");
+      setEscrowClaimPrivKey("");
+      setEscrowClaimToAddress("");
+    } catch (err) {
+      setEscrowError(err instanceof Error ? err.message : "Claim failed.");
+    } finally {
+      setEscrowBusy(false);
+    }
+  };
+
+  const handleRefundEscrow = async (offer: EscrowOffer) => {
+    if (!address) return;
+    setEscrowBusy(true);
+    setEscrowError(null);
+    try {
+      const { refundEscrow } = await import("../tx/escrow");
+      const txId = await refundEscrow(offer, address);
+      setEscrowSuccessTxId(txId);
+    } catch (err) {
+      setEscrowError(err instanceof Error ? err.message : "Refund failed.");
+    } finally {
+      setEscrowBusy(false);
+    }
+  };
+
+  const TTL_OPTIONS = [
+    { label: "1 H",  ms: 3_600_000 },
+    { label: "4 H",  ms: 14_400_000 },
+    { label: "24 H", ms: 86_400_000 },
+    { label: "72 H", ms: 259_200_000 },
+  ];
+
+  // ── KRC-20 send handler ───────────────────────────────────────────────────
+
+  const handleKrc20Send = async () => {
+    if (!selectedKrcToken || !address) return;
+    const amtNum = parseFloat(krc20SendAmt);
+    if (!Number.isFinite(amtNum) || amtNum <= 0) { setKrc20Error("Enter a valid amount."); return; }
+    if (!krc20SendTo.trim()) { setKrc20Error("Enter a recipient address."); return; }
+    setKrc20Busy(true);
+    setKrc20Error(null);
+    setKrc20TxId(null);
+    try {
+      const { buildKrc20Transfer } = await import("../tx/krc20");
+      const kernel = await loadTxKernel();
+      const tx = await buildKrc20Transfer({
+        fromAddress: address,
+        toAddress: krc20SendTo.trim(),
+        tick: selectedKrcToken.token.symbol,
+        amountDisplay: amtNum,
+        decimals: selectedKrcToken.token.decimals,
+        network,
+      });
+      const result = await kernel.signBroadcastAndReconcileKaspaTx(tx);
+      setKrc20TxId(result.txId ?? "broadcast-ok");
+      setKrc20SendAmt("");
+      setKrc20SendTo("");
+    } catch (err) {
+      setKrc20Error(err instanceof Error ? err.message : "KRC-20 send failed.");
+    } finally {
+      setKrc20Busy(false);
+    }
+  };
+
+  // ── TX history handler ────────────────────────────────────────────────────
+
+  const loadTxHistory = async () => {
+    if (!address || txHistoryLoading) return;
+    setTxHistoryLoading(true);
+    setTxHistoryError(null);
+    try {
+      const history = await fetchTransactionHistory(address, network, 20);
+      setTxHistory(history);
+      setTxHistoryLoaded(true);
+    } catch (err) {
+      setTxHistoryError(err instanceof Error ? err.message : "Failed to load history.");
+    } finally {
+      setTxHistoryLoading(false);
+    }
+  };
+
+  // ── Batch send handler ────────────────────────────────────────────────────
+
+  const handleBatchSend = async () => {
+    if (!address) return;
+    const validRecipients = batchRecipients.filter((r) => r.address.trim() && parseFloat(r.amountKas) > 0);
+    if (!validRecipients.length) { setBatchError("Add at least one valid recipient."); return; }
+    setBatchBusy(true);
+    setBatchError(null);
+    setBatchTxId(null);
+    try {
+      const kernel = await loadTxKernel();
+      const result = await kernel.executeKaspaIntent({
+        fromAddress: address,
+        recipients: validRecipients.map((r) => ({ address: r.address.trim(), amountKas: parseFloat(r.amountKas) })),
+        network,
+      });
+      setBatchTxId(result.txId ?? "broadcast-ok");
+      setBatchRecipients([{ address: "", amountKas: "" }]);
+    } catch (err) {
+      setBatchError(err instanceof Error ? err.message : "Batch send failed.");
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
+  // ── Address book handlers ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    import("../shared/storage").then(({ getAddressBook }) => {
+      getAddressBook().then(setContacts).catch(() => {});
+    });
+  }, [showSaveContact]);
+
+  const handleSaveContact = async () => {
+    if (!saveContactLabel.trim() || !sendTo.trim()) return;
+    const { addContact } = await import("../shared/storage");
+    await addContact(saveContactLabel, sendTo);
+    setSaveContactLabel("");
+    setShowSaveContact(false);
+  };
+
+  const handleDeleteContact = async (id: string) => {
+    const { removeContact } = await import("../shared/storage");
+    await removeContact(id);
+    const { getAddressBook } = await import("../shared/storage");
+    setContacts(await getAddressBook());
+  };
+
+  // ── UTXO consolidation handler ────────────────────────────────────────────
+
+  const handleConsolidate = async () => {
+    if (!address || !isManaged || utxos.length < 2) return;
+    setConsolidateBusy(true);
+    setConsolidateError(null);
+    setConsolidateTxId(null);
+    try {
+      const kernel = await loadTxKernel();
+      // Send slightly less than full balance to self — builder selects all UTXOs to cover
+      const sweepAmount = Math.max(0.001, utxoTotalKas - 0.002);
+      const result = await kernel.executeKaspaIntent({
+        fromAddress: address,
+        network,
+        recipients: [{ address, amountKas: sweepAmount }],
+      });
+      setConsolidateTxId(result.txId ?? "broadcast-ok");
+      setUtxoReloadNonce((v) => v + 1);
+    } catch (err) {
+      setConsolidateError(err instanceof Error ? err.message : "Consolidation failed.");
+    } finally {
+      setConsolidateBusy(false);
+    }
+  };
+
+  const displayTokens = getAllTokens().filter((token) => token.id === "KAS");
   const tokenLogoById: Record<string, string> = {
     KAS: "../icons/kaspa-logo.png",
-    USDT: "../icons/usdt.png",
-    USDC: "../icons/usdc.png",
   };
-  const tokenBalanceById: Partial<Record<TokenId, number>> = {
-    KAS: balance ?? 0,
-    USDT: 0,
-    USDC: 0,
-    ZRX: 0,
+  const canonicalKasBalance = (utxoUpdatedAt !== null && utxoTotalKas > 0) ? utxoTotalKas : (balance ?? 0);
+  const tokenBalanceById = {
+    KAS: canonicalKasBalance,
   };
   const explorerBase = EXPLORERS[network] ?? EXPLORERS.mainnet;
   const explorerUrl = address ? `${explorerBase}/addresses/${address}` : explorerBase;
@@ -604,6 +877,9 @@ export function WalletTab({
   const maskedUsd = (amount: number, digits: number) => (hideBalances ? "$••••" : `$${fmt(amount, digits)}`);
   const selectedToken = selectedTokenId ? displayTokens.find((t) => t.id === selectedTokenId) ?? null : null;
   const selectedPortfolioToken = selectedKrcToken;
+  const krcDiagnostics = getKrcPortfolioDiagnostics(network);
+  const krc20HoldingsCount = krcPortfolioTokens.filter((row) => row.standard === "krc20").length;
+  const krc721HoldingsCount = krcPortfolioTokens.filter((row) => row.standard === "krc721").length;
   const isStableSelectedToken = selectedToken?.id === "USDT" || selectedToken?.id === "USDC";
   const showTokenOverlay = Boolean(selectedToken || selectedPortfolioToken);
   const showActionOverlay = sendStep !== "idle" || showReceive;
@@ -613,9 +889,9 @@ export function WalletTab({
       ? [{ ts: Date.now(), price: liveKasPrice }]
       : [];
   const displayedKasSeries = kasSeries.slice(-Math.max(2, kasChartWindow));
-  const kasWalletBalance = balance ?? 0;
+  const kasWalletBalance = canonicalKasBalance;
   const kasWalletUsdValue = kasWalletBalance * (liveKasPrice > 0 ? liveKasPrice : 0);
-  const selectedTokenBalance = selectedToken ? (tokenBalanceById[selectedToken.id as TokenId] ?? 0) : 0;
+  const selectedTokenBalance = selectedToken ? tokenBalanceById[selectedToken.id as keyof typeof tokenBalanceById] ?? 0 : 0;
   const selectedPortfolioTokenPriceUsd = selectedPortfolioToken?.market?.priceUsd
     ?? selectedPortfolioToken?.chain?.floorPriceUsd
     ?? null;
@@ -692,8 +968,47 @@ export function WalletTab({
             </div>
           </div>
           {!isManaged && <div style={{ ...insetCard(), fontSize: 8, color: C.dim, marginBottom: 6, lineHeight: 1.4 }}>External wallet: signing opens in Forge-OS.</div>}
-          <input value={sendTo} onChange={(e) => setSendTo(e.target.value)} placeholder={`Recipient ${networkPrefix}qp…`} style={inputStyle(Boolean(sendTo && !addressValid))} />
+          <div style={{ position: "relative" }}>
+            <input value={sendTo} onChange={(e) => setSendTo(e.target.value)} placeholder={`Recipient ${networkPrefix}qp…`} style={{ ...inputStyle(Boolean(sendTo && !addressValid)), paddingRight: contacts.length > 0 ? 70 : undefined }} />
+            {contacts.length > 0 && (
+              <button
+                onClick={() => setShowContacts((v) => !v)}
+                style={{ position: "absolute", right: 5, top: "50%", transform: "translateY(-50%)", background: `${C.accent}18`, border: `1px solid ${C.accent}40`, borderRadius: 4, padding: "2px 6px", color: C.accent, fontSize: 7, fontWeight: 700, cursor: "pointer", ...mono }}
+              >
+                CONTACTS
+              </button>
+            )}
+          </div>
+          {showContacts && contacts.length > 0 && (
+            <div style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 8px", display: "flex", flexDirection: "column", gap: 3 }}>
+              {contacts.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => { setSendTo(c.address); setShowContacts(false); }}
+                  style={{ background: "none", border: "none", textAlign: "left", cursor: "pointer", padding: "3px 0", display: "flex", flexDirection: "column", gap: 1 }}
+                >
+                  <span style={{ fontSize: 9, color: C.accent, fontWeight: 700, ...mono }}>{c.label}</span>
+                  <span style={{ fontSize: 7, color: C.dim, ...mono, wordBreak: "break-all" }}>{c.address.slice(0, 32)}…</span>
+                </button>
+              ))}
+            </div>
+          )}
           {sendTo && !addressValid && <div style={{ fontSize: 8, color: C.danger }}>{!sendTo.toLowerCase().startsWith(networkPrefix) ? `Must start with "${networkPrefix}" on ${network}` : "Invalid Kaspa address"}</div>}
+          {addressValid && sendTo && !contacts.find((c) => c.address === sendTo) && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              {!showSaveContact ? (
+                <button onClick={() => setShowSaveContact(true)} style={{ background: "none", border: "none", color: C.dim, fontSize: 7, cursor: "pointer", ...mono, textDecoration: "underline" }}>
+                  + save to contacts
+                </button>
+              ) : (
+                <>
+                  <input value={saveContactLabel} onChange={(e) => setSaveContactLabel(e.target.value)} placeholder="Contact label" style={{ ...inputStyle(false), flex: 1, fontSize: 8, padding: "3px 6px" }} />
+                  <button onClick={handleSaveContact} style={{ ...outlineButton(C.ok, true), padding: "3px 7px", fontSize: 7, color: C.ok }}>SAVE</button>
+                  <button onClick={() => { setShowSaveContact(false); setSaveContactLabel(""); }} style={{ background: "none", border: "none", color: C.dim, fontSize: 7, cursor: "pointer", ...mono }}>✕</button>
+                </>
+              )}
+            </div>
+          )}
           {/* Amount input + MAX button */}
           <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
             <input
@@ -1228,6 +1543,70 @@ export function WalletTab({
           </span>
         </div>
       </div>
+
+      {/* KRC-20 send */}
+      {selectedPortfolioToken.standard === "krc20" && isManaged && (
+        <div>
+          {!krc20SendMode ? (
+            <button
+              onClick={() => { setKrc20SendMode(true); setKrc20Error(null); setKrc20TxId(null); }}
+              style={{ ...outlineButton(C.accent, true), width: "100%", padding: "8px", fontSize: 9, color: C.accent, fontWeight: 700, letterSpacing: "0.06em" }}
+            >
+              SEND {selectedPortfolioToken.token.symbol} →
+            </button>
+          ) : (
+            <div style={insetCard()}>
+              <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.08em", marginBottom: 7 }}>
+                SEND {selectedPortfolioToken.token.symbol} · bal: {masked(selectedPortfolioToken.balanceDisplay)}
+              </div>
+              <input
+                type="text"
+                placeholder={`Recipient ${networkPrefix}q…`}
+                value={krc20SendTo}
+                onChange={(e) => setKrc20SendTo(e.target.value)}
+                style={{ ...inputStyle(Boolean(krc20Error && !krc20TxId)), marginBottom: 5, fontSize: 9 }}
+              />
+              <input
+                type="number"
+                placeholder={`Amount (${selectedPortfolioToken.token.symbol})`}
+                value={krc20SendAmt}
+                onChange={(e) => setKrc20SendAmt(e.target.value)}
+                style={{ ...inputStyle(false), marginBottom: 5, fontSize: 9 }}
+              />
+              {krc20Error && <div style={{ fontSize: 8, color: C.danger, marginBottom: 4, lineHeight: 1.4 }}>{krc20Error}</div>}
+              {krc20TxId && (
+                <div style={{ fontSize: 8, color: C.ok, marginBottom: 4, wordBreak: "break-all", lineHeight: 1.4 }}>
+                  ✓ Sent! TX: {krc20TxId.slice(0, 20)}…
+                  <button
+                    onClick={() => chrome.tabs.create({ url: `${explorerBase}/txs/${krc20TxId}` })}
+                    style={{ background: "none", border: "none", color: C.accent, fontSize: 8, cursor: "pointer", ...mono, marginLeft: 5 }}
+                  >
+                    View ↗
+                  </button>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 5 }}>
+                <button
+                  onClick={handleKrc20Send}
+                  disabled={krc20Busy}
+                  style={{ ...submitBtn(!krc20Busy), flex: 1, padding: "7px", fontSize: 9 }}
+                >
+                  {krc20Busy ? "SENDING…" : "CONFIRM SEND"}
+                </button>
+                <button
+                  onClick={() => { setKrc20SendMode(false); setKrc20Error(null); setKrc20TxId(null); setKrc20SendAmt(""); setKrc20SendTo(""); }}
+                  style={{ ...outlineButton(C.muted, true), padding: "7px 10px", fontSize: 9, color: C.muted }}
+                >
+                  CANCEL
+                </button>
+              </div>
+              <div style={{ fontSize: 7, color: C.dim, marginTop: 5, lineHeight: 1.4 }}>
+                Sends a KRC-20 inscription (+0.3 KAS dust) to the recipient address.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   ) : null;
 
@@ -1279,21 +1658,20 @@ export function WalletTab({
         />
 
         <div style={{ marginBottom: 11, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, position: "relative" }}>
-          <div style={sectionKicker}>TOKEN BALANCES</div>
+          <div style={sectionKicker}>ALL HOLDINGS</div>
         </div>
 
         {displayTokens.map((token, idx) => {
           const tokenLogo = tokenLogoById[token.id] ?? tokenLogoById.KAS;
           const isKasToken = token.id === "KAS";
-          const logoBadgeSize = isKasToken ? 48 : 30;
-          const logoSize = isKasToken ? 40 : 20;
           const tokenBalanceUnits = tokenBalanceById[token.id as TokenId] ?? 0;
           const tokenAmountLabelRaw = token.id === "KAS" ? fmt(tokenBalanceUnits, 4) : fmt(tokenBalanceUnits, 2);
           const tokenAmountLabel = masked(tokenAmountLabelRaw);
+          const tokenUsdValue = isKasToken ? tokenBalanceUnits * (liveKasPrice > 0 ? liveKasPrice : 0) : 0;
           return (
           <button
             key={token.id}
-            onClick={() => openTokenDetails(token.id as TokenId)}
+            onClick={() => openTokenDetails("KAS")}
             style={{
               width: "100%",
               border: "none",
@@ -1322,27 +1700,25 @@ export function WalletTab({
             />
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{
-                width: logoBadgeSize,
-                height: logoBadgeSize,
+                width: 36,
+                height: 36,
                 borderRadius: "50%",
                 flexShrink: 0,
-                background: "transparent",
+                background: "rgba(57,221,182,0.06)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                border: "none",
-                boxShadow: "none",
+                border: `1px solid ${C.border}`,
                 overflow: "hidden",
               }}>
                 <img
                   src={tokenLogo}
                   alt={`${token.symbol} logo`}
                   style={{
-                    width: logoSize,
-                    height: logoSize,
+                    width: 24,
+                    height: 24,
                     objectFit: "contain",
                     borderRadius: "50%",
-                    filter: "none",
                   }}
                 />
               </div>
@@ -1351,10 +1727,15 @@ export function WalletTab({
                 <div style={{ fontSize: 9, color: C.dim, letterSpacing: "0.03em" }}>{token.name}</div>
               </div>
             </div>
-            <div style={{ textAlign: "right", paddingRight: 12 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>
+            <div style={{ textAlign: "right", paddingRight: 12, flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text, ...mono }}>
                 {tokenAmountLabel}
               </div>
+              {isKasToken && tokenUsdValue > 0 && (
+                <div style={{ fontSize: 10, color: C.dim, marginTop: 1, ...mono }}>
+                  {maskedUsd(tokenUsdValue, 2)}
+                </div>
+              )}
               {!token.enabled && token.disabledReason && (
                 <div style={{ fontSize: 8, color: C.dim, maxWidth: 140, lineHeight: 1.35, marginTop: 3 }}>
                   {token.disabledReason}
@@ -1377,7 +1758,26 @@ export function WalletTab({
           </div>
         )}
 
-        {krcPortfolioTokens.map((token, idx) => (
+        <div style={{ ...insetCard(), marginTop: 8, fontSize: 8, lineHeight: 1.45 }}>
+          <div style={{ color: C.dim, letterSpacing: "0.08em", marginBottom: 4 }}>KRC HOLDINGS SUPPORT</div>
+          <div style={{ color: C.text }}>
+            KRC20: <span style={{ color: C.accent, ...mono }}>{krc20HoldingsCount}</span> · KRC721:{" "}
+            <span style={{ color: C.accent, ...mono }}>{krc721HoldingsCount}</span> held
+          </div>
+          <div style={{ color: krcDiagnostics.holdingsDiscoveryReady ? C.dim : C.warn }}>
+            Discovery endpoints — indexer {krcDiagnostics.indexerEndpoints}, market {krcDiagnostics.marketEndpoints}, candles {krcDiagnostics.candlesEndpoints}
+          </div>
+          {!krcDiagnostics.holdingsDiscoveryReady && (
+            <div style={{ color: C.warn, marginTop: 3 }}>
+              Configure `VITE_KASPA_KASPLEX_*_API_ENDPOINTS` or `VITE_KRC_INDEXER_*_ENDPOINTS` to discover held KRC20/KRC721 assets.
+            </div>
+          )}
+        </div>
+
+        {krcPortfolioTokens.map((token, idx) => {
+          const krcChange = token.market?.change24hPct ?? token.chain?.floorChange24hPct ?? null;
+          const krcChangeColor = krcChange == null ? C.dim : krcChange >= 0 ? C.ok : C.danger;
+          return (
           <button
             key={token.key}
             onClick={() => openKrcTokenDetails(token)}
@@ -1407,31 +1807,60 @@ export function WalletTab({
               }}
             />
             <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-              <img
-                src={token.token.logoUri}
-                alt={`${token.token.symbol} logo`}
-                style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: `1px solid ${C.border}`, flexShrink: 0 }}
-              />
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: "50%",
+                flexShrink: 0,
+                background: "rgba(255,255,255,0.04)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: `1px solid ${C.border}`,
+                overflow: "hidden",
+              }}>
+                <img
+                  src={token.token.logoUri}
+                  alt={`${token.token.symbol} logo`}
+                  style={{ width: 24, height: 24, borderRadius: "50%", objectFit: "cover" }}
+                />
+              </div>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: C.text, letterSpacing: "0.05em", ...mono }}>
                   {token.token.symbol}
                 </div>
-                <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.03em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 190 }}>
+                <div style={{ fontSize: 8, color: C.dim, letterSpacing: "0.03em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>
                   {token.token.name} · {token.standard.toUpperCase()}
                 </div>
               </div>
             </div>
-            <div style={{ textAlign: "right", paddingRight: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.text, ...mono }}>
+            <div style={{ textAlign: "right", paddingRight: 12, flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text, ...mono }}>
                 {masked(token.balanceDisplay)}
               </div>
-              <div style={{ fontSize: 8, color: token.valueUsd != null ? C.accent : C.dim }}>
-                {token.valueUsd != null ? maskedUsd(token.valueUsd, 2) : "no spot"}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, marginTop: 2 }}>
+                <span style={{ fontSize: 10, color: token.valueUsd != null ? C.accent : C.dim, ...mono }}>
+                  {token.valueUsd != null ? maskedUsd(token.valueUsd, 2) : "no spot"}
+                </span>
+                {krcChange != null && (
+                  <span style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    color: krcChangeColor,
+                    background: `${krcChangeColor}18`,
+                    borderRadius: 4,
+                    padding: "1px 5px",
+                    ...mono,
+                  }}>
+                    {krcChange >= 0 ? "+" : ""}{krcChange.toFixed(2)}%
+                  </span>
+                )}
               </div>
             </div>
             <div style={{ fontSize: 10, color: C.dim, ...mono }}>→</div>
           </button>
-        ))}
+        );})}
+
 
         {address && (
           <div style={{ marginTop: 11, textAlign: "right", position: "relative", zIndex: 1 }}>
@@ -1533,6 +1962,435 @@ export function WalletTab({
           UPDATED {utxoUpdatedLabel}
         </div>
       </div>
+
+      {/* OTC ESCROW */}
+      <div style={sectionCard("default")}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: escrowMode !== "none" ? 9 : 0 }}>
+          <div>
+            <div style={sectionKicker}>OTC ESCROW</div>
+            {escrowMode === "none" && (
+              <div style={{ fontSize: 8, color: C.dim, marginTop: 2, lineHeight: 1.4 }}>
+                Trustless P2PK escrow — no smart contracts needed.
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 5 }}>
+            <button
+              onClick={() => { setEscrowMode(escrowMode === "create" ? "none" : "create"); setEscrowError(null); setEscrowSuccessTxId(null); setCreatedOffer(null); }}
+              style={{ ...outlineButton(escrowMode === "create" ? C.accent : C.dim, true), padding: "5px 8px", fontSize: 8, color: escrowMode === "create" ? C.accent : C.dim }}
+            >
+              CREATE
+            </button>
+            <button
+              onClick={() => { setEscrowMode(escrowMode === "claim" ? "none" : "claim"); setEscrowError(null); setEscrowSuccessTxId(null); }}
+              style={{ ...outlineButton(escrowMode === "claim" ? C.ok : C.dim, true), padding: "5px 8px", fontSize: 8, color: escrowMode === "claim" ? C.ok : C.dim }}
+            >
+              CLAIM
+            </button>
+          </div>
+        </div>
+
+        {/* CREATE OFFER form */}
+        {escrowMode === "create" && !createdOffer && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.45 }}>
+              Locks KAS into a disposable address. Share the address for on-chain verification, then reveal the private key to release funds.
+            </div>
+            <input
+              value={escrowAmount}
+              onChange={(e) => setEscrowAmount(e.target.value)}
+              placeholder="Amount (KAS)"
+              type="number"
+              min="0"
+              style={inputStyle(false)}
+            />
+            <div style={{ display: "flex", gap: 5 }}>
+              {TTL_OPTIONS.map((opt) => (
+                <button
+                  key={opt.ms}
+                  onClick={() => setEscrowTtl(opt.ms)}
+                  style={{
+                    ...outlineButton(escrowTtl === opt.ms ? C.accent : C.dim, true),
+                    flex: 1, padding: "5px 0", fontSize: 8,
+                    color: escrowTtl === opt.ms ? C.accent : C.dim,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <input
+              value={escrowLabel}
+              onChange={(e) => setEscrowLabel(e.target.value)}
+              placeholder="Label (optional — e.g. KRC20 deal)"
+              style={inputStyle(false)}
+            />
+            <button
+              onClick={handleCreateEscrow}
+              disabled={escrowBusy || !escrowAmount}
+              style={submitBtn(Boolean(escrowAmount) && !escrowBusy)}
+            >
+              {escrowBusy ? "CREATING…" : "LOCK KAS INTO ESCROW →"}
+            </button>
+          </div>
+        )}
+
+        {/* Show created offer details */}
+        {escrowMode === "create" && createdOffer && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {escrowSuccessTxId ? (
+              <div style={{ ...insetCard(), background: `${C.ok}0A`, borderColor: `${C.ok}30` }}>
+                <div style={{ fontSize: 9, color: C.ok, fontWeight: 700, marginBottom: 4 }}>✓ ESCROW LOCKED</div>
+                <div style={{ fontSize: 8, color: C.dim, marginBottom: 2 }}>Lock TX: {escrowSuccessTxId.slice(0, 20)}…</div>
+              </div>
+            ) : (
+              <div style={{ ...insetCard(), background: `${C.warn}0A`, borderColor: `${C.warn}30` }}>
+                <div style={{ fontSize: 8, color: C.warn }}>Locking in progress…</div>
+              </div>
+            )}
+            <div style={{ ...insetCard() }}>
+              <div style={{ fontSize: 8, color: C.muted, letterSpacing: "0.06em", marginBottom: 3 }}>ESCROW ADDRESS</div>
+              <div style={{ fontSize: 8, color: C.text, wordBreak: "break-all", lineHeight: 1.5, marginBottom: 6 }}>
+                {createdOffer.escrowAddress}
+              </div>
+              <button
+                onClick={() => navigator.clipboard.writeText(createdOffer.escrowAddress).catch(() => {})}
+                style={{ ...outlineButton(C.dim, true), padding: "4px 7px", fontSize: 8, color: C.dim }}
+              >
+                COPY ADDRESS
+              </button>
+            </div>
+            <div style={{ ...insetCard(), borderColor: `${C.warn}40`, background: `${C.warn}08` }}>
+              <div style={{ fontSize: 8, color: C.warn, fontWeight: 700, marginBottom: 4 }}>
+                ⚠ PRIVATE KEY (release to buyer after payment confirmed)
+              </div>
+              {privKeyRevealed ? (
+                <>
+                  <div style={{ fontSize: 8, color: C.text, wordBreak: "break-all", lineHeight: 1.5, marginBottom: 6, ...mono }}>
+                    {createdOffer.privKeyHex}
+                  </div>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(createdOffer.privKeyHex).catch(() => {})}
+                    style={{ ...outlineButton(C.warn, true), padding: "4px 7px", fontSize: 8, color: C.warn }}
+                  >
+                    COPY KEY
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setPrivKeyRevealed(true)}
+                  style={{ ...outlineButton(C.warn, true), padding: "5px 8px", fontSize: 8, color: C.warn, width: "100%" }}
+                >
+                  REVEAL PRIVATE KEY
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.45 }}>
+              Share the escrow address with the buyer. Once they confirm payment on-chain, share the private key to release funds. Expires: {new Date(createdOffer.expiresAt).toLocaleString()}.
+            </div>
+            <button
+              onClick={() => { setCreatedOffer(null); setEscrowMode("none"); setPrivKeyRevealed(false); setEscrowSuccessTxId(null); }}
+              style={{ ...outlineButton(C.dim, true), padding: "6px 8px", fontSize: 8, color: C.dim }}
+            >
+              DONE
+            </button>
+          </div>
+        )}
+
+        {/* CLAIM OFFER form */}
+        {escrowMode === "claim" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ fontSize: 8, color: C.dim, lineHeight: 1.45 }}>
+              Enter the escrow address and the private key revealed by the seller to sweep funds to your wallet.
+            </div>
+            {escrowSuccessTxId ? (
+              <div style={{ ...insetCard(), background: `${C.ok}0A`, borderColor: `${C.ok}30` }}>
+                <div style={{ fontSize: 9, color: C.ok, fontWeight: 700, marginBottom: 4 }}>✓ CLAIMED</div>
+                <div style={{ fontSize: 8, color: C.dim }}>TX: {escrowSuccessTxId.slice(0, 20)}…</div>
+                <button onClick={() => { setEscrowSuccessTxId(null); }} style={{ ...outlineButton(C.dim, true), padding: "4px 7px", fontSize: 8, color: C.dim, marginTop: 6 }}>CLAIM ANOTHER</button>
+              </div>
+            ) : (
+              <>
+                <input
+                  value={escrowClaimOfferAddress}
+                  onChange={(e) => setEscrowClaimOfferAddress(e.target.value)}
+                  placeholder="Escrow address (kaspa:q…)"
+                  style={inputStyle(false)}
+                />
+                <input
+                  value={escrowClaimPrivKey}
+                  onChange={(e) => setEscrowClaimPrivKey(e.target.value)}
+                  placeholder="Revealed private key (hex)"
+                  style={inputStyle(false)}
+                />
+                <input
+                  value={escrowClaimToAddress}
+                  onChange={(e) => setEscrowClaimToAddress(e.target.value)}
+                  placeholder={`Receive address (default: ${address ? address.slice(0, 18) + "…" : "your wallet"})`}
+                  style={inputStyle(false)}
+                />
+                <button
+                  onClick={handleClaimEscrow}
+                  disabled={escrowBusy || !escrowClaimOfferAddress || !escrowClaimPrivKey}
+                  style={submitBtn(Boolean(escrowClaimOfferAddress && escrowClaimPrivKey) && !escrowBusy)}
+                >
+                  {escrowBusy ? "CLAIMING…" : "SWEEP ESCROW →"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Active offers list */}
+        {escrowMode !== "create" && escrowOffers.filter((o) => o.status === "locked" || o.status === "pending_lock").length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 8, color: C.muted, letterSpacing: "0.06em", marginBottom: 6 }}>ACTIVE OFFERS</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {escrowOffers
+                .filter((o) => o.status === "locked" || o.status === "pending_lock")
+                .map((offer) => {
+                  const expired = Date.now() > offer.expiresAt;
+                  const remaining = Math.max(0, offer.expiresAt - Date.now());
+                  const hRemain = Math.floor(remaining / 3_600_000);
+                  const mRemain = Math.floor((remaining % 3_600_000) / 60_000);
+                  return (
+                    <div key={offer.id} style={{ ...insetCard(), padding: "8px 9px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                        <div style={{ fontSize: 9, color: offer.status === "locked" ? C.ok : C.warn, fontWeight: 700 }}>
+                          {offer.status === "locked" ? "LOCKED" : "PENDING"}
+                        </div>
+                        <div style={{ fontSize: 8, color: expired ? C.danger : C.dim }}>
+                          {expired ? "EXPIRED" : `${hRemain}h ${mRemain}m left`}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 8, color: C.text, marginBottom: 2 }}>
+                        {offer.amountKas} KAS{offer.label ? ` · ${offer.label}` : ""}
+                      </div>
+                      <div style={{ fontSize: 8, color: C.dim, ...mono, wordBreak: "break-all", marginBottom: 5 }}>
+                        {offer.escrowAddress.slice(0, 30)}…
+                      </div>
+                      {expired && address && (
+                        <button
+                          onClick={() => handleRefundEscrow(offer)}
+                          disabled={escrowBusy}
+                          style={{ ...outlineButton(C.warn, true), padding: "4px 7px", fontSize: 8, color: C.warn }}
+                        >
+                          {escrowBusy ? "REFUNDING…" : "REFUND →"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
+        {escrowError && (
+          <div style={{ fontSize: 8, color: C.danger, padding: "6px 0", lineHeight: 1.4 }}>{escrowError}</div>
+        )}
+      </div>
+
+      {/* ── TRANSACTION HISTORY ─────────────────────────────────────── */}
+      <div style={sectionCard("default")}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: txHistoryLoaded ? 9 : 0 }}>
+          <div>
+            <div style={sectionKicker}>TX HISTORY</div>
+            {!txHistoryLoaded && <div style={{ fontSize: 8, color: C.dim, marginTop: 2 }}>Last 20 transactions</div>}
+          </div>
+          <button
+            onClick={loadTxHistory}
+            disabled={txHistoryLoading}
+            style={{ ...outlineButton(C.accent, !txHistoryLoading), padding: "4px 10px", fontSize: 9, color: txHistoryLoading ? C.dim : C.accent }}
+          >
+            {txHistoryLoading ? "LOADING…" : txHistoryLoaded ? "REFRESH" : "LOAD"}
+          </button>
+        </div>
+        {txHistoryError && <div style={{ fontSize: 8, color: C.danger, lineHeight: 1.4 }}>{txHistoryError}</div>}
+        {txHistoryLoaded && txHistory.length === 0 && (
+          <div style={{ fontSize: 8, color: C.dim, textAlign: "center", padding: "10px 0" }}>No transactions found.</div>
+        )}
+        {txHistory.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {txHistory.map((tx) => {
+              const isIn = tx.outputs.some((o) => o.scriptPublicKey?.address === address);
+              const isOut = tx.inputs.some((i) => i.previousOutpoint?.address === address);
+              const direction = isOut ? "OUT" : "IN";
+              const dirColor = isOut ? C.danger : C.ok;
+              const totalOut = tx.outputs
+                .filter((o) => isOut ? o.scriptPublicKey?.address !== address : o.scriptPublicKey?.address === address)
+                .reduce((s, o) => s + Number(o.amount ?? 0), 0);
+              const amtKas = (totalOut / 1e8).toFixed(4);
+              const ts = tx.blockTime ? new Date(tx.blockTime).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+              return (
+                <div key={tx.transactionId} style={{ ...insetCard(), padding: "7px 9px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ fontSize: 8, fontWeight: 700, color: dirColor, background: `${dirColor}18`, borderRadius: 3, padding: "1px 5px", ...mono }}>{direction}</span>
+                    <div>
+                      <div style={{ fontSize: 9, color: C.text, fontWeight: 700, ...mono }}>{amtKas} KAS</div>
+                      <div style={{ fontSize: 7, color: C.dim, ...mono }}>{tx.transactionId.slice(0, 16)}…</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                    <div style={{ fontSize: 7, color: C.dim }}>{ts}</div>
+                    <button
+                      onClick={() => chrome.tabs.create({ url: `${explorerBase}/txs/${tx.transactionId}` })}
+                      style={{ background: "none", border: "none", color: C.accent, fontSize: 7, cursor: "pointer", ...mono }}
+                    >
+                      ↗
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── BATCH SEND ──────────────────────────────────────────────── */}
+      {isManaged && (
+        <div style={sectionCard("default")}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: batchMode ? 9 : 0 }}>
+            <div>
+              <div style={sectionKicker}>BATCH SEND</div>
+              {!batchMode && <div style={{ fontSize: 8, color: C.dim, marginTop: 2 }}>Send KAS to multiple recipients in one TX</div>}
+            </div>
+            <button
+              onClick={() => { setBatchMode((v) => !v); setBatchError(null); setBatchTxId(null); }}
+              style={{ ...outlineButton(C.accent, true), padding: "4px 10px", fontSize: 9, color: C.accent }}
+            >
+              {batchMode ? "CANCEL" : "OPEN →"}
+            </button>
+          </div>
+          {batchMode && (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {batchRecipients.map((r, i) => (
+                  <div key={i} style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                    <input
+                      placeholder={`${networkPrefix}q… address`}
+                      value={r.address}
+                      onChange={(e) => {
+                        const next = [...batchRecipients];
+                        next[i] = { ...next[i], address: e.target.value };
+                        setBatchRecipients(next);
+                      }}
+                      style={{ ...inputStyle(false), flex: 2, fontSize: 8 }}
+                    />
+                    <input
+                      type="number"
+                      placeholder="KAS"
+                      value={r.amountKas}
+                      onChange={(e) => {
+                        const next = [...batchRecipients];
+                        next[i] = { ...next[i], amountKas: e.target.value };
+                        setBatchRecipients(next);
+                      }}
+                      style={{ ...inputStyle(false), flex: 1, fontSize: 8 }}
+                    />
+                    {batchRecipients.length > 1 && (
+                      <button
+                        onClick={() => setBatchRecipients((prev) => prev.filter((_, j) => j !== i))}
+                        style={{ background: "none", border: "none", color: C.dim, fontSize: 10, cursor: "pointer", ...mono, padding: "0 3px" }}
+                      >✕</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
+                <button
+                  onClick={() => setBatchRecipients((prev) => [...prev, { address: "", amountKas: "" }])}
+                  style={{ ...outlineButton(C.dim, true), padding: "5px 8px", fontSize: 8, color: C.dim, flex: 1 }}
+                >
+                  + ADD RECIPIENT
+                </button>
+                <button
+                  onClick={handleBatchSend}
+                  disabled={batchBusy}
+                  style={{ ...submitBtn(!batchBusy), flex: 2, padding: "5px", fontSize: 9 }}
+                >
+                  {batchBusy ? "SENDING…" : `SEND TO ${batchRecipients.filter((r) => r.address.trim()).length} →`}
+                </button>
+              </div>
+              {batchError && <div style={{ fontSize: 8, color: C.danger, lineHeight: 1.4 }}>{batchError}</div>}
+              {batchTxId && (
+                <div style={{ fontSize: 8, color: C.ok, lineHeight: 1.4 }}>
+                  ✓ Sent! TX: {batchTxId.slice(0, 20)}…
+                  <button
+                    onClick={() => chrome.tabs.create({ url: `${explorerBase}/txs/${batchTxId}` })}
+                    style={{ background: "none", border: "none", color: C.accent, fontSize: 8, cursor: "pointer", ...mono, marginLeft: 5 }}
+                  >View ↗</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── ADDRESS BOOK ────────────────────────────────────────────── */}
+      <div style={sectionCard("default")}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: contacts.length > 0 ? 9 : 0 }}>
+          <div>
+            <div style={sectionKicker}>ADDRESS BOOK</div>
+            {contacts.length === 0 && <div style={{ fontSize: 8, color: C.dim, marginTop: 2 }}>Save recipients via the send form</div>}
+          </div>
+          <div style={{ fontSize: 9, color: C.dim, ...mono }}>{contacts.length} saved</div>
+        </div>
+        {contacts.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {contacts.map((c) => (
+              <div key={c.id} style={{ ...insetCard(), padding: "7px 9px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 9, color: C.text, fontWeight: 700, ...mono }}>{c.label}</div>
+                  <div style={{ fontSize: 7, color: C.dim, ...mono, wordBreak: "break-all" }}>{c.address.slice(0, 32)}…</div>
+                </div>
+                <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+                  <button
+                    onClick={() => { setSendTo(c.address); setSendStep("form"); }}
+                    style={{ ...outlineButton(C.accent, true), padding: "3px 7px", fontSize: 7, color: C.accent }}
+                  >
+                    SEND →
+                  </button>
+                  <button
+                    onClick={() => handleDeleteContact(c.id)}
+                    style={{ background: "none", border: "none", color: C.dim, fontSize: 8, cursor: "pointer", ...mono }}
+                  >✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── UTXO CONSOLIDATION ──────────────────────────────────────── */}
+      {isManaged && utxos.length >= 2 && (
+        <div style={sectionCard("default")}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={sectionKicker}>UTXO CONSOLIDATION</div>
+              <div style={{ fontSize: 8, color: C.dim, marginTop: 2 }}>
+                {utxos.length} UTXOs · {utxoTotalKas.toFixed(4)} KAS — merge into one output
+              </div>
+            </div>
+            <button
+              onClick={handleConsolidate}
+              disabled={consolidateBusy}
+              style={{ ...outlineButton(consolidateBusy ? C.dim : C.warn, !consolidateBusy), padding: "5px 10px", fontSize: 9, color: consolidateBusy ? C.dim : C.warn }}
+            >
+              {consolidateBusy ? "CONSOLIDATING…" : "CONSOLIDATE →"}
+            </button>
+          </div>
+          {consolidateError && <div style={{ fontSize: 8, color: C.danger, marginTop: 6, lineHeight: 1.4 }}>{consolidateError}</div>}
+          {consolidateTxId && (
+            <div style={{ fontSize: 8, color: C.ok, marginTop: 6, lineHeight: 1.4 }}>
+              ✓ Done! TX: {consolidateTxId.slice(0, 20)}…
+              <button
+                onClick={() => chrome.tabs.create({ url: `${explorerBase}/txs/${consolidateTxId}` })}
+                style={{ background: "none", border: "none", color: C.accent, fontSize: 8, cursor: "pointer", ...mono, marginLeft: 5 }}
+              >View ↗</button>
+            </div>
+          )}
+        </div>
+      )}
 
     </div>
   );

@@ -21,7 +21,7 @@ const aiOverlayCacheTtlMs = Math.max(aiOverlayMinIntervalMs, Number(env.VITE_AI_
 
 export const RUN_QUANT_ENGINE_CONFIG = {
   aiApiUrl,
-  aiModel: env.VITE_AI_MODEL || "claude-sonnet-4-20250514",
+  aiModel: env.VITE_AI_MODEL || "claude-sonnet-4-6",
   anthropicApiKey,
   aiTimeoutMs: Math.max(800, Number(env.VITE_AI_SOFT_TIMEOUT_MS || 2200)),
   aiFallbackEnabled: String(env.VITE_AI_FALLBACK_ENABLED || "true").toLowerCase() !== "false",

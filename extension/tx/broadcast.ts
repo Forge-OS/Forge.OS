@@ -131,8 +131,13 @@ export async function broadcastAndPoll(
   const confirming = await broadcastTransaction(tx);
   onUpdate(confirming);
 
-  // Start polling — fire and forget (caller uses onUpdate for progress)
-  pollConfirmation(confirming, onUpdate).catch(() => {/* timeout handled in onUpdate */});
+  // Start polling — fire and forget (caller uses onUpdate for progress).
+  // On any error (timeout OR unexpected), push a FAILED state so the UI
+  // doesn't hang showing BROADCASTING indefinitely.
+  pollConfirmation(confirming, onUpdate).catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    onUpdate({ ...confirming, state: "FAILED", error: msg });
+  });
 
   return confirming;
 }

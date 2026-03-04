@@ -22,6 +22,7 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
   const verifyInFlight = useRef(new Set<string>());
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showAuditTrail, setShowAuditTrail] = useState(false);
+  const [showRationale, setShowRationale] = useState(true);
 
   const decisionToQueue = useMemo(() => {
     const map = new Map<string, any>();
@@ -76,9 +77,15 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
   const dec = latest?.dec;
   const ac = dec?.action==="ACCUMULATE"?C.ok:dec?.action==="REDUCE"?C.danger:dec?.action==="REBALANCE"?C.purple:C.warn;
   const source = String(dec?.decision_source || latest?.source || "ai");
+  const sourceLabel =
+    source === "hybrid-ai" ? "CLAUDE" :
+    source === "quant-core" ? "QUANT ENGINE" :
+    source === "fallback" ? "FALLBACK" :
+    source === "ai" ? "CLAUDE" :
+    source.toUpperCase();
   const sourceColor =
-    source === "hybrid-ai" ? C.accent :
-    source === "quant-core" ? C.text :
+    source === "hybrid-ai" || source === "ai" ? C.ok :
+    source === "quant-core" ? C.accent :
     source === "fallback" ? C.warn :
     C.ok;
   const quant = dec?.quant_metrics || null;
@@ -173,7 +180,7 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
 
       {!dec && !loading && (
         <Card p={40} style={{textAlign:"center", marginBottom:12}}>
-          <div style={{fontSize:28, marginBottom:12}}>⚡</div>
+          <div style={{width:44, height:44, borderRadius:"50%", background:`${C.accent}18`, border:`2px solid ${C.accent}40`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 12px", fontSize:14, color:C.accent, fontWeight:700, ...mono}}>AI</div>
           <div style={{fontSize:13, color:C.text, fontWeight:700, ...mono, marginBottom:6}}>No Intelligence Signal Yet</div>
           <div style={{fontSize:12, color:C.dim}}>Run a cycle to generate a structured decision with Kelly sizing, Monte Carlo confidence, and on-chain regime detection.</div>
         </Card>
@@ -187,7 +194,7 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
             <div style={{flexShrink:0, width:72, height:72, borderRadius:"50%", background:`conic-gradient(${ac} 0deg ${Math.round(dec.confidence_score*360)}deg, ${C.s2} ${Math.round(dec.confidence_score*360)}deg 360deg)`, display:"flex", alignItems:"center", justifyContent:"center"}}>
               <div style={{width:52, height:52, borderRadius:"50%", background:C.s1, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column"}}>
                 <span style={{fontSize:13, fontWeight:700, color:ac, ...mono, lineHeight:1}}>{Math.round(dec.confidence_score*100)}</span>
-                <span style={{fontSize:8, color:C.dim, ...mono}}>CONF%</span>
+                <span style={{fontSize:10, color:C.dim, ...mono}}>CONF%</span>
               </div>
             </div>
             {/* Signal content */}
@@ -195,13 +202,19 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
               <div style={{display:"flex", gap:6, flexWrap:"wrap", marginBottom:8, alignItems:"center"}}>
                 <span style={{fontSize:16, fontWeight:700, color:ac, letterSpacing:"0.1em", ...mono}}>{dec.action}</span>
                 <span style={{width:1, height:14, background:C.border, display:"inline-block", flexShrink:0}}/>
-                <Badge text={dec.strategy_phase} color={C.purple}/>
-                <Badge text={`SRC: ${source.toUpperCase()}`} color={sourceColor}/>
+                <Badge text={dec.strategy_phase} color={dec.strategy_phase==="ENTRY"?C.ok:dec.strategy_phase==="EXIT"?C.danger:dec.strategy_phase==="SCALING"?C.accent:C.purple}/>
+                <Badge text={sourceLabel} color={sourceColor}/>
                 {quant?.regime && <Badge text={String(quant.regime).replace(/_/g," ").toUpperCase()} color={C.accent}/>}
                 {latestTruth && <Badge text={latestTruth.text} color={latestTruth.color}/>}
                 {latestTruth && <Badge text={`PROV ${latestTruth.provenance.text}`} color={latestTruth.provenance.color}/>}
               </div>
-              <div style={{fontSize:12, color:C.text, lineHeight:1.55, marginBottom:8}}>{dec.rationale}</div>
+              <div
+                onClick={() => setShowRationale(s => !s)}
+                style={{fontSize:11, color:C.dim, ...mono, letterSpacing:"0.06em", marginBottom:4, cursor:"pointer", userSelect:"none", display:"flex", alignItems:"center", gap:6}}
+              >
+                RATIONALE <span style={{fontSize:10}}>{showRationale ? "▲" : "▼"}</span>
+              </div>
+              {showRationale && <div style={{fontSize:12, color:C.text, lineHeight:1.55, marginBottom:8}}>{dec.rationale}</div>}
               <div style={{display:"flex", gap:6, flexWrap:"wrap", alignItems:"center"}}>
                 {dec?.audit_record?.audit_sig && <Badge text="AUDIT READY" color={C.text}/>}
                 {cryptoSig?.status === "signed" && <Badge text="CRYPTO SIGNED" color={C.ok}/>}
@@ -214,9 +227,9 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
             </div>
             {/* Risk pill */}
             <div style={{flexShrink:0, background:C.s2, borderRadius:8, padding:"12px 16px", textAlign:"center", border:`1px solid ${dec.risk_score<=0.4?C.ok:dec.risk_score<=0.7?C.warn:C.danger}30`}}>
-              <div style={{fontSize:9, color:C.dim, ...mono, letterSpacing:"0.1em", marginBottom:2}}>RISK</div>
+              <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.1em", marginBottom:2}}>RISK</div>
               <div style={{fontSize:20, fontWeight:700, ...mono, color:dec.risk_score<=0.4?C.ok:dec.risk_score<=0.7?C.warn:C.danger}}>{dec.risk_score}</div>
-              <div style={{fontSize:9, color:C.dim, ...mono}}>SCORE</div>
+              <div style={{fontSize:10, color:C.dim, ...mono}}>SCORE</div>
             </div>
           </div>
 
@@ -235,7 +248,7 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
               {k:"Data Quality", v:formatMetric(quant?.data_quality_score), c:(quant?.data_quality_score??0)>=0.75?C.ok:C.warn, hint:"Signal trust score from quant feature sufficiency. Low quality reduces automation confidence."},
             ].map((item) => (
               <div key={item.k} title={item.hint} style={{background:`linear-gradient(135deg, ${item.c}10 0%, ${C.s2} 100%)`, border:`1px solid ${item.c}20`, borderRadius:6, padding:"10px 12px"}}>
-                <div style={{fontSize:9, color:C.dim, ...mono, letterSpacing:"0.06em", marginBottom:4}}>{item.k.toUpperCase()}</div>
+                <div style={{fontSize:10, color:C.dim, ...mono, letterSpacing:"0.06em", marginBottom:4}}>{item.k.toUpperCase()}</div>
                 <div style={{fontSize:13, color:item.c, fontWeight:700, ...mono}}>{item.v}</div>
               </div>
             ))}
@@ -244,7 +257,7 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
           {/* ── Next Review ── */}
           {dec.next_review_trigger && (
             <div style={{background:C.aLow, border:`1px solid ${C.accent}25`, borderRadius:6, padding:"10px 14px", marginBottom:12, display:"flex", gap:8, alignItems:"flex-start"}}>
-              <span style={{fontSize:9, color:C.accent, ...mono, letterSpacing:"0.08em", flexShrink:0, paddingTop:2}}>NEXT TRIGGER</span>
+              <span style={{fontSize:10, color:C.accent, ...mono, letterSpacing:"0.08em", flexShrink:0, paddingTop:2}}>NEXT TRIGGER</span>
               <span style={{fontSize:12, color:C.text}}>{dec.next_review_trigger}</span>
             </div>
           )}
@@ -252,7 +265,7 @@ export function IntelligencePanel({decisions, queue = [], loading, onRun}: any) 
           {/* ── Risk Factors ── */}
           {dec.risk_factors?.length > 0 && (
             <div style={{background:`${C.warn}08`, border:`1px solid ${C.warn}30`, borderRadius:6, padding:"10px 14px", marginBottom:12}}>
-              <div style={{fontSize:9, color:C.warn, ...mono, letterSpacing:"0.08em", marginBottom:6}}>RISK FACTORS</div>
+              <div style={{fontSize:10, color:C.warn, ...mono, letterSpacing:"0.08em", marginBottom:6}}>RISK FACTORS</div>
               <div style={{display:"flex", flexWrap:"wrap", gap:6}}>
                 {dec.risk_factors.map((f: any, i: number) => <Badge key={i} text={f} color={C.warn}/>)}
               </div>

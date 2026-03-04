@@ -94,6 +94,13 @@ export type PnlAttributionSummary = {
   timingWins: number;
   timingSamples: number;
   rows: Array<{ label: string; value: number; color?: string; hint?: string }>;
+  /** USD equivalent fields — populated when marketHistory contains priceUsd snapshots */
+  snapshotPriceUsd: number;
+  netPnlUsd: number;
+  grossEdgeUsd: number;
+  feesUsd: number;
+  slippageUsd: number;
+  missedFillUsd: number;
 };
 
 export type RealizedConfirmationDepthPolicy = {
@@ -388,6 +395,12 @@ export function derivePnlAttribution(params: {
   const feesKas = feesKasLogged;
   const netPnlKas = grossEdgeKas - feesKas - hybridSlippageKas;
 
+  // ── USD conversion using latest available market snapshot ────────────────
+  const latestSnap = marketHistory.length > 0 ? marketHistory[marketHistory.length - 1] : null;
+  const snapshotPriceUsd = latestSnap ? n(latestSnap.priceUsd, 0) : 0;
+  const toUsd = (kas: number) =>
+    snapshotPriceUsd > 0 ? Number((kas * snapshotPriceUsd).toFixed(4)) : 0;
+
   return {
     grossEdgeKas: Number(grossEdgeKas.toFixed(6)),
     netPnlKas: Number(netPnlKas.toFixed(6)),
@@ -425,6 +438,12 @@ export function derivePnlAttribution(params: {
     timingAlphaPct: Number(timingAlphaPct.toFixed(4)),
     timingWins,
     timingSamples,
+    snapshotPriceUsd,
+    netPnlUsd: toUsd(netPnlKas),
+    grossEdgeUsd: toUsd(grossEdgeKas),
+    feesUsd: toUsd(feesKas),
+    slippageUsd: toUsd(hybridSlippageKas),
+    missedFillUsd: toUsd(missedFillKas),
     rows: [
       { label: "Gross Edge", value: Number(grossEdgeKas.toFixed(6)), hint: "Expected-value weighted edge from actionable signals" },
       { label: "Fees", value: Number((-feesKas).toFixed(6)), hint: "Protocol + execution fees from runtime logs" },
