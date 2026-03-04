@@ -164,7 +164,7 @@ test.describe("ForgeOS E2E", () => {
   test("wallet gate supports mocked kasware", async ({ page }) => {
     await installKaswareMock(page);
     await connectKaswareAndDeploy(page, "Kasware E2E");
-    await expect(page.getByText(/RUN QUANT CYCLE/i)).toBeVisible();
+    await expect(page.getByTestId("overview-run-cycle")).toBeVisible();
   });
 
   test("queue reject and sign flow works with mocked kasware", async ({ page }) => {

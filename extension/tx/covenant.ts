@@ -229,8 +229,6 @@ export async function buildAtomicSwapCovenantScript(
       return null;
     }
 
-    const dustSompi = BigInt(Math.round(COVENANT_DUST_KAS * 100_000_000));
-
     // ── Covenant script construction ─────────────────────────────────────────
     // Strategy: try the ScriptBuilder API first (cleaner, validated by wasm).
     // If ScriptBuilder is unavailable (pre-release wasm build), fall back to the

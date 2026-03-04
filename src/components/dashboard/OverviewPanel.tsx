@@ -1034,6 +1034,7 @@ export function OverviewPanel({
           }}
         >
           <Btn
+            data-testid="overview-run-cycle"
             onClick={onRunCycle}
             disabled={loading || !agentRunning}
             size="sm"
