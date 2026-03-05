@@ -32,7 +32,7 @@
     ]
   },
   "index.html": {
-    "file": "assets/index-iRwzjvbg.js",
+    "file": "assets/index-x7imEs8G.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -66,7 +66,7 @@
     "src": "node_modules/kaspa-wasm/kaspa_wasm_bg.wasm"
   },
   "src/components/dashboard/AgentOverviewPanel.tsx": {
-    "file": "assets/AgentOverviewPanel-Dtqz9DLq.js",
+    "file": "assets/AgentOverviewPanel-CmSMTFGg.js",
     "name": "AgentOverviewPanel",
     "src": "src/components/dashboard/AgentOverviewPanel.tsx",
     "isDynamicEntry": true,
@@ -79,7 +79,7 @@
     ]
   },
   "src/components/dashboard/AlertsPanel.tsx": {
-    "file": "assets/AlertsPanel-Dh6vaQ5w.js",
+    "file": "assets/AlertsPanel-Pno-aIXa.js",
     "name": "AlertsPanel",
     "src": "src/components/dashboard/AlertsPanel.tsx",
     "isDynamicEntry": true,
@@ -92,7 +92,7 @@
     ]
   },
   "src/components/dashboard/BacktestPanel.tsx": {
-    "file": "assets/BacktestPanel-Cjn6dieb.js",
+    "file": "assets/BacktestPanel-0iWQHFM8.js",
     "name": "BacktestPanel",
     "src": "src/components/dashboard/BacktestPanel.tsx",
     "isDynamicEntry": true,
@@ -105,7 +105,7 @@
     ]
   },
   "src/components/dashboard/IntelligencePanel.tsx": {
-    "file": "assets/IntelligencePanel-De9Yfp07.js",
+    "file": "assets/IntelligencePanel-BPHhFno7.js",
     "name": "IntelligencePanel",
     "src": "src/components/dashboard/IntelligencePanel.tsx",
     "isDynamicEntry": true,
@@ -118,7 +118,7 @@
     ]
   },
   "src/components/dashboard/LeaderboardPanel.tsx": {
-    "file": "assets/LeaderboardPanel-CgzNHPTh.js",
+    "file": "assets/LeaderboardPanel-DnffSezI.js",
     "name": "LeaderboardPanel",
     "src": "src/components/dashboard/LeaderboardPanel.tsx",
     "isDynamicEntry": true,
@@ -131,7 +131,7 @@
     ]
   },
   "src/components/dashboard/NetworkPanel.tsx": {
-    "file": "assets/NetworkPanel-C5k7wElN.js",
+    "file": "assets/NetworkPanel-B2Qe7DV8.js",
     "name": "NetworkPanel",
     "src": "src/components/dashboard/NetworkPanel.tsx",
     "isDynamicEntry": true,
@@ -144,7 +144,7 @@
     ]
   },
   "src/components/dashboard/OverviewPanel.tsx": {
-    "file": "assets/OverviewPanel-OSTCVbXe.js",
+    "file": "assets/OverviewPanel-DUCSWL-Z.js",
     "name": "OverviewPanel",
     "src": "src/components/dashboard/OverviewPanel.tsx",
     "isDynamicEntry": true,
@@ -161,7 +161,7 @@
     ]
   },
   "src/components/dashboard/PerfChart.tsx": {
-    "file": "assets/PerfChart-BIwNkk87.js",
+    "file": "assets/PerfChart-CQtQGtSW.js",
     "name": "PerfChart",
     "src": "src/components/dashboard/PerfChart.tsx",
     "isDynamicEntry": true,
@@ -174,7 +174,7 @@
     ]
   },
   "src/components/dashboard/PnlAttributionPanel.tsx": {
-    "file": "assets/PnlAttributionPanel-Cs2nj0x_.js",
+    "file": "assets/PnlAttributionPanel-eNKiZeji.js",
     "name": "PnlAttributionPanel",
     "src": "src/components/dashboard/PnlAttributionPanel.tsx",
     "isDynamicEntry": true,
@@ -187,7 +187,7 @@
     ]
   },
   "src/components/dashboard/PortfolioPanel.tsx": {
-    "file": "assets/PortfolioPanel-D47drxFe.js",
+    "file": "assets/PortfolioPanel-B8lywPaB.js",
     "name": "PortfolioPanel",
     "src": "src/components/dashboard/PortfolioPanel.tsx",
     "isDynamicEntry": true,
@@ -200,7 +200,7 @@
     ]
   },
   "src/components/dashboard/QuantAnalyticsPanel.tsx": {
-    "file": "assets/QuantAnalyticsPanel-Bnwd69Cp.js",
+    "file": "assets/QuantAnalyticsPanel-CaXWAslD.js",
     "name": "QuantAnalyticsPanel",
     "src": "src/components/dashboard/QuantAnalyticsPanel.tsx",
     "isDynamicEntry": true,

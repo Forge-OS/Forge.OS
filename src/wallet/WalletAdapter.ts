@@ -362,6 +362,16 @@ async function waitForForgeOSProvider(timeoutMs = 2500): Promise<any | null> {
 }
 
 export const WalletAdapter = {
+  openForgeOSExtensionPopup(): boolean {
+    if (typeof window === "undefined") return false;
+    try {
+      window.postMessage({ [FORGEOS_BRIDGE_SENTINEL]: true, type: "FORGEOS_OPEN_POPUP" }, "*");
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
   detect() {
     let kasware: any;
     let kastle: any;

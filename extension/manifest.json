@@ -46,7 +46,7 @@
         "*://forge-os.pages.dev/*"
       ],
       "js": ["content/site-bridge.ts"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "permissions": ["storage", "alarms", "clipboardWrite", "tabs", "windows", "permissions", "notifications"],

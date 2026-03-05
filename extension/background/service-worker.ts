@@ -658,8 +658,12 @@ chrome.runtime.onMessage.addListener((message: any, sender: any) => {
         await setPendingRequestState(state);
         await updatePendingBadge(state);
 
-        // Only force-open popup when transitioning from no pending requests.
-        if (!wasIdle) return;
+        // Always best-effort focus/open the popup so queued requests remain visible,
+        // even when a stale/older request already exists.
+        if (!wasIdle) {
+          await openPopupForRemainingPending(state);
+          return;
+        }
 
         try {
           await openExtensionPopup();
@@ -686,7 +690,10 @@ chrome.runtime.onMessage.addListener((message: any, sender: any) => {
         state = enqueueConnectRequest(state, request);
         await setPendingRequestState(state);
         await updatePendingBadge(state);
-        if (!wasIdle) return;
+        if (!wasIdle) {
+          await openPopupForRemainingPending(state);
+          return;
+        }
         await openExtensionPopup().catch(() => {});
       });
     });
@@ -730,7 +737,10 @@ chrome.runtime.onMessage.addListener((message: any, sender: any) => {
       await setPendingRequestState(state);
       await updatePendingBadge(state);
 
-      if (!wasIdle) return;
+      if (!wasIdle) {
+        await openPopupForRemainingPending(state);
+        return;
+      }
 
       try {
         await openExtensionPopup();

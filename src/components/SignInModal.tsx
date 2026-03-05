@@ -570,6 +570,29 @@ export function SignInModal({ onSignIn, onClose }: Props) {
               <div style={{ fontSize: 8, color: C.muted, marginTop: 6 }}>
                 Check your wallet extension for a connection prompt.
               </div>
+              {selected?.id === "forgeos" && (
+                <button
+                  data-testid="signin-forgeos-open-extension"
+                  onClick={() => {
+                    WalletAdapter.openForgeOSExtensionPopup();
+                  }}
+                  style={{
+                    marginTop: 12,
+                    background: "rgba(8,13,20,0.75)",
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 8,
+                    color: C.text,
+                    fontSize: 9,
+                    ...mono,
+                    letterSpacing: "0.06em",
+                    fontWeight: 700,
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  OPEN FORGE-OS EXTENSION
+                </button>
+              )}
               <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </div>
           )}

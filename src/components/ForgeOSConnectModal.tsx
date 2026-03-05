@@ -233,6 +233,24 @@ export function ForgeOSConnectModal({ onSignIn, onOpenFullModal, onClose }: Prop
                 ? "If popup appears, enter your password to continue."
                 : "Detecting your Forge-OS wallet…"}
             </div>
+            <button
+              onClick={() => WalletAdapter.openForgeOSExtensionPopup()}
+              style={{
+                marginTop: 10,
+                background: "rgba(8,13,20,0.75)",
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                color: C.text,
+                fontSize: 9,
+                ...mono,
+                letterSpacing: "0.06em",
+                fontWeight: 700,
+                padding: "8px 12px",
+                cursor: "pointer",
+              }}
+            >
+              OPEN FORGE-OS EXTENSION
+            </button>
           </div>
         )}
 
