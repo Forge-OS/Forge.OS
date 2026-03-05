@@ -30,8 +30,8 @@
  *   VITE_PAIR_STABLE_TICK       — KRC20 tick for stablecoin, e.g. "USDC" (default: "USDC")
  */
 
-import { loadKaspaWasm } from "../../src/wallet/KaspaWalletManager";
-import { apiFetch } from "../network/kaspaClient";
+import { loadKaspaWasm } from "../../src/wallet/kaspaWasmLoader";
+import { fetchUtxos } from "../network/kaspaClient";
 import { executeKaspaIntent } from "./kernel";
 
 // ── Feature detection ──────────────────────────────────────────────────────────
@@ -352,10 +352,7 @@ export async function lockAtomicSwapOffer(
 export async function verifyAtomicSwapLock(offer: AtomicSwapOffer): Promise<bigint> {
   try {
     type UtxoEntry = { outpoint?: unknown; entry?: { amount?: string | number } };
-    const utxos = await apiFetch<UtxoEntry[]>(
-      offer.network,
-      `/addresses/${encodeURIComponent(offer.covenantAddress)}/utxos`,
-    );
+    const utxos = await fetchUtxos(offer.covenantAddress, offer.network) as UtxoEntry[];
     if (!Array.isArray(utxos) || utxos.length === 0) return 0n;
     return utxos.reduce((sum, u) => {
       const amt = BigInt(String(u?.entry?.amount ?? "0").split(".")[0]);

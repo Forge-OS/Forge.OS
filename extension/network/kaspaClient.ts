@@ -657,7 +657,7 @@ async function apiFetchFromBase<T>(base: string, path: string, options?: Request
   throw lastErr ?? new KaspaApiError("Unknown API error", 0);
 }
 
-async function apiFetch<T>(
+export async function apiFetch<T>(
   network: string,
   path: string,
   options?: RequestInit,
